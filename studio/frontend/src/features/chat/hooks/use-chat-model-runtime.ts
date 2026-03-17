@@ -38,6 +38,7 @@ const MODEL_LOAD_TOAST_CLASSNAMES = {
   title: "leading-5",
   description: "mt-0 w-full",
 } as const;
+const MODEL_LOAD_TOAST_DURATION_MS = 10_000;
 
 const LORA_SUFFIX_RE = /_(\d{9,})$/;
 
@@ -426,7 +427,7 @@ export function useChatModelRuntime() {
               isDownloaded ? null : "Preparing download",
               cancelLoading,
             ),
-            duration: Infinity,
+            duration: MODEL_LOAD_TOAST_DURATION_MS,
             closeButton: false,
             classNames: MODEL_LOAD_TOAST_CLASSNAMES,
             onDismiss: (dismissedToast) => {
@@ -483,7 +484,7 @@ export function useChatModelRuntime() {
                       progressLabel,
                       cancelLoading,
                     ),
-                    duration: Infinity,
+                    duration: MODEL_LOAD_TOAST_DURATION_MS,
                     closeButton: false,
                     classNames: MODEL_LOAD_TOAST_CLASSNAMES,
                     onDismiss: (dismissedToast) => {
@@ -519,7 +520,7 @@ export function useChatModelRuntime() {
                     "Download complete",
                     cancelLoading,
                   ),
-                  duration: Infinity,
+                  duration: MODEL_LOAD_TOAST_DURATION_MS,
                   closeButton: false,
                   classNames: MODEL_LOAD_TOAST_CLASSNAMES,
                   onDismiss: (dismissedToast) => {
