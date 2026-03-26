@@ -38,6 +38,8 @@ db.version(3)
 
 export { db };
 
+const EMPTY_DEPS: readonly unknown[] = [];
+
 /**
  * Wraps Dexie liveQuery for React state updates.
  *
@@ -47,7 +49,7 @@ export { db };
  */
 export function useLiveQuery<T>(
   querier: () => Promise<T>,
-  deps: unknown[] = [],
+  deps: readonly unknown[] = EMPTY_DEPS,
 ): T | undefined {
   const [value, setValue] = useState<T>();
   const querierRef = useRef(querier);
@@ -61,6 +63,6 @@ export function useLiveQuery<T>(
     return () => sub.unsubscribe();
     // Intentionally omit `querier` from deps: inline functions would re-subscribe every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps]);
   return value;
 }
