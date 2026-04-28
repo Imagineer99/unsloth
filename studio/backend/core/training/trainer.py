@@ -86,6 +86,20 @@ def _build_report_targets(training_args) -> list[str] | str:
     return report_to or "none"
 
 
+def _build_precision_flags() -> dict[str, bool]:
+    full_finetuning = os.environ.get("UNSLOTH_ENABLE_FULL_FINETUNING", "0") == "1"
+    force_float32 = (
+        not full_finetuning and os.environ.get("UNSLOTH_FORCE_FLOAT32", "0") == "1"
+    )
+    if force_float32:
+        os.environ["ACCELERATE_MIXED_PRECISION"] = "no"
+        logger.info("Disabling fp16/bf16 because UNSLOTH_FORCE_FLOAT32=1")
+        return {"fp16": False, "bf16": False}
+
+    supports_bf16 = is_bfloat16_supported()
+    return {"fp16": not supports_bf16, "bf16": supports_bf16}
+
+
 @dataclass
 class TrainingProgress:
     """Training progress tracking"""
@@ -339,8 +353,7 @@ class UnslothTrainer:
             "gradient_accumulation_steps": gradient_accumulation_steps,
             "warmup_steps": warmup_steps_val if warmup_steps_val is not None else 5,
             "learning_rate": learning_rate,
-            "fp16": not is_bfloat16_supported(),
-            "bf16": is_bfloat16_supported(),
+            **_build_precision_flags(),
             "logging_steps": 1,
             "optim": optim_value,
             "weight_decay": weight_decay,
@@ -3044,8 +3057,7 @@ class UnslothTrainer:
                     "num_epochs", 3
                 ),  # Default to epochs
                 "learning_rate": lr_value,
-                "fp16": not is_bfloat16_supported(),
-                "bf16": is_bfloat16_supported(),
+                **_build_precision_flags(),
                 "logging_steps": 1,
                 "weight_decay": training_args.get("weight_decay", 0.001),
                 "seed": training_args.get("random_seed", 3407),
