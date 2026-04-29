@@ -157,6 +157,22 @@ def _align_forced_float32_training_dtypes(model) -> None:
     if os.environ.get("UNSLOTH_FORCE_FLOAT32", "0") != "1":
         return
 
+    def _cast_first_arg_to_weight_dtype(module, inputs):
+        weight = getattr(module, "weight", None)
+        if weight is None or not getattr(weight, "is_floating_point", lambda: False)():
+            return inputs
+        if not inputs:
+            return inputs
+
+        first_arg = inputs[0]
+        if (
+            torch.is_tensor(first_arg)
+            and first_arg.is_floating_point()
+            and first_arg.dtype != weight.dtype
+        ):
+            return (first_arg.to(dtype = weight.dtype), *inputs[1:])
+        return inputs
+
     for module in model.modules():
         for lora_attr in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
             lora_layers = getattr(module, lora_attr, None)
@@ -174,6 +190,12 @@ def _align_forced_float32_training_dtypes(model) -> None:
             and not hasattr(weight, "quant_state")
         ):
             module.to(dtype = torch.float32)
+            if isinstance(module, torch.nn.Linear) and not hasattr(
+                module, "_unsloth_forced_float32_input_hook"
+            ):
+                module._unsloth_forced_float32_input_hook = (
+                    module.register_forward_pre_hook(_cast_first_arg_to_weight_dtype)
+                )
 
 
 def _offload_frozen_module_for_training(
