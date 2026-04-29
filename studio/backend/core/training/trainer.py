@@ -250,6 +250,38 @@ class UnslothTrainer:
         """Add callback for training progress updates"""
         self.progress_callbacks.append(callback)
 
+    def _align_qwen35_forced_float32_modules(self) -> None:
+        """Keep Qwen3.5 linear-attention projections aligned with fp32 activations."""
+        if os.environ.get("UNSLOTH_FORCE_FLOAT32", "0") != "1" or self.model is None:
+            return
+
+        model_name = (self.model_name or "").lower()
+        model_type = str(getattr(getattr(self.model, "config", None), "model_type", ""))
+        if "qwen3_5" not in model_name and "qwen3_5" not in model_type:
+            return
+
+        import torch
+
+        aligned = 0
+        with torch.no_grad():
+            for name, module in self.model.named_modules():
+                if "linear_attn" not in name:
+                    continue
+                weight = getattr(module, "weight", None)
+                if (
+                    weight is not None
+                    and getattr(weight, "is_floating_point", lambda: False)()
+                    and not hasattr(weight, "quant_state")
+                    and weight.dtype != torch.float32
+                ):
+                    module.to(dtype = torch.float32)
+                    aligned += 1
+
+        if aligned:
+            logger.info(
+                "Aligned %s Qwen3.5 linear-attention modules to float32", aligned
+            )
+
     def _update_progress(self, **kwargs):
         """Update training progress and notify callbacks"""
         with self._lock:
@@ -3420,6 +3452,7 @@ class UnslothTrainer:
             # ========== START TRAINING ==========
             self._update_progress(status_message = "Starting training...")
             logger.info("Starting training...\n")
+            self._align_qwen35_forced_float32_modules()
             self.trainer.train()
 
             # ========== SAVE MODEL ==========
