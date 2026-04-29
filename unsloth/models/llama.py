@@ -153,6 +153,29 @@ SDPA_HAS_GQA = "enable_gqa" in scaled_dot_product_attention.__doc__
 from peft.utils.other import ModulesToSaveWrapper
 
 
+def _align_forced_float32_training_dtypes(model) -> None:
+    if os.environ.get("UNSLOTH_FORCE_FLOAT32", "0") != "1":
+        return
+
+    for module in model.modules():
+        for lora_attr in ("lora_A", "lora_B", "lora_embedding_A", "lora_embedding_B"):
+            lora_layers = getattr(module, lora_attr, None)
+            if hasattr(lora_layers, "values"):
+                for lora_layer in lora_layers.values():
+                    if hasattr(lora_layer, "to"):
+                        lora_layer.to(dtype = torch.float32)
+
+        weight = getattr(module, "weight", None)
+        # Keep quantized storage untouched; align normal floating modules such as
+        # lm_head, embeddings, norms, and task heads with forced-float32 activations.
+        if (
+            weight is not None
+            and getattr(weight, "is_floating_point", lambda: False)()
+            and not hasattr(weight, "quant_state")
+        ):
+            module.to(dtype = torch.float32)
+
+
 def _offload_frozen_module_for_training(
     module: ModulesToSaveWrapper,
     device_type: str,
@@ -2419,6 +2442,7 @@ class FastLlamaModel:
                         if _m not in _ckpt_skip:
                             _ckpt_skip.append(_m)
                     _ckpt_qcfg["llm_int8_skip_modules"] = _ckpt_skip
+                    _ckpt_qcfg["bnb_4bit_compute_dtype"] = dtype
                 else:
                     _ckpt_skip = list(
                         getattr(_ckpt_qcfg, "llm_int8_skip_modules", None) or []
@@ -2428,6 +2452,10 @@ class FastLlamaModel:
                             _ckpt_skip.append(_m)
                     try:
                         _ckpt_qcfg.llm_int8_skip_modules = _ckpt_skip
+                    except Exception:
+                        pass
+                    try:
+                        _ckpt_qcfg.bnb_4bit_compute_dtype = dtype
                     except Exception:
                         pass
 
@@ -3193,6 +3221,7 @@ class FastLlamaModel:
                 clean_gpu_cache()
 
         model = _get_peft_model(model, lora_config)
+        _align_forced_float32_training_dtypes(model)
         # Fix LoraConfig.auto_mapping is None
         fix_lora_auto_mapping(model)
 
@@ -3289,6 +3318,7 @@ class FastLlamaModel:
             clean_gpu_cache()
 
         patch_peft_fast_inference(model)
+        _align_forced_float32_training_dtypes(model)
 
         # Add for_inference and for_training
         model.for_training = functools.partial(FastLlamaModel.for_training, model)
