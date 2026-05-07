@@ -15,6 +15,7 @@ import { useChooseNativeModel } from "@/features/native-intents/use-native-dialo
 import { useNativeModelDrop } from "@/features/native-intents/use-native-drop";
 import { useNativePathLeasesSupported } from "@/features/native-intents/use-native-readiness";
 import { useNativeIntentStore } from "@/features/native-intents/store";
+import { useSettingsDialogStore } from "@/features/settings";
 import type { NativeIntent } from "@/features/native-intents/types";
 import { isTauri } from "@/lib/api-base";
 import { cn } from "@/lib/utils";
@@ -37,18 +38,11 @@ import {
 import { toast } from "sonner";
 import type { ChatSearch } from "@/app/routes/chat";
 import { listLocalModels } from "./api/chat-api";
-import { ChatProvidersDialog } from "./chat-providers-dialog";
 import { ChatSettingsPanel } from "./chat-settings-sheet";
 import { ContextUsageBar } from "./components/context-usage-bar";
 import { ModelLoadInlineStatus } from "./components/model-load-status";
 import { db } from "./db";
-import {
-  buildExternalModelId,
-  isExternalModelId,
-  loadExternalProviders,
-  saveExternalProviders,
-  type ExternalProviderConfig,
-} from "./external-providers";
+import { buildExternalModelId, isExternalModelId } from "./external-providers";
 import { useChatModelRuntime } from "./hooks/use-chat-model-runtime";
 import {
   clearTrainingCompareHandoff,
@@ -63,6 +57,7 @@ import {
   SharedComposer,
 } from "./shared-composer";
 import { useChatRuntimeStore } from "./stores/chat-runtime-store";
+import { useExternalProvidersStore } from "./stores/external-providers-store";
 import { buildChatTourSteps } from "./tour";
 import type { ChatView, MessageRecord } from "./types";
 
@@ -545,7 +540,7 @@ export function ChatPage(): ReactElement {
 
   const settingsOpen = useChatRuntimeStore((s) => s.settingsPanelOpen);
   const setSettingsOpen = useChatRuntimeStore((s) => s.setSettingsPanelOpen);
-  const [providersOpen, setProvidersOpen] = useState(false);
+  const externalProviders = useExternalProvidersStore((s) => s.providers);
 
   useEffect(() => {
     const threadId = search.thread;
@@ -576,12 +571,9 @@ export function ChatPage(): ReactElement {
       canceled = true;
     };
   }, [navigate, search.thread]);
-  
+
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [modelSelectorLocked, setModelSelectorLocked] = useState(false);
-  const [externalProviders, setExternalProviders] = useState<ExternalProviderConfig[]>(() =>
-    loadExternalProviders(),
-  );
   const viewBeforeCompareRef = useRef<ChatSearch | null>(null);
   const inferenceParams = useChatRuntimeStore((state) => state.params);
   const setInferenceParams = useChatRuntimeStore((state) => state.setParams);
@@ -609,7 +601,9 @@ export function ChatPage(): ReactElement {
     loadProgress,
     loadToastDismissed,
   } = useChatModelRuntime();
-  const pendingNativeModelIntent = useNativeIntentStore((state) => state.pendingModelIntent);
+  const pendingNativeModelIntent = useNativeIntentStore(
+    (state) => state.pendingModelIntent,
+  );
   const nativePathLeasesSupported = useNativePathLeasesSupported();
   const refreshRef = useRef(refresh);
   const selectModelRef = useRef(selectModel);
@@ -649,7 +643,8 @@ export function ChatPage(): ReactElement {
   const hasActiveModel = Boolean(inferenceParams.checkpoint);
   const loadNativeModelIntent = useCallback(
     async (intent: NativeIntent, loadingDescription: string) => {
-      const label = intent.path.displayLabel || intent.displayLabel || "Local GGUF model";
+      const label =
+        intent.path.displayLabel || intent.displayLabel || "Local GGUF model";
       await selectModel({
         id: label,
         nativePathToken: intent.path.token,
@@ -885,20 +880,24 @@ export function ChatPage(): ReactElement {
       .catch(() => {});
   }, [navigate]);
 
-  const refreshModelLists = useCallback((deletedModel?: DeletedModelRef) => {
-    const { checkpoint } = useChatRuntimeStore.getState().params;
-    const activeGgufVariant = useChatRuntimeStore.getState().activeGgufVariant;
-    if (
-      modelMatchesDeleted(
-        { id: checkpoint, ggufVariant: activeGgufVariant },
-        deletedModel,
-      )
-    ) {
-      useChatRuntimeStore.getState().clearCheckpoint();
-    }
-    void refresh();
-    refreshLocalModels();
-  }, [refresh, refreshLocalModels]);
+  const refreshModelLists = useCallback(
+    (deletedModel?: DeletedModelRef) => {
+      const { checkpoint } = useChatRuntimeStore.getState().params;
+      const activeGgufVariant =
+        useChatRuntimeStore.getState().activeGgufVariant;
+      if (
+        modelMatchesDeleted(
+          { id: checkpoint, ggufVariant: activeGgufVariant },
+          deletedModel,
+        )
+      ) {
+        useChatRuntimeStore.getState().clearCheckpoint();
+      }
+      void refresh();
+      refreshLocalModels();
+    },
+    [refresh, refreshLocalModels],
+  );
 
   const loraModels = useMemo<LoraModelOption[]>(() => {
     const fromLoras = lorasFromStore.map((lora) => ({
@@ -917,10 +916,6 @@ export function ChatPage(): ReactElement {
     void refresh();
     refreshLocalModels();
   }, [refresh, refreshLocalModels]);
-
-  useEffect(() => {
-    void saveExternalProviders(externalProviders);
-  }, [externalProviders]);
 
   useEffect(() => {
     const handoff = getTrainingCompareHandoff();
@@ -1115,7 +1110,11 @@ export function ChatPage(): ReactElement {
                 <TooltipPrimitive.Trigger asChild>
                   <button
                     type="button"
-                    onClick={() => setProvidersOpen(true)}
+                    onClick={() =>
+                      useSettingsDialogStore
+                        .getState()
+                        .openDialog("connections")
+                    }
                     className="flex h-[34px] w-[34px] items-center justify-center rounded-[8px] text-[#383835] transition-colors hover:bg-[#ececec] hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-[#c7c7c4] dark:hover:bg-[#2e3035] dark:hover:text-white"
                     aria-label="Open API providers"
                   >
@@ -1185,12 +1184,6 @@ export function ChatPage(): ReactElement {
             });
           }
         }}
-      />
-      <ChatProvidersDialog
-        open={providersOpen}
-        onOpenChange={setProvidersOpen}
-        providers={externalProviders}
-        onProvidersChange={setExternalProviders}
       />
     </div>
   );

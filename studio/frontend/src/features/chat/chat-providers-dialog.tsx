@@ -11,7 +11,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -20,19 +19,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Spinner } from "@/components/ui/spinner";
+import { Textarea } from "@/components/ui/textarea";
 import {
+  ArrowLeft02Icon,
   DashboardSquare01Icon,
-  CloudIcon,
   Delete02Icon,
+  Edit03Icon,
+  PlusSignIcon,
   Wifi02Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { ApiProviderLogo } from "./api-provider-logo";
 import {
+  type ProviderRegistryEntry,
   createProviderConfig,
   deleteProviderConfig,
   listProviderConfigs,
@@ -40,7 +43,6 @@ import {
   listProviderRegistry,
   testProviderConnection,
   updateProviderConfig,
-  type ProviderRegistryEntry,
 } from "./api/providers-api";
 import type { ExternalProviderConfig } from "./external-providers";
 import {
@@ -48,10 +50,11 @@ import {
   removeExternalProviderApiKey,
   setExternalProviderApiKey,
 } from "./external-providers";
-import { ApiProviderLogo } from "./api-provider-logo";
 
 /** Matches navbar / thread layout easing (see index.css --ease-out-quart) */
-const PROVIDER_FORM_EASE: [number, number, number, number] = [0.165, 0.84, 0.44, 1];
+const PROVIDER_FORM_EASE: [number, number, number, number] = [
+  0.165, 0.84, 0.44, 1,
+];
 const PROVIDER_FORM_DURATION = 0.2;
 const CUSTOM_PROVIDER_TYPE = "custom";
 const CUSTOM_BACKEND_PROVIDER_TYPE = "openai";
@@ -112,23 +115,31 @@ function parseManualModelIds(text: string): string[] {
   return out;
 }
 
-interface ChatProvidersDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+function formatModelSummary(models: string[]): string {
+  if (models.length === 0) {
+    return "No models enabled";
+  }
+  const visible = models.slice(0, 4);
+  const remaining = models.length - visible.length;
+  return `${visible.join(", ")}${remaining > 0 ? ` +${remaining}` : ""}`;
+}
+
+interface ChatProvidersSettingsProps {
   providers: ExternalProviderConfig[];
   onProvidersChange: (providers: ExternalProviderConfig[]) => void;
 }
 
-export function ChatProvidersDialog({
-  open,
-  onOpenChange,
+export function ChatProvidersSettings({
   providers,
   onProvidersChange,
-}: ChatProvidersDialogProps) {
+}: ChatProvidersSettingsProps) {
+  const [page, setPage] = useState<"list" | "form">("list");
   const [providerType, setProviderType] = useState<string>("");
   const [apiKey, setApiKey] = useState("");
   const [baseUrlDraft, setBaseUrlDraft] = useState("");
-  const [editingProviderId, setEditingProviderId] = useState<string | null>(null);
+  const [editingProviderId, setEditingProviderId] = useState<string | null>(
+    null,
+  );
   const [registry, setRegistry] = useState<ProviderRegistryEntry[]>([]);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
@@ -137,6 +148,7 @@ export function ChatProvidersDialog({
   const [modelsLoading, setModelsLoading] = useState(false);
   const [mutatingProvider, setMutatingProvider] = useState(false);
   const [manualModelIds, setManualModelIds] = useState("");
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
   const [customProviderName, setCustomProviderName] = useState("Custom");
   const providersRef = useRef(providers);
   const reduceMotion = useReducedMotion();
@@ -158,23 +170,49 @@ export function ChatProvidersDialog({
     : isCuratedModelList
       ? "curated"
       : "remote";
+  const formModelCount = isManualModelList
+    ? new Set([...selectedModelIds, ...parseManualModelIds(manualModelIds)])
+        .size
+    : selectedModelIds.length;
+  const modelStatusLabel =
+    !isManualModelList && availableModels.length === 0
+      ? "No models loaded"
+      : `${formModelCount} ${formModelCount === 1 ? "model" : "models"} selected`;
+  const showModelsBody = isManualModelList || availableModels.length > 0;
+  const filteredAvailableModels = useMemo(() => {
+    const query = modelSearchQuery.trim().toLowerCase();
+    if (!query) {
+      return availableModels;
+    }
+    return availableModels.filter((model) =>
+      model.toLowerCase().includes(query),
+    );
+  }, [availableModels, modelSearchQuery]);
+  const availableModelsLabel = modelSearchQuery.trim()
+    ? `${filteredAvailableModels.length} of ${availableModels.length} models`
+    : `${availableModels.length} models`;
+  const modelSearchInputClassName =
+    "h-8 w-full bg-background/55 text-xs placeholder:text-muted-foreground/65 focus-visible:border-border focus-visible:ring-0";
 
   useEffect(() => {
     if (!providerType || editingProviderId) return;
     const entry = registryByType.get(providerType);
     if (entry?.model_list_mode === "curated") {
       setAvailableModels([...entry.default_models]);
-      setSelectedModelIds([...entry.default_models]);
+      setSelectedModelIds([]);
       setManualModelIds("");
+      setModelSearchQuery("");
     } else if (entry) {
       setAvailableModels([]);
       setSelectedModelIds([]);
       setManualModelIds("");
+      setModelSearchQuery("");
     }
   }, [providerType, editingProviderId, registryByType]);
 
   const totalModels = useMemo(
-    () => providers.reduce((count, provider) => count + provider.models.length, 0),
+    () =>
+      providers.reduce((count, provider) => count + provider.models.length, 0),
     [providers],
   );
 
@@ -183,7 +221,6 @@ export function ChatProvidersDialog({
   }, [providers]);
 
   useEffect(() => {
-    if (!open) return;
     let isMounted = true;
     const syncFromBackend = async () => {
       setRegistryLoading(true);
@@ -196,7 +233,10 @@ export function ChatProvidersDialog({
         if (!isMounted) return;
         setRegistry(registryRows);
         setProviderType((current) => {
-          if (current && registryRows.some((entry) => entry.provider_type === current)) {
+          if (
+            current &&
+            registryRows.some((entry) => entry.provider_type === current)
+          ) {
             return current;
           }
           return registryRows[0]?.provider_type ?? "";
@@ -233,7 +273,8 @@ export function ChatProvidersDialog({
           });
         onProvidersChange(syncedProviders);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Unknown error";
+        const message =
+          error instanceof Error ? error.message : "Unknown error";
         toast.error(`Failed to load providers: ${message}`);
       } finally {
         if (isMounted) {
@@ -246,7 +287,7 @@ export function ChatProvidersDialog({
     return () => {
       isMounted = false;
     };
-  }, [open, onProvidersChange]);
+  }, [onProvidersChange]);
 
   function resetForm() {
     setEditingProviderId(null);
@@ -255,12 +296,25 @@ export function ChatProvidersDialog({
     setAvailableModels([]);
     setSelectedModelIds([]);
     setManualModelIds("");
+    setModelSearchQuery("");
     setCustomProviderName("Custom");
+  }
+
+  function openAddProvider() {
+    resetForm();
+    setPage("form");
+  }
+
+  function closeForm() {
+    resetForm();
+    setPage("list");
   }
 
   function toggleModel(modelId: string) {
     setSelectedModelIds((prev) =>
-      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId],
+      prev.includes(modelId)
+        ? prev.filter((id) => id !== modelId)
+        : [...prev, modelId],
     );
   }
 
@@ -287,7 +341,10 @@ export function ChatProvidersDialog({
     return parsed.toString().replace(/\/+$/, "");
   }
 
-  function parseBaseUrlForProvider(input: string, required: boolean): string | null {
+  function parseBaseUrlForProvider(
+    input: string,
+    required: boolean,
+  ): string | null {
     const trimmed = input.trim();
     if (!trimmed) {
       if (required) {
@@ -325,11 +382,14 @@ export function ChatProvidersDialog({
         apiKey: apiKey.trim(),
         baseUrl,
       });
-      const modelIds = [...new Set(models
-        .map((model) => model.id.trim())
-        .filter((id) => id.length > 0))];
+      const modelIds = [
+        ...new Set(
+          models.map((model) => model.id.trim()).filter((id) => id.length > 0),
+        ),
+      ];
       setAvailableModels(modelIds);
-      setSelectedModelIds([...modelIds]);
+      setSelectedModelIds([]);
+      setModelSearchQuery("");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Could not load models: ${message}`);
@@ -346,7 +406,7 @@ export function ChatProvidersDialog({
     const backendProviderType = toBackendProviderType(providerType);
     const selectedRegistryEntry = registryByType.get(backendProviderType);
     const displayName = isCustomProvider
-      ? (customProviderName.trim() || "Custom")
+      ? customProviderName.trim() || "Custom"
       : (selectedRegistryEntry?.display_name ?? providerType);
     if (!isCustomProvider && !apiKey.trim()) {
       toast.error("API key is required.");
@@ -355,7 +415,12 @@ export function ChatProvidersDialog({
     const curated = selectedRegistryEntry?.model_list_mode === "curated";
     const manualModels = isCustomProvider || curated;
     const modelsToSave = manualModels
-      ? [...new Set([...selectedModelIds, ...parseManualModelIds(manualModelIds)])]
+      ? [
+          ...new Set([
+            ...selectedModelIds,
+            ...parseManualModelIds(manualModelIds),
+          ]),
+        ]
       : [...selectedModelIds];
     if (manualModels) {
       if (modelsToSave.length === 0) {
@@ -364,7 +429,9 @@ export function ChatProvidersDialog({
       }
     } else {
       if (availableModels.length === 0) {
-        toast.error("Load available models first, then choose which to enable.");
+        toast.error(
+          "Load available models first, then choose which to enable.",
+        );
         return;
       }
       if (selectedModelIds.length === 0) {
@@ -388,7 +455,9 @@ export function ChatProvidersDialog({
         : Date.now();
       const provider: ExternalProviderConfig = {
         id: created.id,
-        providerType: isCustomProvider ? CUSTOM_PROVIDER_TYPE : created.provider_type,
+        providerType: isCustomProvider
+          ? CUSTOM_PROVIDER_TYPE
+          : created.provider_type,
         name: created.display_name,
         baseUrl: created.base_url ?? "",
         models: modelsToSave,
@@ -398,8 +467,12 @@ export function ChatProvidersDialog({
       if (apiKey.trim()) {
         setExternalProviderApiKey(created.id, apiKey.trim());
       }
-      onProvidersChange([...providers.filter((p) => p.id !== created.id), provider]);
+      onProvidersChange([
+        ...providers.filter((p) => p.id !== created.id),
+        provider,
+      ]);
       resetForm();
+      setPage("list");
       toast.success("Provider added.");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
@@ -411,12 +484,15 @@ export function ChatProvidersDialog({
 
   async function saveProviderEdits() {
     if (!editingProviderId) return;
-    const existing = providers.find((provider) => provider.id === editingProviderId);
+    const existing = providers.find(
+      (provider) => provider.id === editingProviderId,
+    );
     if (!existing) {
       toast.error("Provider not found.");
       return;
     }
-    const isEditingCustomProvider = existing.providerType === CUSTOM_PROVIDER_TYPE;
+    const isEditingCustomProvider =
+      existing.providerType === CUSTOM_PROVIDER_TYPE;
     if (!isEditingCustomProvider && !apiKey.trim()) {
       toast.error("API key is required.");
       return;
@@ -425,7 +501,12 @@ export function ChatProvidersDialog({
     const curated = entry?.model_list_mode === "curated";
     const manualModels = isEditingCustomProvider || curated;
     const modelsToSave = manualModels
-      ? [...new Set([...selectedModelIds, ...parseManualModelIds(manualModelIds)])]
+      ? [
+          ...new Set([
+            ...selectedModelIds,
+            ...parseManualModelIds(manualModelIds),
+          ]),
+        ]
       : [...selectedModelIds];
     if (manualModels) {
       if (modelsToSave.length === 0) {
@@ -434,7 +515,9 @@ export function ChatProvidersDialog({
       }
     } else {
       if (availableModels.length === 0) {
-        toast.error("Load available models first, then choose which to enable.");
+        toast.error(
+          "Load available models first, then choose which to enable.",
+        );
         return;
       }
       if (selectedModelIds.length === 0) {
@@ -444,10 +527,13 @@ export function ChatProvidersDialog({
     }
     setMutatingProvider(true);
     try {
-      const baseUrl = parseBaseUrlForProvider(baseUrlDraft, isEditingCustomProvider);
+      const baseUrl = parseBaseUrlForProvider(
+        baseUrlDraft,
+        isEditingCustomProvider,
+      );
       const updated = await updateProviderConfig(editingProviderId, {
         displayName: isEditingCustomProvider
-          ? (customProviderName.trim() || "Custom")
+          ? customProviderName.trim() || "Custom"
           : existing.name,
         baseUrl,
       });
@@ -474,6 +560,7 @@ export function ChatProvidersDialog({
       );
       toast.success("Provider updated.");
       resetForm();
+      setPage("list");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to update provider: ${message}`);
@@ -484,10 +571,12 @@ export function ChatProvidersDialog({
 
   async function editProvider(provider: ExternalProviderConfig) {
     setEditingProviderId(provider.id);
+    setPage("form");
     setProviderType(provider.providerType);
     setCustomProviderName(provider.name || "Custom");
     setApiKey(getExternalProviderApiKey(provider.id));
     setBaseUrlDraft(provider.baseUrl);
+    setModelSearchQuery("");
     if (provider.providerType === CUSTOM_PROVIDER_TYPE) {
       setAvailableModels([]);
       setSelectedModelIds([]);
@@ -514,7 +603,9 @@ export function ChatProvidersDialog({
     try {
       await deleteProviderConfig(providerId);
       removeExternalProviderApiKey(providerId);
-      onProvidersChange(providers.filter((provider) => provider.id !== providerId));
+      onProvidersChange(
+        providers.filter((provider) => provider.id !== providerId),
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to delete provider: ${message}`);
@@ -566,139 +657,52 @@ export function ChatProvidersDialog({
     }
   }
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        overlayClassName="bg-black/50 backdrop-blur-sm"
-        className={
-          "flex max-h-[90dvh] w-[96vw] sm:max-w-none md:max-w-[56rem] lg:max-w-[62rem] xl:max-w-[66rem] 2xl:max-w-[70rem] flex-col gap-0 overflow-y-auto p-0"
-        }
-      >
-        <DialogHeader className="shrink-0 space-y-2 px-8 pb-5 pt-8 text-left">
-          <DialogTitle className="flex items-center gap-2.5 text-lg">
-            <HugeiconsIcon icon={CloudIcon} className="size-5 text-muted-foreground" />
-            API Providers
-          </DialogTitle>
-          <DialogDescription className="text-pretty">
-            Choose a backend registry provider type, add your API key, then load models through
-            the studio proxy.
-          </DialogDescription>
-        </DialogHeader>
-        <Separator />
-        <div className="grid min-w-0 grid-cols-1 gap-8 p-8 pt-6 sm:gap-10 md:grid-cols-2 md:gap-0">
-          <div className="min-w-0 md:pr-8 lg:pr-10">
-            <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
-              <h3 className="text-sm font-semibold tracking-tight">Configured providers</h3>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {providers.length} providers · {totalModels} models
+  if (page === "form") {
+    return (
+      <div className="flex min-h-0 flex-col gap-5">
+        <header className="flex items-start gap-3 pr-8">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="mt-0.5 size-8 rounded-[8px]"
+            onClick={closeForm}
+            aria-label="Back to providers"
+            title="Back to providers"
+          >
+            <HugeiconsIcon icon={ArrowLeft02Icon} className="size-4" />
+          </Button>
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="text-xs font-medium text-muted-foreground">
+                Providers
+              </span>
+              <span className="size-1 rounded-full bg-muted-foreground/35" />
+              <span className="truncate text-xs font-medium text-muted-foreground">
+                {editingProviderId ? "Edit" : "New"}
               </span>
             </div>
-            <div className="flex flex-col gap-4">
-              {providers.length === 0 ? (
-                <div className="rounded-xl border border-dashed px-6 py-10 text-center text-sm leading-relaxed text-muted-foreground">
-                  No providers yet. Add one using the form on the right.
-                </div>
-              ) : (
-                providers.map((provider) => {
-                  const registryEntry = registryByType.get(provider.providerType);
-                  const detail = provider.baseUrl || registryEntry?.base_url || "";
-                  const visibleModels = provider.models.slice(0, 5);
-                  const hiddenModelsCount = Math.max(0, provider.models.length - visibleModels.length);
-                  return (
-                    <div key={provider.id} className="rounded-xl border p-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 gap-3">
-                          <ApiProviderLogo
-                            providerType={provider.providerType}
-                            className="mt-0.5 size-[calc(2rem*0.95)]"
-                            title={provider.name}
-                          />
-                          <div className="min-w-0">
-                            <div className="truncate text-sm font-medium">
-                              {provider.name}
-                            </div>
-                            <div className="truncate text-xs text-muted-foreground">
-                              <span className="font-mono">{provider.providerType}</span>
-                              {" · "}
-                              {registryEntry?.display_name ?? provider.providerType}
-                              {detail ? ` · ${detail}` : ""}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-1.5">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7"
-                            disabled={mutatingProvider}
-                            onClick={() => editProvider(provider)}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            className="h-7"
-                            disabled={mutatingProvider}
-                            onClick={() => void testProvider(provider)}
-                          >
-                            <HugeiconsIcon
-                              icon={Wifi02Icon}
-                              className="mr-1 size-[calc(0.875rem*0.95)]"
-                            />
-                            Check
-                          </Button>
-                          <Button
-                            type="button"
-                            size="icon-sm"
-                            variant="ghost"
-                            className="text-muted-foreground hover:text-destructive"
-                            disabled={mutatingProvider}
-                            onClick={() => void deleteProvider(provider.id)}
-                            title="Delete provider"
-                          >
-                            <HugeiconsIcon
-                              icon={Delete02Icon}
-                              className="size-[calc(1rem*0.95)]"
-                            />
-                          </Button>
-                        </div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {visibleModels.map((model) => (
-                          <span
-                            key={`${provider.id}-${model}`}
-                            className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground"
-                          >
-                            {model}
-                          </span>
-                        ))}
-                        {hiddenModelsCount > 0 ? (
-                          <span
-                            className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground"
-                            title={`${hiddenModelsCount} more model(s) hidden`}
-                          >
-                            +{hiddenModelsCount}
-                          </span>
-                        ) : null}
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-          <div className="min-w-0 border-t border-border/80 pt-8 md:flex md:flex-col md:border-l md:border-t-0 md:pl-8 md:pt-0 lg:pl-10">
-            <h3 className="mb-6 text-sm font-semibold tracking-tight">
+            <h1 className="font-heading text-lg font-semibold">
               {editingProviderId ? "Edit provider" : "Add provider"}
-            </h3>
-            <div className="flex flex-col gap-6 md:flex-1">
-              <div className="space-y-2">
-                <Label htmlFor="provider-preset" className="text-sm font-medium">
-                  Provider
-                </Label>
+            </h1>
+          </div>
+        </header>
+
+        <div className="flex max-w-[760px] flex-col gap-3">
+          <section className="overflow-hidden rounded-[8px] border border-border/70 bg-muted/[0.12]">
+            <div className="divide-y divide-border/60">
+              <div className="grid grid-cols-[minmax(150px,0.8fr)_minmax(260px,1.2fr)] items-center gap-4 px-4 py-3 max-sm:grid-cols-1">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label
+                    htmlFor="provider-preset"
+                    className="text-sm font-medium"
+                  >
+                    Provider
+                  </Label>
+                  <p className="text-xs leading-snug text-muted-foreground">
+                    Supported registry or Custom.
+                  </p>
+                </div>
                 <Select
                   value={providerType}
                   onValueChange={(value) => {
@@ -707,18 +711,22 @@ export function ChatProvidersDialog({
                     setAvailableModels([]);
                     setSelectedModelIds([]);
                     setManualModelIds("");
+                    setModelSearchQuery("");
                   }}
                 >
                   <SelectTrigger
                     id="provider-preset"
-                    className="h-10 w-full text-sm"
+                    className="h-9 w-full text-sm"
                     disabled={editingProviderId != null}
                   >
                     <SelectValue placeholder="Choose a provider" />
                   </SelectTrigger>
                   <SelectContent>
                     {registry.map((entry) => (
-                      <SelectItem key={entry.provider_type} value={entry.provider_type}>
+                      <SelectItem
+                        key={entry.provider_type}
+                        value={entry.provider_type}
+                      >
                         <span className="flex items-center gap-2">
                           <ApiProviderLogo
                             providerType={entry.provider_type}
@@ -729,277 +737,542 @@ export function ChatProvidersDialog({
                         </span>
                       </SelectItem>
                     ))}
-                    {!hasCustomInRegistry ? (
+                    {hasCustomInRegistry ? null : (
                       <SelectItem value={CUSTOM_PROVIDER_TYPE}>
                         <span className="flex items-center gap-2">
-                          <HugeiconsIcon icon={DashboardSquare01Icon} className="size-4" />
+                          <HugeiconsIcon
+                            icon={DashboardSquare01Icon}
+                            className="size-4"
+                          />
                           Custom
                         </span>
                       </SelectItem>
-                    ) : null}
+                    )}
                   </SelectContent>
                 </Select>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  Choose a provider from Studio's supported list, or Custom.
-                </p>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="provider-api-key" className="text-sm font-medium">
-                  API key {isCustomProvider ? "(optional)" : ""}
-                </Label>
+              <div className="grid grid-cols-[minmax(150px,0.8fr)_minmax(260px,1.2fr)] items-center gap-4 px-4 py-3 max-sm:grid-cols-1">
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <Label
+                    htmlFor="provider-api-key"
+                    className="text-sm font-medium"
+                  >
+                    API key {isCustomProvider ? "(optional)" : ""}
+                  </Label>
+                  <p className="text-xs leading-snug text-muted-foreground">
+                    Stored locally.
+                  </p>
+                </div>
                 <Input
                   id="provider-api-key"
                   type="password"
                   value={apiKey}
                   onChange={(event) => setApiKey(event.target.value)}
                   placeholder="Enter API key"
-                  className="h-10 text-sm"
+                  className="h-9 text-sm"
                 />
               </div>
 
               {isCustomProvider ? (
-                <div className="space-y-2">
-                  <Label htmlFor="provider-custom-name" className="text-sm font-medium">
+                <div className="grid grid-cols-[minmax(150px,0.8fr)_minmax(260px,1.2fr)] items-center gap-4 px-4 py-3 max-sm:grid-cols-1">
+                  <Label
+                    htmlFor="provider-custom-name"
+                    className="text-sm font-medium"
+                  >
                     Provider name
                   </Label>
                   <Input
                     id="provider-custom-name"
                     type="text"
                     value={customProviderName}
-                    onChange={(event) => setCustomProviderName(event.target.value)}
+                    onChange={(event) =>
+                      setCustomProviderName(event.target.value)
+                    }
                     placeholder="Custom"
-                    className="h-10 text-sm"
+                    className="h-9 text-sm"
                   />
                 </div>
               ) : null}
 
               {isCustomProvider ? (
-                <div className="space-y-2">
-                  <Label htmlFor="provider-base-url" className="text-sm font-medium">
-                    Base URL
-                  </Label>
+                <div className="grid grid-cols-[minmax(150px,0.8fr)_minmax(260px,1.2fr)] items-center gap-4 px-4 py-3 max-sm:grid-cols-1">
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <Label
+                      htmlFor="provider-base-url"
+                      className="text-sm font-medium"
+                    >
+                      Base URL
+                    </Label>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      OpenAI-compatible endpoint.
+                    </p>
+                  </div>
                   <Input
                     id="provider-base-url"
                     type="text"
                     value={baseUrlDraft}
                     onChange={(event) => setBaseUrlDraft(event.target.value)}
                     placeholder="https://my-vllm-server.com/v1"
-                    className="h-10 text-sm"
+                    className="h-9 text-sm"
                   />
-                  <p className="text-sm leading-relaxed text-muted-foreground">
-                    Set this to target a custom OpenAI-compatible endpoint.
-                  </p>
                 </div>
               ) : null}
+            </div>
+          </section>
 
-              <div className="space-y-3">
-                <AnimatePresence initial={false} mode="wait">
-                  <motion.div
-                    key={modelsPanelKey}
-                    className="origin-top space-y-3 overflow-hidden"
-                    initial={
-                      reduceMotion
-                        ? false
-                        : { opacity: 0, height: 0 }
+          <section className="overflow-hidden rounded-[8px] border border-border/70 bg-muted/[0.12]">
+            <AnimatePresence initial={false} mode="wait">
+              <motion.div
+                key={modelsPanelKey}
+                className="origin-top overflow-hidden"
+                initial={reduceMotion ? false : { opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={reduceMotion ? undefined : { opacity: 0, height: 0 }}
+                transition={{
+                  height: {
+                    duration: PROVIDER_FORM_DURATION,
+                    ease: PROVIDER_FORM_EASE,
+                  },
+                  opacity: {
+                    duration: reduceMotion ? 0 : 0.14,
+                    ease: PROVIDER_FORM_EASE,
+                  },
+                }}
+              >
+                <div
+                  className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 ${showModelsBody ? "border-border/60 border-b" : ""}`}
+                >
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <Label className="text-sm font-medium">Models</Label>
+                    <p className="text-xs leading-snug text-muted-foreground">
+                      {modelStatusLabel}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className={
+                      availableModels.length > 0
+                        ? "h-7 shrink-0 border-transparent bg-transparent px-2 text-xs text-muted-foreground shadow-none hover:bg-muted/45 hover:text-foreground"
+                        : "h-8 shrink-0 px-3"
                     }
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={
-                      reduceMotion
-                        ? undefined
-                        : { opacity: 0, height: 0 }
+                    disabled={
+                      modelsLoading || mutatingProvider || isManualModelList
                     }
-                    transition={{
-                      height: {
-                        duration: PROVIDER_FORM_DURATION,
-                        ease: PROVIDER_FORM_EASE,
-                      },
-                      opacity: {
-                        duration: reduceMotion ? 0 : 0.14,
-                        ease: PROVIDER_FORM_EASE,
-                      },
-                    }}
+                    title={
+                      isCustomProvider
+                        ? "Custom providers use manual model IDs"
+                        : isCuratedModelList
+                          ? "Full catalog is not fetched for this provider"
+                          : undefined
+                    }
+                    onClick={() => void loadModels()}
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Label className="text-sm font-medium">Models</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-8"
-                        disabled={modelsLoading || mutatingProvider || isManualModelList}
-                        title={
-                          isCustomProvider
-                            ? "Custom providers use manual model IDs"
-                            : isCuratedModelList
-                              ? "Full catalog is not fetched for this provider"
-                              : undefined
-                        }
-                        onClick={() => void loadModels()}
-                      >
-                        {modelsLoading ? (
-                          <>
-                            <Spinner className="mr-2 size-3.5" />
-                            Loading…
-                          </>
-                        ) : (
-                          "Load available models"
-                        )}
-                      </Button>
-                    </div>
-                    {isCustomProvider ? (
-                      <div className="space-y-3">
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                          Enter exact model IDs served by your custom endpoint.
-                        </p>
-                        <div className="space-y-2 pl-1 pr-1 pb-1">
-                          <Label htmlFor="provider-manual-models" className="text-sm font-medium">
-                            Model IDs (one per line or comma-separated)
-                          </Label>
-                          <Textarea
-                            id="provider-manual-models"
-                            value={manualModelIds}
-                            onChange={(event) => setManualModelIds(event.target.value)}
-                            placeholder={"gpt-4o-mini\nQwen/Qwen3-14B"}
-                            rows={5}
-                            className="min-h-[100px] resize-y font-mono text-sm"
-                          />
-                        </div>
-                      </div>
-                    ) : isCuratedModelList ? (
-                      <div className="space-y-3">
-                        <p className="text-sm leading-relaxed text-muted-foreground">
-                          This provider lists a huge number of models. Studio does not download the
-                          full catalog — pick suggestions below and/or enter exact model IDs.
-                        </p>
-                        {availableModels.length > 0 ? (
-                          <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-                            <div className="flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={selectAllModels}
-                              >
-                                Select all suggestions
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 text-xs"
-                                onClick={() => {
-                                  clearModelSelection();
-                                  setManualModelIds("");
-                                }}
-                              >
-                                Clear
-                              </Button>
-                            </div>
-                            <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                              {availableModels.map((model, index) => (
-                                <li key={model} className="flex items-center gap-2.5">
-                                  <Checkbox
-                                    id={`provider-model-curated-${modelsPanelKey}-${index}`}
-                                    checked={selectedModelIds.includes(model)}
-                                    onCheckedChange={() => toggleModel(model)}
-                                  />
-                                  <label
-                                    htmlFor={`provider-model-curated-${modelsPanelKey}-${index}`}
-                                    className="min-w-0 cursor-pointer break-all text-sm leading-tight"
-                                  >
-                                    {model}
-                                  </label>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        ) : null}
-                        <div className="space-y-2 pl-1 pr-1 pb-1">
-                          <Label htmlFor="provider-manual-models" className="text-sm font-medium">
-                            Model IDs (one per line or comma-separated)
-                          </Label>
-                          <Textarea
-                            id="provider-manual-models"
-                            value={manualModelIds}
-                            onChange={(event) => setManualModelIds(event.target.value)}
-                            placeholder={
-                              "openai/gpt-4o-mini\nanthropic/claude-sonnet-4-5\ngoogle/gemini-2.5-flash"
-                            }
-                            rows={5}
-                            className="min-h-[100px] resize-y font-mono text-sm"
-                          />
-                        </div>
-                      </div>
-                    ) : availableModels.length === 0 ? (
-                      <p className="text-sm leading-relaxed text-muted-foreground">
-                        Add your API key, then load models to choose which ones appear in chat.
-                      </p>
+                    {modelsLoading ? (
+                      <>
+                        <Spinner className="mr-2 size-3.5" />
+                        Loading…
+                      </>
+                    ) : availableModels.length > 0 ? (
+                      "Reload models"
                     ) : (
-                      <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
-                        <div className="flex flex-wrap gap-2">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={selectAllModels}
-                          >
-                            Select all
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 text-xs"
-                            onClick={clearModelSelection}
-                          >
-                            Clear
-                          </Button>
+                      "Load available models"
+                    )}
+                  </Button>
+                </div>
+                {isCustomProvider ? (
+                  <div className="space-y-3 px-4 py-4">
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="provider-manual-models"
+                        className="text-sm font-medium"
+                      >
+                        Model IDs (one per line or comma-separated)
+                      </Label>
+                      <Textarea
+                        id="provider-manual-models"
+                        value={manualModelIds}
+                        onChange={(event) =>
+                          setManualModelIds(event.target.value)
+                        }
+                        placeholder={"gpt-4o-mini\nQwen/Qwen3-14B"}
+                        rows={5}
+                        className="min-h-[100px] resize-y font-mono text-sm"
+                      />
+                    </div>
+                  </div>
+                ) : isCuratedModelList ? (
+                  <div className="space-y-3 px-4 py-4">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
+                      This provider lists a huge number of models. Studio does
+                      not download the full catalog. Pick suggestions below
+                      and/or enter exact model IDs.
+                    </p>
+                    {availableModels.length > 0 ? (
+                      <div className="space-y-3 rounded-[8px] border border-border/70 bg-background/50 p-3">
+                        <div className="grid grid-cols-[auto_minmax(220px,330px)_auto] items-center gap-3 max-sm:grid-cols-1">
+                          <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
+                            {availableModelsLabel}
+                          </span>
+                          <Input
+                            id={`provider-model-search-${modelsPanelKey}`}
+                            type="search"
+                            value={modelSearchQuery}
+                            onChange={(event) =>
+                              setModelSearchQuery(event.target.value)
+                            }
+                            placeholder="Search"
+                            aria-label="Search models"
+                            className={modelSearchInputClassName}
+                          />
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 text-xs font-medium text-foreground/80 hover:bg-muted/45"
+                              onClick={selectAllModels}
+                            >
+                              Select all suggestions
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 px-2 text-xs font-medium text-foreground/80 hover:bg-muted/45"
+                              onClick={() => {
+                                clearModelSelection();
+                                setManualModelIds("");
+                              }}
+                            >
+                              Clear
+                            </Button>
+                          </div>
                         </div>
                         <ul className="max-h-48 space-y-2 overflow-y-auto pr-1">
-                          {availableModels.map((model, index) => (
-                            <li key={model} className="flex items-center gap-2.5">
-                              <Checkbox
-                                id={`provider-model-remote-${modelsPanelKey}-${index}`}
-                                checked={selectedModelIds.includes(model)}
-                                onCheckedChange={() => toggleModel(model)}
-                              />
-                              <label
-                                htmlFor={`provider-model-remote-${modelsPanelKey}-${index}`}
-                                className="min-w-0 cursor-pointer break-all text-sm leading-tight"
-                              >
-                                {model}
-                              </label>
+                          {filteredAvailableModels.length === 0 ? (
+                            <li className="py-3 text-xs text-muted-foreground">
+                              No matching models
                             </li>
-                          ))}
+                          ) : (
+                            filteredAvailableModels.map((model, index) => (
+                              <li
+                                key={model}
+                                className="flex cursor-pointer items-center gap-2.5 rounded-[6px] px-1 py-1 hover:bg-muted/35"
+                                onClick={() => toggleModel(model)}
+                              >
+                                <Checkbox
+                                  id={`provider-model-curated-${modelsPanelKey}-${index}`}
+                                  checked={selectedModelIds.includes(model)}
+                                  onCheckedChange={() => toggleModel(model)}
+                                  onClick={(event) => event.stopPropagation()}
+                                />
+                                <span
+                                  className="min-w-0 break-all text-sm leading-tight"
+                                >
+                                  {model}
+                                </span>
+                              </li>
+                            ))
+                          )}
                         </ul>
                       </div>
-                    )}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
+                    ) : null}
+                    <div className="space-y-2">
+                      <Label
+                        htmlFor="provider-manual-models"
+                        className="text-sm font-medium"
+                      >
+                        Model IDs (one per line or comma-separated)
+                      </Label>
+                      <Textarea
+                        id="provider-manual-models"
+                        value={manualModelIds}
+                        onChange={(event) =>
+                          setManualModelIds(event.target.value)
+                        }
+                        placeholder={
+                          "openai/gpt-4o-mini\nanthropic/claude-sonnet-4-5\ngoogle/gemini-2.5-flash"
+                        }
+                        rows={5}
+                        className="min-h-[100px] resize-y font-mono text-sm"
+                      />
+                    </div>
+                  </div>
+                ) : availableModels.length === 0 ? null : (
+                  <div className="space-y-3 px-4 py-4">
+                    <div className="grid grid-cols-[auto_minmax(220px,330px)_auto] items-center gap-3 max-sm:grid-cols-1">
+                      <span className="whitespace-nowrap text-xs font-medium text-muted-foreground">
+                        {availableModelsLabel}
+                      </span>
+                      <Input
+                        id={`provider-model-search-${modelsPanelKey}`}
+                        type="search"
+                        value={modelSearchQuery}
+                        onChange={(event) =>
+                          setModelSearchQuery(event.target.value)
+                        }
+                        placeholder="Search"
+                        aria-label="Search models"
+                        className={modelSearchInputClassName}
+                      />
+                      <div className="flex items-center justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs font-medium text-foreground/80 hover:bg-muted/45"
+                          onClick={selectAllModels}
+                        >
+                          Select all
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 px-2 text-xs font-medium text-foreground/80 hover:bg-muted/45"
+                          onClick={clearModelSelection}
+                        >
+                          Clear
+                        </Button>
+                      </div>
+                    </div>
+                    <ul className="max-h-56 overflow-y-auto rounded-[8px] border border-border/70 bg-background/50">
+                      {filteredAvailableModels.length === 0 ? (
+                        <li className="px-3 py-3 text-xs text-muted-foreground">
+                          No matching models
+                        </li>
+                      ) : (
+                        filteredAvailableModels.map((model, index) => (
+                          <li
+                            key={model}
+                            className="flex cursor-pointer items-center gap-2.5 border-border/60 border-b px-3 py-2 last:border-b-0 hover:bg-muted/35"
+                            onClick={() => toggleModel(model)}
+                          >
+                            <Checkbox
+                              id={`provider-model-remote-${modelsPanelKey}-${index}`}
+                              checked={selectedModelIds.includes(model)}
+                              onCheckedChange={() => toggleModel(model)}
+                              onClick={(event) => event.stopPropagation()}
+                            />
+                            <span
+                              className="min-w-0 break-all text-sm leading-tight"
+                            >
+                              {model}
+                            </span>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </section>
 
-              <div className="mt-auto flex flex-wrap gap-3 pt-2">
-                <Button
-                  type="button"
-                  disabled={registryLoading || syncingProviders || modelsLoading || mutatingProvider}
-                  onClick={() =>
-                    editingProviderId
-                      ? void saveProviderEdits()
-                      : void addProvider()
-                  }
-                >
-                  {editingProviderId ? "Save provider" : "Add provider"}
-                </Button>
-                <Button type="button" variant="outline" onClick={resetForm}>
-                  {editingProviderId ? "Cancel edit" : "Clear"}
-                </Button>
-              </div>
+          <div className="mb-3 flex flex-wrap items-center justify-end gap-3">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                className="h-8"
+                disabled={
+                  registryLoading ||
+                  syncingProviders ||
+                  modelsLoading ||
+                  mutatingProvider
+                }
+                onClick={() =>
+                  editingProviderId
+                    ? void saveProviderEdits()
+                    : void addProvider()
+                }
+              >
+                {editingProviderId ? "Save provider" : "Add provider"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8"
+                onClick={editingProviderId ? closeForm : resetForm}
+              >
+                {editingProviderId ? "Cancel" : "Clear"}
+              </Button>
             </div>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex min-h-0 flex-col gap-6">
+      <header className="flex flex-col gap-1 pr-8">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h1 className="font-heading text-lg font-semibold">Providers</h1>
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Manage external model providers for chat through the Studio proxy.
+          </p>
+        </div>
+      </header>
+
+      <section className="flex max-w-[760px] flex-col gap-2">
+        <div className="overflow-hidden rounded-[10px] border border-border/70 bg-muted/[0.12]">
+          {providers.length === 0 ? (
+            <div className="flex items-center justify-between gap-4 px-3 py-4 max-sm:flex-col max-sm:items-start">
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-sm font-medium text-foreground">
+                  No providers yet
+                </span>
+                <span className="text-xs leading-snug text-muted-foreground">
+                  Add an external provider to use hosted models from chat.
+                </span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={openAddProvider}
+                className="group/add flex w-full items-center justify-between gap-3 border-border/60 border-b px-3 py-2.5 text-left text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/35 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/25 focus-visible:ring-inset"
+              >
+                <span className="flex min-w-0 items-center gap-2 rounded-full border border-border bg-background/50 px-3 py-1.5 transition-colors group-hover/add:border-emerald-500/25 group-hover/add:text-emerald-700 dark:group-hover/add:text-emerald-300">
+                  <HugeiconsIcon
+                    icon={PlusSignIcon}
+                    className="size-4 shrink-0"
+                  />
+                  <span>Add Provider</span>
+                </span>
+                <span className="shrink-0 text-xs tabular-nums text-muted-foreground/90">
+                  {providers.length} providers · {totalModels} models
+                </span>
+              </button>
+              {providers.map((provider) => {
+                const registryEntry = registryByType.get(provider.providerType);
+                const detail =
+                  provider.baseUrl || registryEntry?.base_url || "";
+                const providerLabel =
+                  registryEntry?.display_name ?? provider.providerType;
+                const modelSummary = formatModelSummary(provider.models);
+                return (
+                  <div
+                    key={provider.id}
+                    className="group grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-border/60 border-b px-3 py-3 transition-colors last:border-b-0 hover:bg-muted/35 max-sm:grid-cols-1"
+                  >
+                    <div className="flex min-w-0 gap-3">
+                      <div className="flex size-9 shrink-0 items-center justify-center rounded-[9px] border border-border/70 bg-background/80">
+                        <ApiProviderLogo
+                          providerType={provider.providerType}
+                          className="size-6"
+                          title={provider.name}
+                        />
+                      </div>
+                      <div className="min-w-0 pt-0.5">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-sm font-medium text-foreground">
+                            {provider.name}
+                          </span>
+                          <span className="shrink-0 rounded-[6px] border border-emerald-500/15 bg-emerald-500/8 px-1.5 py-0.5 text-[10px] leading-none text-emerald-700 dark:text-emerald-300">
+                            {provider.models.length}{" "}
+                            {provider.models.length === 1 ? "model" : "models"}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                          <span>{providerLabel}</span>
+                          {detail ? (
+                            <>
+                              {" · "}
+                              <span>{detail}</span>
+                            </>
+                          ) : null}
+                        </div>
+                        <div
+                          className="mt-1 truncate text-[11px] leading-4 text-muted-foreground/80"
+                          title={provider.models.join(", ")}
+                        >
+                          {modelSummary}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center justify-end gap-0.5 text-muted-foreground">
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="size-7 rounded-[8px] hover:text-foreground"
+                        disabled={mutatingProvider}
+                        onClick={() => editProvider(provider)}
+                        title="Edit provider"
+                        aria-label={`Edit ${provider.name}`}
+                      >
+                        <HugeiconsIcon icon={Edit03Icon} className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="size-7 rounded-[8px] hover:text-foreground"
+                        disabled={mutatingProvider}
+                        onClick={() => void testProvider(provider)}
+                        title="Check connection"
+                        aria-label={`Check ${provider.name}`}
+                      >
+                        <HugeiconsIcon icon={Wifi02Icon} className="size-4" />
+                      </Button>
+                      <Button
+                        type="button"
+                        size="icon-sm"
+                        variant="ghost"
+                        className="size-7 rounded-[8px] hover:text-destructive"
+                        disabled={mutatingProvider}
+                        onClick={() => void deleteProvider(provider.id)}
+                        title="Delete provider"
+                        aria-label={`Delete ${provider.name}`}
+                      >
+                        <HugeiconsIcon icon={Delete02Icon} className="size-4" />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+interface ChatProvidersDialogProps extends ChatProvidersSettingsProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+
+export function ChatProvidersDialog({
+  open,
+  onOpenChange,
+  providers,
+  onProvidersChange,
+}: ChatProvidersDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        overlayClassName="bg-black/50 backdrop-blur-sm"
+        className="flex max-h-[90dvh] w-[96vw] flex-col gap-0 overflow-y-auto p-8 sm:max-w-none md:max-w-[44rem]"
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>Providers</DialogTitle>
+          <DialogDescription>
+            Manage external model providers for chat.
+          </DialogDescription>
+        </DialogHeader>
+        <ChatProvidersSettings
+          providers={providers}
+          onProvidersChange={onProvidersChange}
+        />
       </DialogContent>
     </Dialog>
   );

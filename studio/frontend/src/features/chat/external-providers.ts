@@ -168,9 +168,9 @@ function saveRawKeyMap(map: Record<string, string>): void {
   }
 }
 
-export async function saveExternalProviders(
+export function saveExternalProviders(
   providers: ExternalProviderConfig[],
-): Promise<void> {
+): void {
   if (!canUseStorage()) return;
   try {
     localStorage.setItem(EXTERNAL_PROVIDERS_KEY, JSON.stringify(providers));
@@ -223,4 +223,3 @@ export function removeExternalProviderApiKey(providerId: string): void {
     // ignore
   }
 }
-
