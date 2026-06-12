@@ -3883,11 +3883,13 @@ class LlamaCppBackend:
                     "--no-context-shift",
                 ]
 
+                fully_gpu_offloaded = False
                 if use_fit:
                     cmd.extend(["--fit", "on"])
                 elif gpu_indices is not None:
                     # Fits on selected GPU(s) -- offload all layers
                     cmd.extend(["-ngl", "-1"])
+                    fully_gpu_offloaded = True
 
                 cmd.extend(
                     self._ctx_integrity_flags(
@@ -3899,11 +3901,14 @@ class LlamaCppBackend:
                     )
                 )
 
-                # -1 = llama.cpp auto-detect (physical cores). Pass explicitly
-                # so we don't inherit llama-server's internal default, which
-                # has varied (hardware concurrency incl. hyperthreads on some
-                # builds).
-                cmd.extend(["--threads", str(n_threads if n_threads is not None else -1)])
+                # -1 = llama.cpp auto-detect (physical cores). Windows +
+                # full offload caps at 2 to stop OpenMP spin-wait burning
+                # CPU during GPU decode. #5692.
+                if sys.platform == "win32" and fully_gpu_offloaded:
+                    threads_arg = 2
+                else:
+                    threads_arg = n_threads if n_threads is not None else -1
+                cmd.extend(["--threads", str(threads_arg)])
 
                 # Enable Jinja chat template rendering
                 cmd.extend(["--jinja"])
@@ -4045,9 +4050,26 @@ class LlamaCppBackend:
                 else:
                     self._api_key = None
 
-                # User pass-through args go last so llama.cpp's last-wins parsing
-                # lets the user override Studio's auto-set flags. Already
-                # validated by the route via validate_extra_args().
+                # Windows + full offload: disable KV checkpoints (WDDM/PCI-E
+                # overhead). CPU/partial offload keeps prompt caching. #5692.
+                if sys.platform == "win32" and fully_gpu_offloaded:
+                    cmd.extend(
+                        [
+                            "--cache-ram",
+                            "0",
+                            "--ctx-checkpoints",
+                            "0",
+                            "--no-cache-prompt",
+                            "--checkpoint-every-n-tokens",
+                            "-1",
+                        ]
+                    )
+
+                # User-supplied pass-through args go last so llama.cpp's
+                # last-wins flag parsing lets the user override Studio's
+                # auto-set tier-2 flags (e.g. --cache-type-k, --spec-type).
+                # The route layer has already validated this list against
+                # the managed-flag denylist via validate_extra_args().
                 if extra_args:
                     cmd.extend(str(a) for a in extra_args)
                     logger.info(f"Appending user extra args to llama-server: {list(extra_args)}")
@@ -4060,9 +4082,6 @@ class LlamaCppBackend:
                 logger.info(f"Starting llama-server: {' '.join(_log_cmd)}")
 
                 # Library paths so llama-server finds its shared libs and CUDA DLLs.
-                import os
-                import sys
-
                 env = child_env_without_native_path_secret()
                 binary_dir = str(Path(binary).parent)
 
@@ -4100,6 +4119,13 @@ class LlamaCppBackend:
                         _rocblas_lib = os.path.join(_hip_path, "bin", "rocblas", "library")
                         if os.path.isdir(_rocblas_lib):
                             env.setdefault("ROCBLAS_TENSILE_LIBPATH", _rocblas_lib)
+
+                    # Windows + full offload: PASSIVE OMP + 2 threads stop
+                    # spin-wait burning CPU. CPU/partial offload keeps
+                    # default OMP parallelism. #5692.
+                    if fully_gpu_offloaded:
+                        env.setdefault("OMP_WAIT_POLICY", "PASSIVE")
+                        env.setdefault("OMP_NUM_THREADS", "2")
                 else:
                     # Linux: LD_LIBRARY_PATH for shared libs next to the binary
                     # plus CUDA runtime libs (libcudart, libcublas, etc.)
