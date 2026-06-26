@@ -52,6 +52,14 @@ def test_default_generation_params_specificity_ordering():
     )
 
 
+def test_default_generation_params_matches_whole_segments():
+    # Avoid treating future/similarly-named models as known defaults just because
+    # their repo id contains a key as a raw substring.
+    assert default_generation_params("black-forest-labs/FLUX.10-dev") == (9, 0.0)
+    assert default_generation_params("some/prefixflux.1suffix") == (9, 0.0)
+    assert default_generation_params("black-forest-labs/FLUX.1-dev") == (28, 3.5)
+
+
 def test_default_generation_params_falls_back_to_base_repo():
     # A local-path load: repo_id is a filesystem path that names no model, so the
     # resolved base repo is what identifies it (and distinguishes dev from schnell).
