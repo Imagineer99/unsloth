@@ -801,7 +801,9 @@ _MTP_MIN_SIZE_B = 3.0
 # Cap total GPU occupancy at this fraction of the card. The fit reserves an
 # absolute (1 - frac) * total per GPU when total VRAM is known, else a fraction
 # of free (see _fit_context_to_vram), plus a byte-accurate MTP draft reserve.
-_CTX_FIT_VRAM_FRACTION = 0.95
+# Keep this below the pin fraction so auto context sizing leaves room for CUDA
+# runtime overhead, compute buffers, and fragmentation on tight VRAM tiers.
+_CTX_FIT_VRAM_FRACTION = 0.85
 
 # Apple unified memory is shared with the OS, so tighter than VRAM. Matches the
 # 0.85 MLX uses in mlx_inference.py (_configure_memory_limits); not kept in sync.
@@ -2411,9 +2413,10 @@ class LlamaCppBackend:
             prev = curr
 
     # Free-VRAM fraction at which Studio pins the GPU directly instead of
-    # deferring to ``--fit on``. 5% headroom covers CUDA context + compute
-    # buffers; 0.90 dropped 91-94% fits to CPU offload (#5106).
-    _GPU_PIN_VRAM_FRACTION = 0.95
+    # deferring to ``--fit on``. 10% headroom covers CUDA context, compute
+    # buffers, fragmentation, and estimation error. The fork's --fit on still
+    # catches the truly-too-large case.
+    _GPU_PIN_VRAM_FRACTION = 0.90
 
     # Fallback per-device tensor-mode compute buffer (MiB), used only when GGUF
     # dims are unavailable so _estimate_compute_buffer_bytes (the primary, derived
@@ -2977,7 +2980,10 @@ class LlamaCppBackend:
 
         Budget caps occupancy at ``_CTX_FIT_VRAM_FRACTION`` of the card: an
         absolute ``free - (1 - frac) * total`` when ``total_mib`` is given, else
-        ``free * frac``. Weights alone over budget returns ``requested_ctx``.
+        ``free * frac``. This is tighter than ``_GPU_PIN_VRAM_FRACTION`` because
+        over-promising context can OOM at runtime, while conservative pinning
+        only defers to ``--fit on``. Weights alone over budget returns
+        ``requested_ctx``.
 
         ``kv_on_gpu`` mirrors ``--kv-offload`` (default on); when False the KV
         cache lives in CPU RAM and the requested context is honored verbatim.
@@ -5200,6 +5206,7 @@ class LlamaCppBackend:
                         )
                         use_fit = False
                     elif gpus and self._can_estimate_kv() and effective_ctx > 0:
+                        _fit_fraction = max(0.0, _CTX_FIT_VRAM_FRACTION - _flat_mtp_reserve)
                         # Compute the largest hardware-aware cap from the model's
                         # native context across all usable GPU subsets (for UI
                         # bounds), independent of the currently requested context.
@@ -5207,19 +5214,16 @@ class LlamaCppBackend:
                         if native_ctx_for_cap > 0:
                             ranked_for_cap = sorted(
                                 gpus,
-                                key = lambda g: _gpu_usable(
-                                    g, _CTX_FIT_VRAM_FRACTION - _flat_mtp_reserve
-                                ),
+                                key = lambda g: _gpu_usable(g, _fit_fraction),
                                 reverse = True,
                             )
                             best_cap = 0
-                            _cap_fraction = _CTX_FIT_VRAM_FRACTION - _flat_mtp_reserve
                             for n_gpus in range(1, len(ranked_for_cap) + 1):
                                 subset = ranked_for_cap[:n_gpus]
                                 # Per-GPU-consistent pool budget (fixes mixed
                                 # known/unknown totals); pass it as an absolute
                                 # budget so the fit and the check below agree.
-                                pool_budget = _pool_budget_mib(subset, _cap_fraction)
+                                pool_budget = _pool_budget_mib(subset, _fit_fraction)
                                 _ms = _subset_model_size(n_gpus)
                                 capped = self._fit_context_to_vram(
                                     native_ctx_for_cap,
@@ -5241,9 +5245,10 @@ class LlamaCppBackend:
                             if best_cap > 0:
                                 max_available_ctx = best_cap
                             else:
-                                # Weights exceed 90% of every GPU subset, so no
-                                # context fits. Anchor the UI "safe zone" at 4096
-                                # so the slider warns above the fallback.
+                                # Weights exceed the context-fit budget of every
+                                # GPU subset, so no context fits. Anchor the UI
+                                # "safe zone" at 4096 so the slider warns above
+                                # the fallback.
                                 max_available_ctx = min(4096, native_ctx_for_cap)
 
                         if explicit_ctx:
@@ -5266,20 +5271,21 @@ class LlamaCppBackend:
                             )
                             # No silent shrink: effective_ctx stays == requested_ctx.
                         else:
-                            # Auto context: prefer fewer GPUs, cap to fit. Same
-                            # headroom threshold as _select_gpus (#5106). Rank by the
-                            # active pin fraction so the order matches the fit budget.
+                            # Auto context: prefer fewer GPUs, then cap to the
+                            # tighter context-fit budget. The final pin threshold is
+                            # looser, but fitting against it can over-advertise ctx
+                            # on tight VRAM tiers and reintroduce load-time spill.
                             pin_fraction = _pin_fraction
                             ranked = sorted(
-                                gpus, key = lambda g: _gpu_usable(g, pin_fraction), reverse = True
+                                gpus, key = lambda g: _gpu_usable(g, _fit_fraction), reverse = True
                             )
                             for n_gpus in range(1, len(ranked) + 1):
                                 subset = ranked[:n_gpus]
-                                pool_budget = _pool_budget_mib(subset, pin_fraction)
+                                fit_budget = _pool_budget_mib(subset, _fit_fraction)
                                 _ms = _subset_model_size(n_gpus)
                                 capped = self._fit_context_to_vram(
                                     effective_ctx,
-                                    pool_budget,
+                                    fit_budget,
                                     _ms,
                                     cache_type_kv,
                                     n_parallel = n_parallel,
@@ -5292,15 +5298,16 @@ class LlamaCppBackend:
                                     capped, cache_type_kv, n_parallel = n_parallel
                                 )
                                 footprint_mib = (_ms + kv + _mtp_bytes(capped)) / (1024 * 1024)
-                                if footprint_mib <= pool_budget:
+                                if footprint_mib <= fit_budget:
                                     effective_ctx = capped
                                     gpu_indices = sorted(idx for idx, _ in subset)
                                     use_fit = False
                                     break
                             else:
                                 # Native ctx doesn't fit. Drop to 4096 and
-                                # re-check before --fit on: a model overflowing
-                                # at 131k may pin fine with a 4096 KV (#5106).
+                                # re-check before --fit on against the same fit
+                                # budget: a model overflowing at 131k may pin
+                                # fine with a 4096 KV.
                                 effective_ctx = min(4096, effective_ctx)
                                 if effective_ctx > 0:
                                     for n_gpus in range(1, len(ranked) + 1):
@@ -5315,7 +5322,7 @@ class LlamaCppBackend:
                                             + kv
                                             + _mtp_bytes(effective_ctx)
                                         ) / (1024 * 1024)
-                                        if footprint_mib <= _pool_budget_mib(subset, pin_fraction):
+                                        if footprint_mib <= _pool_budget_mib(subset, _fit_fraction):
                                             gpu_indices = sorted(idx for idx, _ in subset)
                                             use_fit = False
                                             break

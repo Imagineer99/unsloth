@@ -561,13 +561,26 @@ class TestExtraArgsMtpDetection:
         assert "_mtp_kv_unsized" in compact
         assert "mtp_overhead_fnisNoneor_mtp_kv_unsized" in compact
 
-    def test_load_model_ranks_subsets_by_active_pin_fraction(self):
-        # Auto/cap subset ranking uses the active budget fraction (lowered by the
-        # flat MTP reserve), not a hard-coded 0.95, so the ranking order matches
-        # the fit budget that is then tested (Finding G4).
+    def test_load_model_ranks_auto_subsets_by_fit_fraction(self):
+        # Auto/cap subset ranking uses the active fit budget fraction (lowered by
+        # the flat MTP reserve), not the looser pin fraction, so mixed/free GPU
+        # prefixes are tried in the same order the fit budget admits them.
         compact = "".join(inspect.getsource(LlamaCppBackend.load_model).split())
-        assert "_gpu_usable(g,pin_fraction)" in compact
-        assert "_gpu_usable(g,_CTX_FIT_VRAM_FRACTION-_flat_mtp_reserve)" in compact
+        assert (
+            "ranked=sorted(gpus,key=lambdag:_gpu_usable(g,_fit_fraction),reverse=True)" in compact
+        )
+        assert "_gpu_usable(g,_fit_fraction)" in compact
+
+    def test_auto_context_uses_tighter_fit_budget_not_pin_budget(self):
+        # Auto context may pin directly only after fitting against the tighter
+        # context budget. Using the looser pin budget here can preserve a native
+        # context when flat-MTP weights sit above the 80% fit budget but below the
+        # 85% pin budget, reintroducing the spill this PR prevents.
+        compact = "".join(inspect.getsource(LlamaCppBackend.load_model).split())
+        assert "_fit_fraction=max(0.0,_CTX_FIT_VRAM_FRACTION-_flat_mtp_reserve)" in compact
+        assert "fit_budget=_pool_budget_mib(subset,_fit_fraction)" in compact
+        assert "footprint_mib<=fit_budget" in compact
+        assert "_pool_budget_mib(subset,_fit_fraction)" in compact
 
     @pytest.mark.parametrize(
         "args,expected",
