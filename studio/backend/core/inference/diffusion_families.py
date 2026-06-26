@@ -106,6 +106,54 @@ def resolve_base_repo(fam: DiffusionFamily, base_repo: Optional[str]) -> str:
     return base or fam.base_repo
 
 
+# Default (steps, guidance) per model for callers that can't pass them — namely
+# the OpenAI /v1/images/generations endpoint, whose spec has no step/guidance
+# knobs. Distilled "turbo/schnell" models want few steps and no CFG; the full
+# "dev" models want more steps and real CFG. Matched by repo-id/path segments,
+# most specific first — the same values as the UI's MODEL_DEFAULTS table
+# (studio/frontend/src/features/images/images-page.tsx); keep the two in sync.
+_GENERATION_DEFAULTS: tuple[tuple[str, int, float], ...] = (
+    ("z-image-turbo", 9, 0.0),
+    ("flux.1-schnell", 4, 0.0),
+    ("flux.1", 28, 3.5),
+    ("flux.2-klein", 4, 0.0),
+    ("qwen-image", 20, 4.0),
+    ("z-image", 20, 4.0),
+)
+# Unrecognised model: distilled few-step / no-CFG shape, matching the UI fallback.
+_GENERATION_DEFAULT_FALLBACK = (9, 0.0)
+
+
+def default_generation_params(*identifiers: Optional[str]) -> tuple[int, float]:
+    """Default ``(steps, guidance)`` for a loaded model. The first identifier that
+    names a known model wins (the repo id, then the resolved base repo), so a
+    local-path load — whose repo id is just a filesystem path that may not name
+    the model — still resolves via its base repo. Within an identifier, keys are
+    matched by delimiter-separated segments, most specific first."""
+    for identifier in identifiers:
+        needle = _identifier_segments(identifier)
+        for key, steps, guidance in _GENERATION_DEFAULTS:
+            if _contains_segments(needle, _identifier_segments(key)):
+                return steps, guidance
+    return _GENERATION_DEFAULT_FALLBACK
+
+
+def _identifier_segments(identifier: Optional[str]) -> tuple[str, ...]:
+    text = (identifier or "").lower()
+    for char in "-_./":
+        text = text.replace(char, " ")
+    return tuple(text.split())
+
+
+def _contains_segments(segments: tuple[str, ...], needle: tuple[str, ...]) -> bool:
+    if not needle or len(needle) > len(segments):
+        return False
+    return any(
+        segments[i : i + len(needle)] == needle
+        for i in range(len(segments) - len(needle) + 1)
+    )
+
+
 def resolve_local_gguf_child(repo_root: Path, gguf_filename: str) -> Path:
     """Resolve ``gguf_filename`` to a file under ``repo_root``, rejecting escapes.
 
