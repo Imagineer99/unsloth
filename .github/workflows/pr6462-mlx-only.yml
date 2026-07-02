@@ -1,0 +1,167 @@
+# Disposable PR #6462 MLX-only validation workflow. Delete after validation.
+
+name: PR 6462 MLX-only validation
+
+on:
+  push:
+    branches:
+      - feat/pr6462-mlx-only-ci
+  workflow_dispatch:
+
+concurrency:
+  group: pr-6462-mlx-only-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  mlx:
+    name: MLX public trainer API
+    runs-on: macos-14
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install MLX deps
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install \
+            'python-multipart==0.0.27' \
+            'aiofiles==25.1.0' \
+            'sqlalchemy==2.0.49' \
+            'cryptography==48.0.0' \
+            'pyyaml==6.0.3' \
+            'jinja2==3.1.6' \
+            'mammoth==1.12.0' \
+            'unpdf==1.0.0' \
+            'requests==2.33.1' \
+            'typer==0.25.1' \
+            'numpy==2.4.4' \
+            'pytest==9.0.3' \
+            'pytest-asyncio==1.3.0' \
+            'httpx==0.28.1'
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple \
+            'torch==2.10.0'
+          for attempt in 1 2 3; do
+            if pip install "unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::pip install unsloth_zoo failed after 3 attempts"
+              exit 1
+            fi
+            delay=$((5 * attempt))
+            echo "::warning::unsloth_zoo install failed (attempt $attempt/3), retrying in ${delay}s..."
+            sleep "$delay"
+          done
+          pip install -e . --no-deps
+
+      - name: Verify real Apple Silicon MLX
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import platform
+          assert platform.system() == "Darwin", platform.system()
+          assert platform.machine() == "arm64", platform.machine()
+          import unsloth
+          assert unsloth._IS_MLX is True, f"expected _IS_MLX=True, got {unsloth._IS_MLX}"
+          assert getattr(unsloth, "DEVICE_TYPE", None) == "mlx", getattr(unsloth, "DEVICE_TYPE", None)
+          print("OK: real Apple Silicon MLX environment")
+          PY
+
+      - name: Public trainer API tests
+        env:
+          UNSLOTH_COMPILE_DISABLE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -v --tb=short tests/python/test_mlx_public_trainer_api.py
+
+      - name: MLX dispatch tests
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio
+          UNSLOTH_COMPILE_DISABLE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest -v --tb=short \
+            tests/studio/test_hardware_dispatch_matrix.py \
+            tests/studio/test_is_mlx_dispatch_gate.py \
+            tests/studio/test_mlx_training_worker_behaviors.py
+
+      - name: Real MLX train and save
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN || '' }}
+          UNSLOTH_COMPILE_DISABLE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p mlx_workdir
+          python tests/studio/run_real_mlx_smoke.py train \
+            --workdir "$PWD/mlx_workdir"
+
+      - name: Reload LoRA in fresh process
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN || '' }}
+          UNSLOTH_COMPILE_DISABLE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/studio/run_real_mlx_smoke.py reload \
+            --format lora \
+            --dir "$PWD/mlx_workdir/lora"
+
+      - name: Reload merged_16bit in fresh process
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN || '' }}
+          UNSLOTH_COMPILE_DISABLE: "1"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/studio/run_real_mlx_smoke.py reload \
+            --format merged \
+            --dir "$PWD/mlx_workdir/merged_16bit"
+
+      - name: Reload GGUF via llama-cli in fresh process
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python -c "import json,sys; m=json.load(open('mlx_workdir/train_metrics.json')); sys.exit(0 if m.get('gguf_supported') else 1)"; then
+            python tests/studio/run_real_mlx_smoke.py reload \
+              --format gguf \
+              --dir "$PWD/mlx_workdir/gguf"
+          else
+            REASON=$(python -c "import json; m=json.load(open('mlx_workdir/train_metrics.json')); print(m.get('gguf_skip_reason') or 'unknown')")
+            echo "::warning title=GGUF round-trip skipped::${REASON}"
+            echo "GGUF export was skipped during the train phase. Reason:"
+            echo "  ${REASON}"
+          fi
+
+      - name: Aggregate MLX metrics
+        if: always()
+        shell: bash
+        run: |
+          for f in mlx_workdir/train_metrics.json \
+                   mlx_workdir/lora_reload_metrics.json \
+                   mlx_workdir/merged_reload_metrics.json \
+                   mlx_workdir/gguf_reload_metrics.json; do
+            echo "=== $f ==="
+            cat "$f" 2>/dev/null || echo "(missing)"
+            echo
+          done
