@@ -87,7 +87,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p mlx_status
+          set +e
           python -m pytest -v --tb=short tests/python/test_mlx_public_trainer_api.py
+          rc=$?
+          set -e
+          echo "$rc" > mlx_status/public_trainer_api.rc
+          exit 0
 
       - name: MLX dispatch tests
         env:
@@ -96,10 +102,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p mlx_status
+          set +e
           python -m pytest -v --tb=short \
             tests/studio/test_hardware_dispatch_matrix.py \
             tests/studio/test_is_mlx_dispatch_gate.py \
             tests/studio/test_mlx_training_worker_behaviors.py
+          rc=$?
+          set -e
+          echo "$rc" > mlx_status/dispatch.rc
+          exit 0
 
       - name: Real MLX train and save
         env:
@@ -165,3 +177,24 @@ jobs:
             cat "$f" 2>/dev/null || echo "(missing)"
             echo
           done
+
+      - name: Fail if targeted checks failed
+        if: always()
+        shell: bash
+        run: |
+          failed=0
+          for name in public_trainer_api dispatch; do
+            rc_file="mlx_status/${name}.rc"
+            if [ ! -f "$rc_file" ]; then
+              echo "::error::Missing status file: $rc_file"
+              failed=1
+              continue
+            fi
+            rc=$(cat "$rc_file")
+            echo "$name rc=$rc"
+            if [ "$rc" != "0" ]; then
+              echo "::error::$name failed with exit code $rc"
+              failed=1
+            fi
+          done
+          exit "$failed"
