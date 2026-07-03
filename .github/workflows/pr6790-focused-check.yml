@@ -45,7 +45,7 @@ jobs:
           python -m pytest -q --tb=short \
             tests/test_load_progress_ready_fraction.py \
             tests/test_llama_cpp_wait_for_health.py::TestWaitForHealthResilience::test_timeout_records_marker_for_classification \
-            tests/test_llama_cpp_start_failure_classification.py::TestUnsupportedNonDiffusionArchitecture::test_health_timeout_names_probe_not_generic
+            tests/test_llama_cpp_start_failure_classification.py::TestOllamaAndFallback::test_health_timeout_names_probe_not_generic
 
       - name: Direct ready/monotonic progress probe
         working-directory: studio/backend
