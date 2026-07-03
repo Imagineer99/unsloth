@@ -1,0 +1,125 @@
+# Disposable focused validation for PR #6738. Delete after review.
+
+name: PR 6738 GRPO packing safety check
+
+on:
+  push:
+    branches:
+      - fix/pr-6738-rerun2-ci
+  workflow_dispatch:
+
+concurrency:
+  group: pr-6738-focused-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  packing-safety:
+    name: GRPO packing release and budget safety
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: Check no-grad packing has a pre-forward mini-batch token cap
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          src = Path("unsloth/models/rl_replacements.py").read_text()
+          default_on = 'os.environ.get("UNSLOTH_GRPO_SEQ_PACKING", "1")' in src
+          assert default_on, "sequence packing is not default-on; this check is only for the default-on PR shape"
+
+          flat_idx = src.index("_pk_flat = input_ids[_pk_keep].unsqueeze(0)")
+          forward_idx = src.index("_pk_hidden = unwrapped_model(", flat_idx)
+          guard_start = src.rfind("if (", flat_idx, forward_idx)
+          guard = src[guard_start:forward_idx]
+
+          cap_terms = (
+              "max_tokens",
+              "token_budget",
+              "mini_batch",
+              "unsloth_grpo_mini_batch",
+              "num_items_in_batch",
+              "_pk_cap",
+              "_pk_budget",
+              "_pk_token_limit",
+          )
+          has_cap_term = any(term in guard for term in cap_terms)
+          compares_total_tokens = any(
+              op in guard
+              for op in (
+                  "_pk_T <=",
+                  "_pk_T <",
+                  "_pk_T >= _pk_cap",
+                  "_pk_T > _pk_cap",
+                  "_pk_T >= _pk_budget",
+                  "_pk_T > _pk_budget",
+              )
+          )
+
+          assert has_cap_term and compares_total_tokens, (
+              "The packed no-grad path still builds/runs one flattened full-batch forward before "
+              "checking an existing mini-batch/token budget. Add a pre-forward cap or pack inside "
+              "the existing chunks before leaving this default-on. Guard was:\n" + guard
+          )
+          print("PASS: no-grad packed forward is capped before the full flattened forward")
+          PY
+
+      - name: Check paired zoo PR has the masked-column loss guard
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import urllib.request
+
+          url = "https://raw.githubusercontent.com/unslothai/unsloth-zoo/7e613586fb16d369413520d602bff18ee0efe9ab/unsloth_zoo/rl_replacements.py"
+          text = urllib.request.urlopen(url, timeout=30).read().decode()
+          body = text[text.index("def grpo_compute_loss"):text.index("def grpo_accumulated_loss")]
+          for needle in (
+              "exp(new - old) and exp(ref - new)",
+              "torch.where(_keep, new",
+          ):
+              assert needle in body, f"zoo PR #840 missing masked-column guard needle: {needle}"
+          print("PASS: paired zoo PR #840 contains the masked-column NaN guard")
+          PY
+
+      - name: Check packaged unsloth_zoo safety is guarded at runtime
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          src = Path("unsloth/models/rl_replacements.py").read_text()
+          for needle in (
+              '_pk_guard = getattr(unwrapped_model, "_unsloth_zoo_masked_col_guard", None)',
+              "from unsloth_zoo.rl_replacements import RL_REPLACEMENTS as _pk_RL",
+              "import inspect as _pk_inspect",
+              "_pk_inspect.getsource",
+              "grpo_compute_loss",
+              "torch.where(_keep, new",
+              "unwrapped_model._unsloth_zoo_masked_col_guard = _pk_guard",
+              "_pk_enabled = _pk_guard",
+          ):
+              assert needle in src, f"missing runtime zoo guard needle: {needle}"
+
+          guard_idx = src.index("_pk_enabled = _pk_guard")
+          flat_idx = src.index("_pk_flat = input_ids[_pk_keep].unsqueeze(0)")
+          assert guard_idx < flat_idx, "zoo guard must disable packing before building the flattened packed forward"
+
+          # pyproject still permits released unsloth_zoo>=2026.6.7. That is acceptable only
+          # because the packed path now detects the missing zoo#840 loss guard and falls back.
+          pyproject = Path("pyproject.toml").read_text()
+          assert '"unsloth_zoo>=2026.6.7"' in pyproject
+          print("PASS: default-on no-grad packing is disabled when the installed zoo loss lacks the masked-column guard")
+          PY
