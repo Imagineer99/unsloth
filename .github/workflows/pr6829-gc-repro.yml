@@ -1,0 +1,250 @@
+# Disposable PR #6829 gradient-checkpointing validation workflow. Delete after validation.
+
+name: PR 6829 GC TrainingArguments validation
+
+on:
+  push:
+    branches:
+      - fix/pr-6829-rerun-ci
+  workflow_dispatch:
+
+concurrency:
+  group: pr-6829-gc-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gc-regression:
+    name: GC TrainingArguments regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: Verify recorded Unsloth GC mode wins over TrainingArguments
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import functools
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          root = Path.cwd()
+          rl_path = root / "unsloth/models/rl.py"
+          rl_source = rl_path.read_text()
+          rl_tree = ast.parse(rl_source)
+          template_node = next(
+              node for node in rl_tree.body
+              if (
+                  isinstance(node, ast.Assign)
+                  and any(isinstance(target, ast.Name) and target.id == "RLTrainer_replacement" for target in node.targets)
+              )
+          )
+          template_source = ast.literal_eval(template_node.value)
+          prepare_start = template_source.index("def prepare_for_training_mode")
+          prepare_end = template_source.index("\npass\n\ntorch_compile_options", prepare_start)
+          prepare_source = template_source[prepare_start:prepare_end]
+          namespace = {
+              "functools": functools,
+              "_unsloth_reset_stray_compile_cache": lambda self: None,
+              "reset_unsloth_gradient_checkpointing_buffers": lambda: None,
+          }
+          exec(prepare_source, namespace)
+          prepare_for_training_mode = namespace["prepare_for_training_mode"]
+
+          missing = object()
+
+          class DummyModel:
+              def __init__(self, stored_gc=missing, training=True):
+                  self.training = training
+                  self.calls = []
+                  if stored_gc is not missing:
+                      self._unsloth_gradient_checkpointing = stored_gc
+
+              def for_training(self, use_gradient_checkpointing=True):
+                  self.calls.append(("for_training", use_gradient_checkpointing))
+                  self.training = True
+
+              def for_inference(self):
+                  self.calls.append(("for_inference", None))
+                  self.training = False
+
+          class DummyTrainer:
+              def __init__(self, model, args_gc):
+                  self.model = model
+                  self.args = SimpleNamespace(gradient_checkpointing=args_gc)
+                  self._unsloth_training_completed = False
+
+          def train_body(self):
+              self.model.calls.append(("body", self.model.training))
+              return "trained"
+
+          wrapped = prepare_for_training_mode(train_body)
+
+          # Regression shape: a model configured with Unsloth GC must keep that mode
+          # even when plain TrainingArguments defaults gradient_checkpointing=False.
+          model = DummyModel(stored_gc="unsloth", training=True)
+          trainer = DummyTrainer(model, args_gc=False)
+          assert wrapped(trainer) == "trained"
+          assert model.calls[0] == ("for_training", "unsloth"), model.calls
+          assert model.calls[-1] == ("for_training", "unsloth"), model.calls
+
+          # A recorded False is also intentional and must not be replaced by args=True.
+          model = DummyModel(stored_gc=False, training=True)
+          trainer = DummyTrainer(model, args_gc=True)
+          wrapped(trainer)
+          assert model.calls[0] == ("for_training", False), model.calls
+
+          # Explicit None is accepted by Unsloth's GC setup path. It must be
+          # restored verbatim instead of being treated as "attribute missing".
+          model = DummyModel(stored_gc=None, training=True)
+          trainer = DummyTrainer(model, args_gc=True)
+          wrapped(trainer)
+          assert model.calls[0] == ("for_training", None), model.calls
+
+          # Backward-compatible fallback: if old models lack the recorded mode,
+          # TrainingArguments still drives the setting.
+          model = DummyModel(training=True)
+          trainer = DummyTrainer(model, args_gc=False)
+          wrapped(trainer)
+          assert model.calls[0] == ("for_training", False), model.calls
+
+          # Negative proof of the original bug shape.
+          old_args_choice = getattr(SimpleNamespace(gradient_checkpointing=False), "gradient_checkpointing", True)
+          assert old_args_choice is False
+          assert model.calls[0] == ("for_training", False)
+          print("PASS: prepare_for_training_mode preserves recorded Unsloth GC mode and falls back only when absent")
+          PY
+
+      - name: Verify wrapper tolerates missing model attribute
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          import functools
+          from pathlib import Path
+          from types import SimpleNamespace
+
+          rl_source = Path("unsloth/models/rl.py").read_text()
+          rl_tree = ast.parse(rl_source)
+          template_node = next(
+              node for node in rl_tree.body
+              if (
+                  isinstance(node, ast.Assign)
+                  and any(
+                      isinstance(target, ast.Name) and target.id == "RLTrainer_replacement"
+                      for target in node.targets
+                  )
+              )
+          )
+          template_source = ast.literal_eval(template_node.value)
+          prepare_start = template_source.index("def prepare_for_training_mode")
+          prepare_end = template_source.index("\npass\n\ntorch_compile_options", prepare_start)
+          prepare_source = template_source[prepare_start:prepare_end]
+          namespace = {
+              "functools": functools,
+              "_unsloth_reset_stray_compile_cache": lambda self: None,
+              "reset_unsloth_gradient_checkpointing_buffers": lambda: None,
+          }
+          exec(prepare_source, namespace)
+          wrapped = namespace["prepare_for_training_mode"](lambda self: "trained")
+
+          class TrainerWithoutModel:
+              args = SimpleNamespace(gradient_checkpointing=True)
+              _unsloth_training_completed = False
+
+          assert wrapped(TrainerWithoutModel()) == "trained"
+          print("PASS: prepare_for_training_mode tolerates trainers without self.model")
+          PY
+
+      - name: Verify all changed source paths carry the recorded GC mode
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          checks = {
+              "unsloth/models/llama.py": [
+                  "model._unsloth_gradient_checkpointing = use_gradient_checkpointing",
+              ],
+              "unsloth/models/vision.py": [
+                  "model._unsloth_gradient_checkpointing = use_gradient_checkpointing",
+              ],
+              "unsloth/models/rl.py": [
+                  "_model = getattr(self, 'model', None)",
+                  "if hasattr(_model, '_unsloth_gradient_checkpointing'):",
+                  "use_gc = _model._unsloth_gradient_checkpointing",
+                  "use_gc = getattr(self.args, 'gradient_checkpointing', True)",
+                  "_use_gc = model._unsloth_gradient_checkpointing if hasattr(model, '_unsloth_gradient_checkpointing') else getattr(args, 'gradient_checkpointing', True)",
+              ],
+              "unsloth/models/rl_replacements.py": [
+                  "_use_gc = self.model._unsloth_gradient_checkpointing if hasattr(self.model, '_unsloth_gradient_checkpointing') else getattr(self.args, 'gradient_checkpointing', True)",
+              ],
+          }
+          for filename, needles in checks.items():
+              text = Path(filename).read_text()
+              for needle in needles:
+                  assert needle in text, f"{filename} missing {needle!r}"
+
+          rl = Path("unsloth/models/rl.py").read_text()
+          assert "model.for_training(use_gradient_checkpointing=getattr(args, 'gradient_checkpointing', True))" not in rl
+          repl = Path("unsloth/models/rl_replacements.py").read_text()
+          assert "self.model.for_training(use_gradient_checkpointing=getattr(self.args, 'gradient_checkpointing', True))" not in repl
+          print("PASS: source paths persist and restore the recorded Unsloth GC mode")
+          PY
+
+      - name: Verify patch_peft_model records GC mode for loaded and pass-through adapters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          llama_source = Path("unsloth/models/llama.py").read_text()
+          tree = ast.parse(llama_source)
+
+          class Finder(ast.NodeVisitor):
+              def __init__(self):
+                  self.functions = []
+
+              def visit_FunctionDef(self, node):
+                  if node.name == "patch_peft_model":
+                      self.functions.append(node)
+                  self.generic_visit(node)
+
+          finder = Finder()
+          finder.visit(tree)
+          assert finder.functions, "patch_peft_model not found in llama.py"
+          patch_fn = finder.functions[0]
+          patch_source = ast.get_source_segment(llama_source, patch_fn)
+
+          assert "model._unsloth_gradient_checkpointing = use_gradient_checkpointing" in patch_source, (
+              "patch_peft_model should record the configured GC mode so loaded adapters "
+              "patched via loader.py and already-wrapped pass-through adapters do not fall "
+              "back to TrainingArguments.gradient_checkpointing"
+          )
+
+          for node in ast.walk(patch_fn):
+              if isinstance(node, ast.Return) and isinstance(node.value, ast.Name) and node.value.id == "model":
+                  prefix = patch_source[: patch_source.index(ast.get_source_segment(llama_source, node))]
+                  assert "_unsloth_gradient_checkpointing" in prefix, (
+                      "patch_peft_model returns model before recording _unsloth_gradient_checkpointing"
+                  )
+
+          print("PASS: patch_peft_model records GC mode before loaded/pass-through adapter returns")
+          PY
