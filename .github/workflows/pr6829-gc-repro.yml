@@ -105,6 +105,13 @@ jobs:
           wrapped(trainer)
           assert model.calls[0] == ("for_training", False), model.calls
 
+          # Explicit None is accepted by Unsloth's GC setup path. It must be
+          # restored verbatim instead of being treated as "attribute missing".
+          model = DummyModel(stored_gc=None, training=True)
+          trainer = DummyTrainer(model, args_gc=True)
+          wrapped(trainer)
+          assert model.calls[0] == ("for_training", None), model.calls
+
           # Backward-compatible fallback: if old models lack the recorded mode,
           # TrainingArguments still drives the setting.
           model = DummyModel(training=True)
@@ -152,4 +159,47 @@ jobs:
           repl = Path("unsloth/models/rl_replacements.py").read_text()
           assert "self.model.for_training(use_gradient_checkpointing=getattr(self.args, 'gradient_checkpointing', True))" not in repl
           print("PASS: source paths persist and restore the recorded Unsloth GC mode")
+          PY
+
+      - name: Verify patch_peft_model records GC mode for loaded and pass-through adapters
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+
+          llama_source = Path("unsloth/models/llama.py").read_text()
+          tree = ast.parse(llama_source)
+
+          class Finder(ast.NodeVisitor):
+              def __init__(self):
+                  self.functions = []
+
+              def visit_FunctionDef(self, node):
+                  if node.name == "patch_peft_model":
+                      self.functions.append(node)
+                  self.generic_visit(node)
+
+          finder = Finder()
+          finder.visit(tree)
+          assert finder.functions, "patch_peft_model not found in llama.py"
+          patch_fn = finder.functions[0]
+          patch_source = ast.get_source_segment(llama_source, patch_fn)
+
+          assert "model._unsloth_gradient_checkpointing = use_gradient_checkpointing" in patch_source, (
+              "patch_peft_model should record the configured GC mode so loaded adapters "
+              "patched via loader.py and already-wrapped pass-through adapters do not fall "
+              "back to TrainingArguments.gradient_checkpointing"
+          )
+
+          for node in ast.walk(patch_fn):
+              if isinstance(node, ast.Return) and isinstance(node.value, ast.Name) and node.value.id == "model":
+                  prefix = patch_source[: patch_source.index(ast.get_source_segment(llama_source, node))]
+                  assert "_unsloth_gradient_checkpointing" in prefix, (
+                      "patch_peft_model returns model before recording _unsloth_gradient_checkpointing"
+                  )
+
+          print("PASS: patch_peft_model records GC mode before loaded/pass-through adapter returns")
           PY
