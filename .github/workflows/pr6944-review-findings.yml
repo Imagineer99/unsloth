@@ -1,0 +1,112 @@
+# Disposable focused repro for PR #6944 review findings. Delete after review.
+
+name: PR 6944 review findings focused repro
+
+on:
+  push:
+    branches:
+      - fix/pr-6944-review-findings-ci
+  workflow_dispatch:
+
+concurrency:
+  group: pr-6944-review-findings-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  findings:
+    name: Cleanup failure and first-render UID fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: Install focused backend dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install pytest python-multipart structlog pydantic
+
+      - name: Repro P2 cleanup must not report success when directory remains
+        working-directory: studio/backend
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python - <<'PY'
+          import asyncio
+          import importlib.util
+          import tempfile
+          from pathlib import Path
+
+          route_path = Path("routes/data_recipe/seed.py").resolve()
+          spec = importlib.util.spec_from_file_location("seed_under_test", route_path)
+          assert spec and spec.loader
+          seed = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(seed)
+
+          uid = "0f" * 16
+          with tempfile.TemporaryDirectory() as tmp:
+              root = Path(tmp) / "unstructured-uploads"
+              block_dir = root / uid
+              block_dir.mkdir(parents=True)
+              (block_dir / "kept.txt").write_text("still here")
+              seed.UNSTRUCTURED_UPLOAD_ROOT = root
+
+              calls = []
+              def no_op_rmtree(path, ignore_errors=False):
+                  calls.append((Path(path), ignore_errors))
+                  # Simulate a deletion failure hidden by ignore_errors=True.
+                  return None
+
+              seed.shutil.rmtree = no_op_rmtree
+              result = asyncio.run(seed.remove_unstructured_block(uid))
+
+              assert calls, "remove_unstructured_block did not attempt deletion"
+              assert not block_dir.exists(), (
+                  f"cleanup reported {result!r}, but the upload directory still exists; "
+                  "a failed delete must not be treated as complete"
+              )
+          print("PASS: block cleanup fails/retries instead of silently succeeding")
+          PY
+
+      - name: Repro P2 frontend must keep cleanup queued until delete succeeds
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          src = Path("studio/frontend/src/features/recipe-studio/hooks/use-recipe-persistence.ts").read_text()
+          assert "void removeUnstructuredBlock(uid).catch" not in src, (
+              "cleanup request is fire-and-forget; queued ids are removed before the server confirms deletion"
+          )
+          assert "pendingUploadCleanups: state.pendingUploadCleanups.filter(" not in src or "await removeUnstructuredBlock" in src, (
+              "pending cleanup ids are dequeued before removeUnstructuredBlock succeeds"
+          )
+          print("PASS: frontend only dequeues cleanup ids after successful server delete")
+          PY
+
+      - name: Repro P3 unstructured upload must not use legacy node id on first render
+        if: always()
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          src = Path("studio/frontend/src/features/recipe-studio/dialogs/seed/seed-dialog.tsx").read_text()
+          assert "const uploadBlockId = uploadUid || config.id;" not in src, (
+              "first render can pass legacy config.id as block_id before the UID useEffect runs"
+          )
+          assert "onUpdate({ unstructured_upload_uid: crypto.randomUUID().replace(/-/g, \"\") });" not in src, (
+              "UID is created asynchronously after render; create/persist it before the drop zone can upload"
+          )
+          print("PASS: upload block id is UID-backed before the drop zone can upload")
+          PY
