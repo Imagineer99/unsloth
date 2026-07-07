@@ -1,0 +1,90 @@
+# Disposable focused validation for PR #6944 review findings. Delete after review.
+
+name: PR 6944 review findings fixed check
+
+on:
+  push:
+    branches:
+      - fix/pr-6944-review-findings
+  workflow_dispatch:
+
+concurrency:
+  group: pr-6944-review-findings-fixed-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  findings:
+    name: Cleanup failure and first-render UID fallback
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: Install focused backend dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install pytest python-multipart structlog pydantic
+
+      - name: Backend cleanup failure and quota regression tests
+        working-directory: studio/backend
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python -m pytest -q tests/test_data_recipe_seed.py \
+            -k 'unstructured_upload or remove_unstructured_block or total_upload_quota'
+
+      - name: Validate cleanup retry and UID source contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          seed = Path("studio/backend/routes/data_recipe/seed.py").read_text()
+          assert "ignore_errors = True" not in seed
+          assert "shutil.rmtree(block_dir)" in seed
+          assert "if block_dir.exists():" in seed
+
+          persistence = Path(
+              "studio/frontend/src/features/recipe-studio/hooks/use-recipe-persistence.ts"
+          ).read_text()
+          assert "void removeUnstructuredBlock(uid).catch" not in persistence
+          remove = persistence.index("void removeUnstructuredBlock(uid)")
+          then = persistence.index(".then(() =>", remove)
+          cleanup_filter = persistence.index(
+              "pendingUploadCleanups: state.pendingUploadCleanups.filter(",
+              then,
+          )
+          assert remove < then < cleanup_filter
+
+          dialog = Path(
+              "studio/frontend/src/features/recipe-studio/dialogs/seed/seed-dialog.tsx"
+          ).read_text()
+          assert "const uploadBlockId = uploadUid || config.id;" not in dialog
+          assert (
+              'onUpdate({ unstructured_upload_uid: crypto.randomUUID().replace(/-/g, "") });'
+              not in dialog
+          )
+          assert "generatedUploadUidRef" in dialog
+          assert 'const uploadBlockId = uploadUid || generatedUploadUidRef.current || "";' in dialog
+
+          factory = Path(
+              "studio/frontend/src/features/recipe-studio/utils/config-factories.ts"
+          ).read_text()
+          assert "export function makeUnstructuredUploadUid()" in factory
+
+          store = Path(
+              "studio/frontend/src/features/recipe-studio/stores/recipe-studio.ts"
+          ).read_text()
+          assert 'nextSourceType === "unstructured" ? makeUnstructuredUploadUid() : ""' in store
+          print("PASS: review findings are fixed")
+          PY
