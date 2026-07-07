@@ -53,6 +53,7 @@ import {
   inspectSeedDataset,
   inspectSeedUpload,
 } from "../../api";
+import { useRecipeStudioStore } from "../../stores/recipe-studio";
 import { resolveImagePreview } from "../../utils/image-preview";
 import type {
   GithubItemType,
@@ -597,6 +598,23 @@ export function SeedDialog({
   const mode = config.seed_source_type ?? "hf";
   const previewEmpty = getPreviewEmptyStateCopy(mode);
 
+  const queueUploadCleanup = useRecipeStudioStore(
+    (state) => state.queueUploadCleanup,
+  );
+
+  // config.id collides across recipes (ids reset to n1 on import); use a
+  // stable per-block uid instead, falling back to config.id for legacy blocks.
+  const uploadUid = config.unstructured_upload_uid?.trim() ?? "";
+  const uploadBlockId = uploadUid || config.id;
+  const unstructuredFileCount = config.unstructured_file_ids?.length ?? 0;
+
+  useEffect(() => {
+    if (mode !== "unstructured") return;
+    if (uploadUid) return;
+    if (unstructuredFileCount > 0) return;
+    onUpdate({ unstructured_upload_uid: crypto.randomUUID().replace(/-/g, "") });
+  }, [mode, uploadUid, unstructuredFileCount, onUpdate]);
+
   const prevModeRef = useRef(mode);
   useEffect(() => {
     const prevMode = prevModeRef.current;
@@ -720,6 +738,11 @@ export function SeedDialog({
             subset: config.hf_subset?.trim() || undefined,
             preview_size: 10,
           });
+          // Queue the block's upload directory for deletion after the next
+          // save; only uid-namespaced directories qualify (single owner).
+          if (uploadUid && unstructuredFileCount > 0) {
+            queueUploadCleanup(uploadUid);
+          }
           onUpdate({
             hf_path: response.resolved_path,
             seed_columns: response.columns,
@@ -730,6 +753,7 @@ export function SeedDialog({
             hf_split: response.split ?? "",
             hf_subset: response.subset ?? "",
             local_file_name: "",
+            unstructured_upload_uid: "",
             unstructured_file_ids: [],
             unstructured_file_names: [],
             unstructured_file_sizes: [],
@@ -754,6 +778,11 @@ export function SeedDialog({
             content_base64: payload,
             preview_size: 10,
           });
+          // Queue the block's upload directory for deletion after the next
+          // save; only uid-namespaced directories qualify (single owner).
+          if (uploadUid && unstructuredFileCount > 0) {
+            queueUploadCleanup(uploadUid);
+          }
           onUpdate({
             hf_path: response.resolved_path,
             seed_columns: response.columns,
@@ -765,6 +794,7 @@ export function SeedDialog({
             hf_subset: "",
             hf_split: "",
             local_file_name: localFile.name,
+            unstructured_upload_uid: "",
             unstructured_file_ids: [],
             unstructured_file_names: [],
             unstructured_file_sizes: [],
@@ -789,7 +819,7 @@ export function SeedDialog({
 
           const { chunkSize, chunkOverlap } = resolveChunking(config);
           const response = await inspectSeedUpload({
-            block_id: config.id,
+            block_id: uploadBlockId,
             file_ids: fileIds,
             file_names: fileNames,
             preview_size: 10,
@@ -827,7 +857,18 @@ export function SeedDialog({
         setIsInspecting(false);
       }
     },
-    [config, getCurrentLoadKey, localFile, mode, onUpdate, unstructuredFiles],
+    [
+      config,
+      getCurrentLoadKey,
+      localFile,
+      mode,
+      onUpdate,
+      queueUploadCleanup,
+      unstructuredFiles,
+      unstructuredFileCount,
+      uploadBlockId,
+      uploadUid,
+    ],
   );
 
   useEffect(() => {
@@ -997,7 +1038,7 @@ export function SeedDialog({
 
           {mode === "unstructured" && (
             <UnstructuredDropZone
-              blockId={config.id}
+              blockId={uploadBlockId}
               files={unstructuredFiles}
               onFilesChange={handleUnstructuredFilesChange}
               disabled={isInspecting}
