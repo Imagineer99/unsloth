@@ -1,0 +1,129 @@
+# Disposable focused validation for PR #6944. Delete after review.
+
+name: PR 6944 unstructured upload cleanup focused check
+
+on:
+  push:
+    branches:
+      - fix/pr-6944-block-cleanup-ci
+  workflow_dispatch:
+
+concurrency:
+  group: pr-6944-block-cleanup-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  block-cleanup:
+    name: Unstructured upload IDs and cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: Install focused backend dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install pytest python-multipart structlog pydantic
+
+      - name: Backend unstructured block cleanup and quota tests
+        working-directory: studio/backend
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python -m pytest -q tests/test_data_recipe_seed.py \
+            -k 'unstructured_upload or remove_unstructured_block or total_upload_quota'
+
+      - name: Frontend upload uid and cleanup source assertions
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          files = {
+              "store": Path("studio/frontend/src/features/recipe-studio/stores/recipe-studio.ts").read_text(),
+              "persistence": Path("studio/frontend/src/features/recipe-studio/hooks/use-recipe-persistence.ts").read_text(),
+              "dialog": Path("studio/frontend/src/features/recipe-studio/dialogs/seed/seed-dialog.tsx").read_text(),
+              "dropzone": Path("studio/frontend/src/features/recipe-studio/dialogs/seed/unstructured-drop-zone.tsx").read_text(),
+              "api": Path("studio/frontend/src/features/recipe-studio/api/index.ts").read_text(),
+              "types": Path("studio/frontend/src/features/recipe-studio/types/index.ts").read_text(),
+              "payload": Path("studio/frontend/src/features/recipe-studio/utils/payload/build-payload.ts").read_text(),
+              "payload_types": Path("studio/frontend/src/features/recipe-studio/utils/payload/types.ts").read_text(),
+              "importer": Path("studio/frontend/src/features/recipe-studio/utils/import/importer.ts").read_text(),
+              "seed_parser": Path("studio/frontend/src/features/recipe-studio/utils/import/parsers/seed-config-parser.ts").read_text(),
+          }
+
+          checks = {
+              "store": [
+                  "pendingUploadCleanups: string[];",
+                  "queueUploadCleanup: (uid: string) => void;",
+                  "function seedUploadCleanupUid(config: NodeConfig | undefined): string | null",
+                  "const uid = config.unstructured_upload_uid?.trim();",
+                  "!config.unstructured_file_ids?.length",
+                  "state.pendingUploadCleanups.includes(uid)",
+                  "pendingUploadCleanups: [...state.pendingUploadCleanups, uid]",
+                  "current.queueUploadCleanup(uid);",
+                  "pendingUploadCleanups: [],",
+              ],
+              "persistence": [
+                  "import { removeUnstructuredBlock } from \"../api\";",
+                  "function drainQueuedUploadCleanups(",
+                  "const pending = useRecipeStudioStore.getState().pendingUploadCleanups;",
+                  "ui.unstructured_upload_uid",
+                  "const ready = pending.filter((uid) => uid !== savedUid);",
+                  "pendingUploadCleanups: state.pendingUploadCleanups.filter(",
+                  "void removeUnstructuredBlock(uid).catch((error) =>",
+                  "drainQueuedUploadCleanups(currentPayload);",
+              ],
+              "dialog": [
+                  "const uploadUid = config.unstructured_upload_uid?.trim() ?? \"\";",
+                  "const uploadBlockId = uploadUid || config.id;",
+                  "crypto.randomUUID().replace(/-/g, \"\")",
+                  "queueUploadCleanup(uploadUid);",
+                  "unstructured_upload_uid: \"\"",
+                  "block_id: uploadBlockId,",
+              ],
+              "dropzone": [
+                  "uploadUnstructuredFile(",
+                  "file,",
+                  "blockId,",
+                  "removeUnstructuredFile(blockId, entry.id)",
+              ],
+              "api": [
+                  "formData.append(\"block_id\", blockId);",
+                  "export async function removeUnstructuredBlock(blockId: string): Promise<void>",
+                  "seed/unstructured-block/${encodeURIComponent(blockId)}",
+              ],
+              "types": ["unstructured_upload_uid?: string;"],
+              "payload": ["unstructured_upload_uid: firstSeed.unstructured_upload_uid"],
+              "payload_types": ["unstructured_upload_uid?: string;"],
+              "importer": ["const uiUnstructuredUploadUid = readString(ui?.unstructured_upload_uid) ?? undefined;"],
+              "seed_parser": ["unstructured_upload_uid: options.unstructuredUploadUid"],
+          }
+          for name, needles in checks.items():
+              text = files[name]
+              for needle in needles:
+                  assert needle in text, f"{name} missing {needle!r}"
+
+          seed_route = Path("studio/backend/routes/data_recipe/seed.py").read_text()
+          for needle in (
+              '_UPLOAD_UID_RE = re.compile(r"^[0-9a-f]{32}$")',
+              'if not _UPLOAD_UID_RE.match(block_id):',
+              'Invalid block_id: only uid-namespaced blocks can be deleted',
+              'block_dir = (UNSTRUCTURED_UPLOAD_ROOT / block_id).resolve()',
+              'if not block_dir.is_relative_to(UNSTRUCTURED_UPLOAD_ROOT.resolve()):',
+              'shutil.rmtree(block_dir, ignore_errors = True)',
+          ):
+              assert needle in seed_route, f"backend route missing {needle!r}"
+
+          print("PASS: frontend/backend source preserves upload UID namespace and deferred cleanup contract")
+          PY
