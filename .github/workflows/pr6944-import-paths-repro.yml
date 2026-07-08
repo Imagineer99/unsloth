@@ -1,0 +1,96 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 6944 import path ownership repro"
+
+on:
+  push:
+    branches:
+      - "fix/pr-6944-import-paths-repro-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: "Run focused import ownership repro"
+        shell: bash
+        run: |
+          cd studio/frontend
+          npm ci
+          cat > pr6944-import-paths-repro.ts <<'EOF'
+          import { importRecipePayload } from './src/features/recipe-studio/utils/import/importer';
+          
+          const originalPaths = [
+            '/tmp/unsloth_uploads/0123456789abcdef0123456789abcdef/doc-a.txt',
+            '/tmp/unsloth_uploads/0123456789abcdef0123456789abcdef/doc-b.txt',
+          ];
+          
+          const payload = {
+            seed_config: {
+              source: {
+                seed_type: 'unstructured',
+                paths: originalPaths,
+                chunk_size: 1200,
+                chunk_overlap: 200,
+              },
+            },
+            ui: {
+              seed_source_type: 'unstructured',
+              unstructured_upload_uid: '0123456789abcdef0123456789abcdef',
+              unstructured_file_ids: ['doc-a', 'doc-b'],
+              unstructured_file_names: ['doc-a.txt', 'doc-b.txt'],
+              unstructured_file_sizes: [10, 20],
+            },
+          };
+          
+          const importedCopy = importRecipePayload(JSON.stringify(payload));
+          if (!importedCopy.snapshot) {
+            console.error('FAIL: import failed', importedCopy.errors);
+            process.exit(1);
+          }
+          
+          const seed = Object.values(importedCopy.snapshot.configs).find(
+            (config) => config.kind === 'seed',
+          );
+          if (!seed) {
+            console.error('FAIL: imported copy has no seed config');
+            process.exit(1);
+          }
+          
+          const retainedPaths = Array.isArray(seed.resolved_paths) ? seed.resolved_paths : [];
+          console.log('seed_source_type:', seed.seed_source_type);
+          console.log('hf_path:', JSON.stringify(seed.hf_path));
+          console.log('resolved_paths:', JSON.stringify(retainedPaths));
+          console.log('visible_upload_uid:', JSON.stringify(seed.unstructured_upload_uid ?? ''));
+          console.log('visible_file_ids:', JSON.stringify(seed.unstructured_file_ids ?? []));
+          
+          if ((seed.unstructured_file_ids?.length ?? 0) !== 0) {
+            console.error('FAIL: default import should not preserve visible uploaded file ids');
+            process.exit(1);
+          }
+          if ((seed.unstructured_upload_uid ?? '') !== '') {
+            console.error('FAIL: default import should not preserve upload uid');
+            process.exit(1);
+          }
+          if (seed.hf_path || retainedPaths.length > 0) {
+            console.error('FAIL: default import still retains original unstructured resolved paths');
+            process.exit(1);
+          }
+          console.log('PASS: imported copy does not retain original unstructured paths');
+          EOF
+          ./node_modules/.bin/esbuild pr6944-import-paths-repro.ts --bundle --platform=node --format=esm --outfile=/tmp/pr6944-import-paths-repro.mjs
+          node /tmp/pr6944-import-paths-repro.mjs
+
