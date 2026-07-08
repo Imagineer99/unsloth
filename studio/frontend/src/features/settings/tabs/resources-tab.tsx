@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
+import { LiveMonitorStatusChip } from "@/components/floating-monitor";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Switch } from "@/components/ui/switch";
@@ -283,6 +284,7 @@ export function ResourcesTab() {
               ? t("settings.resources.disableOverlay")
               : t("settings.resources.floatingWindow")}
           </Button>
+          <LiveMonitorStatusChip className="shrink-0 border border-border/60" />
 
           <div className="flex shrink-0 items-center gap-2 rounded-full border border-border/60 px-2.5 py-1.5 text-xs font-medium text-foreground">
             <span>{t("settings.resources.liveUpdates")}</span>
