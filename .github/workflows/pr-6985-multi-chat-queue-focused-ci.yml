@@ -1,0 +1,42 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 6985 Focused Frontend CI"
+
+on:
+  push:
+    branches:
+      - "pr-6985-multi-chat-queue-focused-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.17.1"
+
+      - name: "Install frontend dependencies"
+        shell: bash
+        run: |
+          cd studio/frontend && npm ci
+
+      - name: "Run frontend typecheck"
+        shell: bash
+        run: |
+          cd studio/frontend && npm run typecheck
+
+      - name: "Run frontend build"
+        shell: bash
+        run: |
+          cd studio/frontend && npm run build
+
