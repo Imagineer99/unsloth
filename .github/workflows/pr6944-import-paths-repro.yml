@@ -91,6 +91,4 @@ jobs:
           }
           console.log('PASS: imported copy does not retain original unstructured paths');
           EOF
-          ./node_modules/.bin/esbuild pr6944-import-paths-repro.ts --bundle --platform=node --format=esm --outfile=/tmp/pr6944-import-paths-repro.mjs
-          node /tmp/pr6944-import-paths-repro.mjs
-
+          npm exec --yes tsx@4.20.6 -- pr6944-import-paths-repro.ts
