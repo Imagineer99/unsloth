@@ -39,6 +39,14 @@ jobs:
           ];
           
           const payload = {
+            columns: [
+              {
+                name: 'out',
+                column_type: 'expression',
+                expr: 'input',
+                dtype: 'str',
+              },
+            ],
             seed_config: {
               source: {
                 seed_type: 'unstructured',
