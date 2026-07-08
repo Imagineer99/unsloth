@@ -1,0 +1,42 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 6974 start casefold focused CI"
+
+on:
+  push:
+    branches:
+      - "fix/pr-6974-focused-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install uv"
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip uv
+
+      - name: "Run focused start casefold subset"
+        shell: bash
+        run: |
+          uv run --no-project --with pytest --with typer --with click --with rich --with pyyaml --with pydantic python -m pytest unsloth_cli/tests/test_start.py -q -k 'case_variant or ambiguous_two_segment_paths or visible_local_paths or model_directory_paths or weight_file_paths or casefold_local_paths or remote_studio_does_not_casefold_attach or matches_loaded_canonical_case_after_load or attaches_to_loaded_catalog_hit_without_reload'
+
+      - name: "Run full start CLI test file"
+        shell: bash
+        run: |
+          uv run --no-project --with pytest --with typer --with click --with rich --with pyyaml --with pydantic python -m pytest unsloth_cli/tests/test_start.py -q
+
