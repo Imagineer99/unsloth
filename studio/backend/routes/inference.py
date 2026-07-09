@@ -3572,6 +3572,7 @@ async def load_model(
             try:
                 async with inference_lifecycle_gate():
                     await _load_model_impl(request, fastapi_request, current_subject)
+                _last_async_load_error = None
             except Exception as exc:
                 detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
                 logger.warning("inference.async_load_failed: %s", detail)
