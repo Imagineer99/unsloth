@@ -8,6 +8,7 @@ import {
   type ModelOption,
   ModelSelector,
 } from "@/components/assistant-ui/model-selector";
+import { LiveMonitorStatusChip } from "@/components/floating-monitor";
 import {
   loadRememberedLoadSettings,
   rememberedLoadSettingsKey,
@@ -2538,6 +2539,9 @@ export function ChatPage({
                 completionTokens={contextUsage.completionTokens}
                 className="h-[var(--studio-chat-control-height,34px)]"
               />
+            ) : null}
+            {view.mode === "single" ? (
+              <LiveMonitorStatusChip className="hidden sm:flex" />
             ) : null}
             {view.mode === "single" && (
               <Tooltip>
