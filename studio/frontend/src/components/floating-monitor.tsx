@@ -8,15 +8,29 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useChatRuntimeStore } from "@/features/chat/stores/chat-runtime-store";
-import { useMonitorOverlayStore } from "@/features/settings/stores/monitor-overlay-store";
-import { useSettingsDialogStore } from "@/features/settings/stores/settings-dialog-store";
+import { useChatRuntimeStore } from "@/features/chat";
+import {
+  useMonitorOverlayStore,
+  useSettingsDialogStore,
+} from "@/features/settings";
 import { type SystemInfoResponse, useSystemInfo } from "@/hooks/use-system";
 import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { CpuIcon, GripVerticalIcon, XIcon } from "lucide-react";
-import { motion, useMotionValue } from "motion/react";
-import { type RefObject, useEffect, useRef } from "react";
+import {
+  AnimatePresence,
+  motion,
+  useDragControls,
+  useMotionValue,
+} from "motion/react";
+import {
+  type PointerEvent,
+  type RefObject,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 function clampPercent(value: number): number {
   return Math.max(0, Math.min(100, value));
@@ -317,120 +331,136 @@ export function FloatingMonitor() {
   const dockedByRunSettings = settingsPanelOpen && !settingsDialogOpen;
   const systemInfo = useSystemInfo({ enabled: isOpen, pollMs: 5000 });
 
-  const constraintsRef = useRef<HTMLDivElement>(null);
+  const [constraintsElement, setConstraintsElement] =
+    useState<HTMLDivElement | null>(null);
+  const constraintsRef = useMemo(
+    () => ({ current: constraintsElement }),
+    [constraintsElement],
+  );
+  const dragControls = useDragControls();
   const monitorRef = useRef<HTMLDivElement>(null);
   const monitorCollision = useRunSettingsCollisionAvoidance(
     dockedByRunSettings,
     monitorRef,
   );
 
-  if (!isOpen) {
-    return null;
+  function startDrag(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    monitorCollision.clearAutoShift();
+    dragControls.start(event);
   }
 
   const metrics = getResourceMetrics(systemInfo);
 
   return (
-    <div
-      ref={constraintsRef}
-      className="fixed inset-0 z-[70] pointer-events-none"
-    >
-      <motion.div
-        ref={monitorRef}
-        drag={true}
-        dragConstraints={constraintsRef}
-        onDragStart={monitorCollision.clearAutoShift}
-        dragElastic={0.1}
-        dragMomentum={false}
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.9 }}
-        className="settings-surface fixed bottom-4 right-4 w-64 max-w-[calc(100vw-2rem)] resize overflow-hidden rounded-xl border border-border/70 p-3 shadow-border ring-0 backdrop-blur-sm pointer-events-auto cursor-default select-none"
-        style={{ x: monitorCollision.x }}
-      >
-        <div className="mb-2 flex items-center justify-between gap-2 border-b border-border/60 pb-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-semibold text-foreground">
-            <CpuIcon className="size-3.5 shrink-0 text-primary" />
-            <span className="truncate">
-              {t("settings.resources.liveMonitor.title")}
-            </span>
-          </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <div className="cursor-grab rounded-md px-1 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-muted-foreground active:cursor-grabbing">
-              <GripVerticalIcon className="size-3.5" />
-            </div>
-
-            <Button
-              size="icon-xs"
-              variant="ghost"
-              className="text-muted-foreground hover:text-foreground"
-              onClick={() => setIsOpen(false)}
-              title={t("common.close")}
-              aria-label={t("common.close")}
-            >
-              <XIcon className="size-3" />
-            </Button>
-          </div>
-        </div>
-
-        <motion.div
-          initial={{ opacity: 0, height: 0 }}
-          animate={{ opacity: 1, height: "auto" }}
-          exit={{ opacity: 0, height: 0 }}
-          className="space-y-3 overflow-hidden"
+    <AnimatePresence>
+      {isOpen && (
+        <div
+          ref={setConstraintsElement}
+          className="fixed inset-0 z-[70] pointer-events-none"
         >
-          <div className="space-y-1">
-            <div className="flex justify-between text-[11px] font-medium font-mono">
-              <span>{t("settings.resources.liveMonitor.ram")}</span>
-              <span
-                className={cn(
-                  "tabular-nums",
-                  usageTextClass(metrics.ramPercent),
-                )}
-              >
-                {formatPercent(metrics.ramPercent)}
-              </span>
-            </div>
-            <div className="text-xs text-muted-foreground font-mono tabular-nums">
-              {formatGiB(metrics.ramUsed)} / {formatGiB(metrics.ramTotal)}
-            </div>
-            <Progress
-              value={metrics.ramPercent}
-              className="mt-1 h-1.5 rounded-full bg-muted"
-              indicatorClassName={usageIndicatorClass(metrics.ramPercent)}
-            />
-          </div>
-
-          {metrics.hasGpu && (
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-medium font-mono">
-                <span className="truncate flex-1 pr-2">
-                  {t("settings.resources.liveMonitor.vram")}{" "}
-                  {metrics.devices.length > 1
-                    ? `(${metrics.devices.length} GPUs)`
-                    : `(${metrics.devices[0].name ?? "GPU"})`}
+          <motion.div
+            ref={monitorRef}
+            drag={true}
+            dragControls={dragControls}
+            dragListener={false}
+            dragConstraints={constraintsRef}
+            dragElastic={0}
+            dragMomentum={false}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            className="settings-surface fixed bottom-4 right-4 w-64 max-w-[calc(100vw-2rem)] resize overflow-hidden rounded-xl border border-border/70 p-3 shadow-border ring-0 backdrop-blur-sm pointer-events-auto cursor-default select-none"
+            style={{ x: monitorCollision.x }}
+          >
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-border/60 pb-2">
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 truncate text-xs font-semibold text-foreground">
+                <CpuIcon className="size-3.5 shrink-0 text-primary" />
+                <span className="truncate">
+                  {t("settings.resources.liveMonitor.title")}
                 </span>
-                <span
-                  className={cn(
-                    "shrink-0 tabular-nums",
-                    usageTextClass(metrics.vramPercent),
-                  )}
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <div
+                  onPointerDown={startDrag}
+                  className="touch-none cursor-grab rounded-md px-1 text-muted-foreground/60 transition-colors hover:bg-muted/60 hover:text-muted-foreground active:cursor-grabbing"
                 >
-                  {formatPercent(metrics.vramPercent)}
-                </span>
+                  <GripVerticalIcon className="size-3.5" />
+                </div>
+
+                <Button
+                  size="icon-xs"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-foreground"
+                  onClick={() => setIsOpen(false)}
+                  title={t("common.close")}
+                  aria-label={t("common.close")}
+                >
+                  <XIcon className="size-3" />
+                </Button>
               </div>
-              <div className="text-xs text-muted-foreground font-mono tabular-nums">
-                {formatGiB(metrics.vramUsed)} / {formatGiB(metrics.vramTotal)}
-              </div>
-              <Progress
-                value={metrics.vramPercent}
-                className="mt-1 h-1.5 rounded-full bg-muted"
-                indicatorClassName={usageIndicatorClass(metrics.vramPercent)}
-              />
             </div>
-          )}
-        </motion.div>
-      </motion.div>
-    </div>
+
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="space-y-3 overflow-hidden"
+            >
+              <div className="space-y-1">
+                <div className="flex justify-between text-[11px] font-medium font-mono">
+                  <span>{t("settings.resources.liveMonitor.ram")}</span>
+                  <span
+                    className={cn(
+                      "tabular-nums",
+                      usageTextClass(metrics.ramPercent),
+                    )}
+                  >
+                    {formatPercent(metrics.ramPercent)}
+                  </span>
+                </div>
+                <div className="text-xs text-muted-foreground font-mono tabular-nums">
+                  {formatGiB(metrics.ramUsed)} / {formatGiB(metrics.ramTotal)}
+                </div>
+                <Progress
+                  value={metrics.ramPercent}
+                  className="mt-1 h-1.5 rounded-full bg-muted"
+                  indicatorClassName={usageIndicatorClass(metrics.ramPercent)}
+                />
+              </div>
+
+              {metrics.hasGpu && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-medium font-mono">
+                    <span className="truncate flex-1 pr-2">
+                      {t("settings.resources.liveMonitor.vram")} {" "}
+                      {metrics.devices.length > 1
+                        ? `(${metrics.devices.length} GPUs)`
+                        : `(${metrics.devices[0].name ?? "GPU"})`}
+                    </span>
+                    <span
+                      className={cn(
+                        "shrink-0 tabular-nums",
+                        usageTextClass(metrics.vramPercent),
+                      )}
+                    >
+                      {formatPercent(metrics.vramPercent)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono tabular-nums">
+                    {formatGiB(metrics.vramUsed)} / {formatGiB(metrics.vramTotal)}
+                  </div>
+                  <Progress
+                    value={metrics.vramPercent}
+                    className="mt-1 h-1.5 rounded-full bg-muted"
+                    indicatorClassName={usageIndicatorClass(metrics.vramPercent)}
+                  />
+                </div>
+              )}
+            </motion.div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
   );
 }
