@@ -1,0 +1,182 @@
+# Disposable focused PR #7010 check. Delete after validation.
+
+name: "PR 7010 async load focused check"
+
+on:
+  push:
+    branches:
+      - "fix/pr-7010-async-load-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  async-load-contract:
+    name: "Async load race contract"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install backend async-load test dependencies"
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install \
+            python-multipart aiofiles sqlalchemy cryptography psutil \
+            pyyaml jinja2 mammoth unpdf requests \
+            "numpy<3" pytest pytest-asyncio httpx
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple "torch>=2.4,<2.11"
+          pip install "transformers>=4.51,<5.5"
+
+      - name: "Write focused async-load race tests"
+        shell: bash
+        run: |
+          cat > studio/backend/tests/test_async_load_race_contract.py <<'PY'
+          # SPDX-License-Identifier: AGPL-3.0-only
+          """Focused PR #7010 async-load contract repros."""
+
+          import asyncio
+          from pathlib import Path
+
+          from fastapi import HTTPException
+
+          import routes.inference as inference_route
+          from models.inference import LoadAcceptedResponse, LoadRequest, LoadResponse
+
+
+          def _request(model_path: str, async_load: bool = True) -> LoadRequest:
+              return LoadRequest(model_path=model_path, async_load=async_load)
+
+
+          def _run(coro):
+              return asyncio.run(coro)
+
+
+          def test_older_async_failure_cannot_overwrite_newer_accepted_load(monkeypatch):
+              a_started = asyncio.Event()
+              b_started = asyncio.Event()
+              release_b = asyncio.Event()
+
+              async def _load(request, fastapi_request, current_subject):
+                  if request.model_path == "model-A":
+                      a_started.set()
+                      await asyncio.sleep(0.05)
+                      raise HTTPException(status_code=400, detail="A failed after B was accepted")
+                  if request.model_path == "model-B":
+                      b_started.set()
+                      await release_b.wait()
+                      return LoadResponse(
+                          status="loaded",
+                          model=request.model_path,
+                          display_name="B",
+                          inference={},
+                      )
+                  raise AssertionError(request.model_path)
+
+              monkeypatch.setattr(inference_route, "_load_model_impl", _load)
+              monkeypatch.setattr(inference_route, "_last_async_load_error", None)
+              inference_route._background_tasks.clear()
+
+              async def _scenario():
+                  first = await inference_route.load_model(_request("model-A"), object(), "tester")
+                  assert isinstance(first, LoadAcceptedResponse)
+                  await asyncio.wait_for(a_started.wait(), timeout=1)
+
+                  second = await inference_route.load_model(_request("model-B"), object(), "tester")
+                  assert isinstance(second, LoadAcceptedResponse)
+
+                  await asyncio.wait_for(b_started.wait(), timeout=1)
+                  observed = inference_route._last_async_load_error
+                  release_b.set()
+                  await asyncio.sleep(0.05)
+                  return observed
+
+              observed = _run(_scenario())
+              assert observed is None, (
+                  "older async load A failure was exposed after newer load B had been accepted: "
+                  f"{observed!r}"
+              )
+
+
+          def test_async_load_does_not_accept_unbounded_queued_loads(monkeypatch):
+              a_started = asyncio.Event()
+              release_a = asyncio.Event()
+              release_b = asyncio.Event()
+
+              async def _load(request, fastapi_request, current_subject):
+                  if request.model_path == "model-A":
+                      a_started.set()
+                      await release_a.wait()
+                  elif request.model_path == "model-B":
+                      await release_b.wait()
+                  return LoadResponse(
+                      status="loaded",
+                      model=request.model_path,
+                      display_name=request.model_path,
+                      inference={},
+                  )
+
+              monkeypatch.setattr(inference_route, "_load_model_impl", _load)
+              monkeypatch.setattr(inference_route, "_last_async_load_error", None)
+              inference_route._background_tasks.clear()
+
+              async def _scenario():
+                  first = await inference_route.load_model(_request("model-A"), object(), "tester")
+                  assert isinstance(first, LoadAcceptedResponse)
+                  await asyncio.wait_for(a_started.wait(), timeout=1)
+
+                  second_accepted = False
+                  rejected_with_conflict = False
+                  try:
+                      second = await inference_route.load_model(_request("model-B"), object(), "tester")
+                      second_accepted = isinstance(second, LoadAcceptedResponse)
+                  except HTTPException as exc:
+                      rejected_with_conflict = exc.status_code == 409
+
+                  queued_count = len(inference_route._background_tasks)
+                  release_a.set()
+                  release_b.set()
+                  await asyncio.sleep(0.05)
+                  return second_accepted, rejected_with_conflict, queued_count
+
+              second_accepted, rejected_with_conflict, queued_count = _run(_scenario())
+              assert rejected_with_conflict or queued_count <= 1, (
+                  "async /load accepted another queued background task while one was already "
+                  f"accepted/running; second_accepted={second_accepted}, "
+                  f"background_tasks={queued_count}"
+              )
+
+
+          def test_status_contract_tracks_accepted_async_load_source_state():
+              source = Path(inference_route.__file__).read_text()
+              assert "poll GET /status for completion" in source
+              assert "LoadAcceptedResponse(model = request.model_path)" in source
+              accepted_state_tokens = (
+                  "_async_load_generation",
+                  "_accepted_async_load",
+                  "_pending_async_load",
+                  "_current_async_load",
+                  "async_load_id",
+              )
+              assert any(token in source for token in accepted_state_tokens), (
+                  "async /load returns an accepted model but /status has no accepted-load "
+                  "generation/model state; pollers can see idle/previous model before "
+                  "backend loading starts"
+              )
+          PY
+
+      - name: "Run focused async-load race tests"
+        working-directory: "studio/backend"
+        shell: bash
+        run: |
+          python -m pytest tests/test_async_load_race_contract.py -q --tb=short -s
