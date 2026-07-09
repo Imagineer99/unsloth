@@ -1,0 +1,125 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 6966 last local autoload focused CI"
+
+on:
+  push:
+    branches:
+      - "fix/pr-6966-focused-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install frontend dependencies"
+        shell: bash
+        run: |
+          cd studio/frontend
+          npm ci
+
+      - name: "Run frontend typecheck"
+        shell: bash
+        run: |
+          cd studio/frontend
+          npm run typecheck
+
+      - name: "Run last local model storage contract"
+        shell: bash
+        run: |
+          cd studio/frontend
+          cat > pr6966-last-local-model-check.ts <<'EOF'
+          import {
+            readLastLocalModelLoad,
+            recordLastLocalModelLoad,
+          } from './src/features/chat/utils/last-local-model-load';
+          
+          class MemoryStorage {
+            store = new Map<string, string>();
+            getItem(key: string): string | null {
+              return this.store.get(key) ?? null;
+            }
+            setItem(key: string, value: string): void {
+              this.store.set(key, value);
+            }
+            removeItem(key: string): void {
+              this.store.delete(key);
+            }
+            clear(): void {
+              this.store.clear();
+            }
+          }
+          
+          const storage = new MemoryStorage();
+          Object.defineProperty(globalThis, 'localStorage', { value: storage, configurable: true });
+          
+          function assert(condition: unknown, message: string): asserts condition {
+            if (!condition) throw new Error(message);
+          }
+          
+          assert(readLastLocalModelLoad() === null, 'empty storage should read null');
+          
+          recordLastLocalModelLoad({ id: '  unsloth/Qwen3.5-4B  ', kind: 'model' });
+          const model = readLastLocalModelLoad();
+          assert(model?.id === 'unsloth/Qwen3.5-4B', 'model id should be trimmed and persisted');
+          assert(model.kind === 'model', 'model kind should persist');
+          assert(model.ggufVariant === null, 'non-GGUF loads should not persist a variant');
+          assert(typeof model.loadedAt === 'number', 'loadedAt should be numeric');
+          
+          recordLastLocalModelLoad({ id: 'unsloth/Qwen-GGUF', kind: 'gguf' });
+          const unchanged = readLastLocalModelLoad();
+          assert(unchanged?.kind === 'model', 'GGUF without variant should not overwrite last model');
+          
+          recordLastLocalModelLoad({ id: ' unsloth/Qwen-GGUF ', kind: 'gguf', ggufVariant: ' Q4_K_M ' });
+          const gguf = readLastLocalModelLoad();
+          assert(gguf?.id === 'unsloth/Qwen-GGUF', 'GGUF id should be trimmed');
+          assert(gguf.kind === 'gguf', 'GGUF kind should persist');
+          assert(gguf.ggufVariant === 'Q4_K_M', 'GGUF variant should be trimmed and persisted');
+          
+          storage.setItem('unsloth.last-local-model-load.v1', '{bad json');
+          assert(readLastLocalModelLoad() === null, 'invalid JSON should read null');
+          
+          storage.setItem(
+            'unsloth.last-local-model-load.v1',
+            JSON.stringify({ id: 'unsloth/Qwen-GGUF', kind: 'gguf', loadedAt: Date.now() }),
+          );
+          assert(readLastLocalModelLoad() === null, 'GGUF without variant should be rejected on read');
+          
+          console.log('PASS: last local model storage contract');
+          EOF
+          npm exec --yes tsx@4.20.6 -- pr6966-last-local-model-check.ts
+
+      - name: "Check autoload source contract"
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          adapter = Path('studio/frontend/src/features/chat/api/chat-adapter.ts').read_text()
+          hook = Path('studio/frontend/src/features/chat/hooks/use-chat-model-runtime.ts').read_text()
+          assert 'const lastLoaded = readLastLocalModelLoad();' in adapter
+          assert 'description: lastLoaded' in adapter and 'Loading last used model.' in adapter
+          assert 'if (lastLoaded)' in adapter
+          assert adapter.index('if (lastLoaded)') < adapter.index('// GGUF first: smallest-total-size repo')
+          assert 'recordLastLocalModelLoad({' in adapter
+          assert 'recordLastLocalModelLoad({' in hook
+          assert 'skippedAutoLoadCandidates' in adapter
+          print('PASS: autoload source contract')
+          PY
+
