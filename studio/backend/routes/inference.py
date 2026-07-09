@@ -3542,6 +3542,7 @@ _async_load_generation = 0
 _accepted_async_load_model: Optional[str] = None
 _active_async_load_task: Optional[asyncio.Task] = None
 _async_load_admission_lock = threading.Lock()
+_sync_load_admission_count = 0
 
 
 def _async_loading_models(backend_loading: Iterable[str] = ()) -> List[str]:
@@ -3549,6 +3550,13 @@ def _async_loading_models(backend_loading: Iterable[str] = ()) -> List[str]:
     if _accepted_async_load_model and _accepted_async_load_model not in loading:
         loading.append(_accepted_async_load_model)
     return loading
+
+
+def get_pending_async_load_model() -> Optional[str]:
+    with _async_load_admission_lock:
+        if _active_async_load_task is not None and not _active_async_load_task.done():
+            return _accepted_async_load_model
+    return None
 
 
 def _clear_async_load_if_current(task: asyncio.Task, generation: int) -> None:
@@ -3588,7 +3596,7 @@ async def load_model(
     )
 
     global _active_async_load_task, _accepted_async_load_model, _async_load_generation
-    global _last_async_load_error
+    global _last_async_load_error, _sync_load_admission_count
 
     if request.async_load:
         with _async_load_admission_lock:
@@ -3596,6 +3604,11 @@ async def load_model(
                 raise HTTPException(
                     status_code = status.HTTP_409_CONFLICT,
                     detail = f"Model load already in progress: {_accepted_async_load_model}",
+                )
+            if _sync_load_admission_count:
+                raise HTTPException(
+                    status_code = status.HTTP_409_CONFLICT,
+                    detail = "Another model operation is already in progress.",
                 )
             if not acquire_inference_lifecycle_gate_nowait():
                 raise HTTPException(
@@ -3637,13 +3650,19 @@ async def load_model(
             task.add_done_callback(_finish_async_load)
         return LoadAcceptedResponse(model = request.model_path)
 
-    if _active_async_load_task is not None and not _active_async_load_task.done():
-        raise HTTPException(
-            status_code = status.HTTP_409_CONFLICT,
-            detail = f"Model load already in progress: {_accepted_async_load_model}",
-        )
-    async with inference_lifecycle_gate():
-        response = await _load_model_impl(request, fastapi_request, current_subject)
+    with _async_load_admission_lock:
+        if _active_async_load_task is not None and not _active_async_load_task.done():
+            raise HTTPException(
+                status_code = status.HTTP_409_CONFLICT,
+                detail = f"Model load already in progress: {_accepted_async_load_model}",
+            )
+        _sync_load_admission_count += 1
+    try:
+        async with inference_lifecycle_gate():
+            response = await _load_model_impl(request, fastapi_request, current_subject)
+    finally:
+        with _async_load_admission_lock:
+            _sync_load_admission_count -= 1
     _last_async_load_error = None
     return response
 
