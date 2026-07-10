@@ -1,0 +1,73 @@
+name: PR 7029 focused check
+
+on:
+  push:
+    branches:
+      - fix/pr-7029-focused-ci
+
+jobs:
+  content-parts:
+    name: Content-part attachment tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Run content-part attachment tests
+        run: |
+          uv run --no-project \
+            --with-requirements studio/backend/requirements/studio.txt \
+            --with pytest \
+            --with pytest-asyncio \
+            --with httpx \
+            --with python-multipart \
+            --with aiofiles \
+            --with sqlalchemy \
+            --with cryptography \
+            --with psutil \
+            --with pyyaml \
+            --with jinja2 \
+            --with mammoth \
+            --with unpdf \
+            --with requests \
+            --with 'numpy<3' \
+            --python 3.12 \
+            python -m pytest studio/backend/tests/test_chat_attachments.py -q -k 'content_part' --tb=short
+
+  pinned-quant:
+    name: Pinned quant stale-row probe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check pinned quant stale-row guard
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          src = Path("studio/frontend/src/components/assistant-ui/model-selector/pickers.tsx").read_text()
+          start = src.index("const pinnedQuants = useMemo")
+          end = src.index("const pinnedCachedModelRows", start)
+          block = src[start:end]
+          print(block)
+
+          repo_only = (
+              "new Set(visibleCachedGguf.map((c) => c.repo_id))" in block
+              and "cached.has(entry.repoId)" in block
+          )
+          checks_exact_quant = (
+              ".some(" in block
+              and "entry.quant" in block
+              and ("downloaded" in block or "variants" in block)
+          )
+          if repo_only and not checks_exact_quant:
+              raise SystemExit(
+                  "FAIL: pinned quant visibility is repo-only; stale deleted quant can remain visible when another quant from the repo is cached"
+              )
+          PY
