@@ -1,0 +1,44 @@
+# Disposable focused PR #7010 verification. Delete after validation.
+
+name: "PR 7010 async load verify"
+
+on:
+  push:
+    branches:
+      - "fix/pr-7010-async-load-verify-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  async-load-tests:
+    name: "Async load focused tests"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: "Install backend async-load test dependencies"
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install \
+            python-multipart aiofiles sqlalchemy cryptography psutil \
+            pyyaml jinja2 mammoth unpdf requests \
+            "numpy<3" pytest pytest-asyncio httpx
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple "torch>=2.4,<2.11"
+          pip install "transformers>=4.51,<5.5"
+
+      - name: "Run focused async-load tests"
+        shell: bash
+        run: |
+          python -m pytest studio/backend/tests/test_inference_load_async.py -q --tb=short -s
