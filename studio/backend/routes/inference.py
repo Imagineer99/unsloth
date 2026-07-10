@@ -13,7 +13,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse, JSONResponse, Response
 from starlette.requests import ClientDisconnect
-from typing import Any, Callable, List, Optional, Union
+from typing import Any, Callable, Iterable, List, Optional, Union
 import json
 import httpx
 from loggers import get_logger
@@ -1404,6 +1404,7 @@ from models.inference import (
     UnloadRequest,
     GenerateRequest,
     LoadResponse,
+    LoadAcceptedResponse,
     LoadProgressResponse,
     UnloadResponse,
     InferenceStatusResponse,
@@ -3532,12 +3533,77 @@ def _maybe_unsupported_message(msg: str) -> str:
     return msg
 
 
-@router.post("/load", response_model = LoadResponse)
+# Set at the start of each async (async_load=true) /load call and updated by the
+# matching background load; surfaced on GET /status so pollers can observe the
+# pending model immediately and see why a load never reached `loaded`.
+_last_async_load_error: Optional[str] = None
+_background_tasks: set = set()
+_async_load_generation = 0
+_accepted_async_load_model: Optional[str] = None
+_active_async_load_task: Optional[asyncio.Task] = None
+_async_load_admission_lock = threading.Lock()
+_sync_load_admission_count = 0
+
+
+def _matches_pending_async_load(model_path: str, accepted_model: Optional[str]) -> bool:
+    if not accepted_model:
+        return False
+    return model_path == accepted_model or model_path.lower() == accepted_model.lower()
+
+
+def _async_loading_models(backend_loading: Iterable[str] = ()) -> List[str]:
+    loading = list(backend_loading)
+    if _accepted_async_load_model and _accepted_async_load_model not in loading:
+        loading.append(_accepted_async_load_model)
+    return loading
+
+
+def get_pending_async_load_model() -> Optional[str]:
+    with _async_load_admission_lock:
+        if _active_async_load_task is not None and not _active_async_load_task.done():
+            return _accepted_async_load_model
+    return None
+
+
+def _clear_async_load_if_current(task: asyncio.Task, generation: int) -> None:
+    global _accepted_async_load_model, _active_async_load_task
+    with _async_load_admission_lock:
+        _background_tasks.discard(task)
+        if generation == _async_load_generation and _active_async_load_task is task:
+            _active_async_load_task = None
+            _accepted_async_load_model = None
+
+
+def _set_async_load_error_if_current(generation: int, detail: Optional[str]) -> None:
+    global _last_async_load_error
+    with _async_load_admission_lock:
+        if generation == _async_load_generation:
+            _last_async_load_error = detail
+
+
+def _cancel_pending_async_load(model_path: str) -> bool:
+    global _accepted_async_load_model, _active_async_load_task, _async_load_generation
+    global _last_async_load_error
+    with _async_load_admission_lock:
+        task = _active_async_load_task
+        if task is None or task.done():
+            return False
+        if not _matches_pending_async_load(model_path, _accepted_async_load_model):
+            return False
+        _async_load_generation += 1
+        _active_async_load_task = None
+        _accepted_async_load_model = None
+        _last_async_load_error = None
+        task.cancel()
+        return True
+
+
+@router.post("/load")
 async def load_model(
     request: LoadRequest,
     fastapi_request: Request,
     current_subject: str = Depends(get_current_subject),
-):
+) -> Union[LoadResponse, LoadAcceptedResponse]:
     """
     Load a model for inference.
 
@@ -3546,13 +3612,90 @@ async def load_model(
     back to default.yaml for missing values.
 
     GGUF models load via llama-server (llama.cpp) instead of Unsloth.
+
+    When ``async_load=true``, returns immediately with a ``LoadAcceptedResponse``
+    and continues the load in the background; poll GET /status for completion
+    (``loading`` / ``loaded`` / ``load_error``).
     """
     # Hold the lifecycle gate across the load so idle auto-unload can't unload the
     # model mid-load. Auto-switch calls _load_model_impl directly since it already
     # holds this gate.
-    from core.inference.llama_keepwarm import inference_lifecycle_gate
-    async with inference_lifecycle_gate():
-        return await _load_model_impl(request, fastapi_request, current_subject)
+    from core.inference.llama_keepwarm import (
+        acquire_inference_lifecycle_gate_nowait,
+        inference_lifecycle_gate,
+        release_inference_lifecycle_gate,
+    )
+
+    global _active_async_load_task, _accepted_async_load_model, _async_load_generation
+    global _last_async_load_error, _sync_load_admission_count
+
+    if request.async_load:
+        with _async_load_admission_lock:
+            if _active_async_load_task is not None and not _active_async_load_task.done():
+                raise HTTPException(
+                    status_code = status.HTTP_409_CONFLICT,
+                    detail = f"Model load already in progress: {_accepted_async_load_model}",
+                )
+            if _sync_load_admission_count:
+                raise HTTPException(
+                    status_code = status.HTTP_409_CONFLICT,
+                    detail = "Another model operation is already in progress.",
+                )
+            if not acquire_inference_lifecycle_gate_nowait():
+                raise HTTPException(
+                    status_code = status.HTTP_409_CONFLICT,
+                    detail = "Another model operation is already in progress.",
+                )
+            _async_load_generation += 1
+            generation = _async_load_generation
+            _accepted_async_load_model = request.model_path
+            _last_async_load_error = None
+
+            async def _background_load() -> None:
+                try:
+                    await asyncio.sleep(0)
+                    await _load_model_impl(request, fastapi_request, current_subject)
+                    _set_async_load_error_if_current(generation, None)
+                except Exception as exc:
+                    detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
+                    logger.warning("inference.async_load_failed: %s", detail)
+                    _set_async_load_error_if_current(generation, str(detail))
+
+            def _finish_async_load(done_task: asyncio.Task) -> None:
+                try:
+                    release_inference_lifecycle_gate()
+                finally:
+                    _clear_async_load_if_current(done_task, generation)
+
+            try:
+                task = asyncio.create_task(_background_load())
+            except Exception:
+                _accepted_async_load_model = None
+                release_inference_lifecycle_gate()
+                raise
+            _active_async_load_task = task
+            _background_tasks.add(task)
+            task.add_done_callback(_finish_async_load)
+        return LoadAcceptedResponse(model = request.model_path)
+
+    with _async_load_admission_lock:
+        if _active_async_load_task is not None and not _active_async_load_task.done():
+            raise HTTPException(
+                status_code = status.HTTP_409_CONFLICT,
+                detail = f"Model load already in progress: {_accepted_async_load_model}",
+            )
+        sync_generation = _async_load_generation
+        _sync_load_admission_count += 1
+    try:
+        async with inference_lifecycle_gate():
+            response = await _load_model_impl(request, fastapi_request, current_subject)
+    finally:
+        with _async_load_admission_lock:
+            _sync_load_admission_count -= 1
+    with _async_load_admission_lock:
+        if sync_generation == _async_load_generation:
+            _last_async_load_error = None
+    return response
 
 
 async def _load_model_impl(request: LoadRequest, fastapi_request: Request, current_subject: str):
@@ -4442,6 +4585,11 @@ async def unload_model(request: UnloadRequest, current_subject: str = Depends(ge
     # backend directly (not this route), so clearing here never fights keep-warm.
     from core.inference.llama_keepwarm import inference_lifecycle_gate, note_model_unloaded
     try:
+        if _cancel_pending_async_load(request.model_path):
+            note_model_unloaded()
+            logger.info(f"Cancelled pending async load: {request.model_path}")
+            return UnloadResponse(status = "unloaded", model = request.model_path)
+
         # "Stop loading" (frontend cancelLoading -> /unload) must abort a still-loading
         # model promptly. /load holds the lifecycle gate for the whole (multi-minute) load,
         # so gating first would make the cancel wait it out. cancel_load only tears the
@@ -4779,7 +4927,7 @@ async def get_status(current_subject: str = Depends(get_current_subject)):
                 is_audio = getattr(llama_backend, "_is_audio", False),
                 audio_type = _audio_type,
                 has_audio_input = getattr(llama_backend, "_has_audio_input", False),
-                loading = [],
+                loading = _async_loading_models(),
                 loaded = [_display_model_id] if _display_model_id else [],
                 inference = _inference_cfg,
                 # GGUF status: auto_map never executes, so inert (matches validate_model).
@@ -4804,6 +4952,7 @@ async def get_status(current_subject: str = Depends(get_current_subject)):
                 llama_cpp_prebuilt_stale = _stale,
                 llama_cpp_installed_tag = _installed_tag,
                 llama_cpp_latest_tag = _latest_tag,
+                load_error = _last_async_load_error,
             )
 
         # Otherwise, report Unsloth backend status
@@ -4839,7 +4988,7 @@ async def get_status(current_subject: str = Depends(get_current_subject)):
             is_audio = is_audio,
             audio_type = audio_type,
             has_audio_input = has_audio_input,
-            loading = list(getattr(backend, "loading_models", set())),
+            loading = _async_loading_models(getattr(backend, "loading_models", set())),
             loaded = list(backend.models.keys()),
             inference = inference_config,
             requires_trust_remote_code = _resolve_loaded_trust_remote_code(
@@ -4857,6 +5006,7 @@ async def get_status(current_subject: str = Depends(get_current_subject)):
             llama_cpp_prebuilt_stale = _stale,
             llama_cpp_installed_tag = _installed_tag,
             llama_cpp_latest_tag = _latest_tag,
+            load_error = _last_async_load_error,
         )
 
     except Exception as e:
