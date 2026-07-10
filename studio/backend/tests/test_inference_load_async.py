@@ -10,6 +10,7 @@ mirroring tests/test_openai_auto_switch.py.
 """
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -18,7 +19,7 @@ from fastapi import HTTPException
 import core.inference.llama_keepwarm as keepwarm
 import routes.inference as inference_route
 import routes.models as models_route
-from models.inference import LoadAcceptedResponse, LoadRequest, LoadResponse
+from models.inference import LoadAcceptedResponse, LoadRequest, LoadResponse, UnloadRequest
 
 
 @pytest.fixture(autouse = True)
@@ -273,6 +274,52 @@ def test_async_load_releases_lifecycle_gate_when_cancelled_before_start(monkeypa
     assert inference_route._accepted_async_load_model is None
 
 
+def test_unload_cancels_pending_async_load_before_backend_marker(monkeypatch):
+    calls = []
+    releases = []
+
+    class _Backend:
+        @staticmethod
+        def get_loading_model():
+            return None
+
+    class _LlamaBackend:
+        is_active = False
+        is_loaded = False
+        model_identifier = None
+
+    async def _load(request, fastapi_request, current_subject):
+        calls.append(request.model_path)
+        await asyncio.sleep(10)
+        return LoadResponse(
+            status = "loaded", model = request.model_path, display_name = "A", inference = {}
+        )
+
+    monkeypatch.setattr(inference_route, "_load_model_impl", _load)
+    monkeypatch.setattr(inference_route, "get_inference_backend", lambda: _Backend())
+    monkeypatch.setattr(inference_route, "get_llama_cpp_backend", lambda: _LlamaBackend())
+    monkeypatch.setattr(keepwarm, "acquire_inference_lifecycle_gate_nowait", lambda: True)
+    monkeypatch.setattr(
+        keepwarm, "release_inference_lifecycle_gate", lambda: releases.append("released")
+    )
+
+    async def _scenario():
+        await inference_route.load_model(_request("unsloth/A-GGUF"), object(), "tester")
+        response = await inference_route.unload_model(
+            UnloadRequest(model_path = "unsloth/A-GGUF"), "tester"
+        )
+        await asyncio.sleep(0)
+        return response
+
+    response = _run(_scenario())
+    assert response.status == "unloaded"
+    assert response.model == "unsloth/A-GGUF"
+    assert calls == []
+    assert releases == ["released"]
+    assert inference_route._active_async_load_task is None
+    assert inference_route._accepted_async_load_model is None
+
+
 def test_delete_rejects_pending_async_load_before_backend_marker(monkeypatch, tmp_path):
     export_root = tmp_path / "exports"
     target = export_root / "model"
@@ -468,6 +515,68 @@ def test_sync_load_success_clears_stale_async_error(monkeypatch):
     result = _run(inference_route.load_model(_request(async_load = False), object(), "tester"))
     assert isinstance(result, LoadResponse)
     assert inference_route._last_async_load_error is None
+
+
+def test_sync_load_does_not_clear_newer_async_failure(monkeypatch):
+    sync_ready_to_clear = threading.Event()
+    allow_sync_clear = threading.Event()
+
+    class _CoordinatedLock:
+        def __init__(self):
+            self._lock = threading.Lock()
+            self._exit_count = 0
+
+        def __enter__(self):
+            self._lock.acquire()
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            self._exit_count += 1
+            should_pause_sync = self._exit_count == 2
+            self._lock.release()
+            if should_pause_sync:
+                sync_ready_to_clear.set()
+                assert allow_sync_clear.wait(timeout = 5)
+
+    async def _load(request, fastapi_request, current_subject):
+        if request.model_path == "unsloth/Async-GGUF":
+            raise HTTPException(status_code = 400, detail = "new async failed")
+        return LoadResponse(
+            status = "loaded", model = request.model_path, display_name = "A", inference = {}
+        )
+
+    monkeypatch.setattr(inference_route, "_async_load_admission_lock", _CoordinatedLock())
+    monkeypatch.setattr(inference_route, "_load_model_impl", _load)
+    monkeypatch.setattr(keepwarm, "acquire_inference_lifecycle_gate_nowait", lambda: True)
+    monkeypatch.setattr(keepwarm, "release_inference_lifecycle_gate", lambda: None)
+    monkeypatch.setattr(inference_route, "_last_async_load_error", "old async failure")
+
+    sync_result = {}
+
+    def _run_sync_load():
+        sync_result["response"] = _run(
+            inference_route.load_model(
+                _request("unsloth/Sync-GGUF", async_load = False), object(), "tester"
+            )
+        )
+
+    sync_thread = threading.Thread(target = _run_sync_load)
+    sync_thread.start()
+    assert sync_ready_to_clear.wait(timeout = 5)
+
+    async def _run_new_async_failure():
+        await inference_route.load_model(_request("unsloth/Async-GGUF"), object(), "tester")
+        await inference_route._active_async_load_task
+
+    _run(_run_new_async_failure())
+    assert inference_route._last_async_load_error == "new async failed"
+
+    allow_sync_clear.set()
+    sync_thread.join(timeout = 5)
+
+    assert not sync_thread.is_alive()
+    assert isinstance(sync_result["response"], LoadResponse)
+    assert inference_route._last_async_load_error == "new async failed"
 
 
 def test_sync_load_unaffected_returns_load_response_directly(monkeypatch):

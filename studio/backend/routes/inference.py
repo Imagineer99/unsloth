@@ -3545,6 +3545,12 @@ _async_load_admission_lock = threading.Lock()
 _sync_load_admission_count = 0
 
 
+def _matches_pending_async_load(model_path: str, accepted_model: Optional[str]) -> bool:
+    if not accepted_model:
+        return False
+    return model_path == accepted_model or model_path.lower() == accepted_model.lower()
+
+
 def _async_loading_models(backend_loading: Iterable[str] = ()) -> List[str]:
     loading = list(backend_loading)
     if _accepted_async_load_model and _accepted_async_load_model not in loading:
@@ -3561,10 +3567,35 @@ def get_pending_async_load_model() -> Optional[str]:
 
 def _clear_async_load_if_current(task: asyncio.Task, generation: int) -> None:
     global _accepted_async_load_model, _active_async_load_task
-    _background_tasks.discard(task)
-    if generation == _async_load_generation and _active_async_load_task is task:
+    with _async_load_admission_lock:
+        _background_tasks.discard(task)
+        if generation == _async_load_generation and _active_async_load_task is task:
+            _active_async_load_task = None
+            _accepted_async_load_model = None
+
+
+def _set_async_load_error_if_current(generation: int, detail: Optional[str]) -> None:
+    global _last_async_load_error
+    with _async_load_admission_lock:
+        if generation == _async_load_generation:
+            _last_async_load_error = detail
+
+
+def _cancel_pending_async_load(model_path: str) -> bool:
+    global _accepted_async_load_model, _active_async_load_task, _async_load_generation
+    global _last_async_load_error
+    with _async_load_admission_lock:
+        task = _active_async_load_task
+        if task is None or task.done():
+            return False
+        if not _matches_pending_async_load(model_path, _accepted_async_load_model):
+            return False
+        _async_load_generation += 1
         _active_async_load_task = None
         _accepted_async_load_model = None
+        _last_async_load_error = None
+        task.cancel()
+        return True
 
 
 @router.post("/load")
@@ -3621,17 +3652,14 @@ async def load_model(
             _last_async_load_error = None
 
             async def _background_load() -> None:
-                global _last_async_load_error
                 try:
                     await asyncio.sleep(0)
                     await _load_model_impl(request, fastapi_request, current_subject)
-                    if generation == _async_load_generation:
-                        _last_async_load_error = None
+                    _set_async_load_error_if_current(generation, None)
                 except Exception as exc:
                     detail = exc.detail if isinstance(exc, HTTPException) else str(exc)
                     logger.warning("inference.async_load_failed: %s", detail)
-                    if generation == _async_load_generation:
-                        _last_async_load_error = str(detail)
+                    _set_async_load_error_if_current(generation, str(detail))
 
             def _finish_async_load(done_task: asyncio.Task) -> None:
                 try:
@@ -3656,6 +3684,7 @@ async def load_model(
                 status_code = status.HTTP_409_CONFLICT,
                 detail = f"Model load already in progress: {_accepted_async_load_model}",
             )
+        sync_generation = _async_load_generation
         _sync_load_admission_count += 1
     try:
         async with inference_lifecycle_gate():
@@ -3663,7 +3692,9 @@ async def load_model(
     finally:
         with _async_load_admission_lock:
             _sync_load_admission_count -= 1
-    _last_async_load_error = None
+    with _async_load_admission_lock:
+        if sync_generation == _async_load_generation:
+            _last_async_load_error = None
     return response
 
 
@@ -4554,6 +4585,11 @@ async def unload_model(request: UnloadRequest, current_subject: str = Depends(ge
     # backend directly (not this route), so clearing here never fights keep-warm.
     from core.inference.llama_keepwarm import inference_lifecycle_gate, note_model_unloaded
     try:
+        if _cancel_pending_async_load(request.model_path):
+            note_model_unloaded()
+            logger.info(f"Cancelled pending async load: {request.model_path}")
+            return UnloadResponse(status = "unloaded", model = request.model_path)
+
         # "Stop loading" (frontend cancelLoading -> /unload) must abort a still-loading
         # model promptly. /load holds the lifecycle gate for the whole (multi-minute) load,
         # so gating first would make the cancel wait it out. cancel_load only tears the
