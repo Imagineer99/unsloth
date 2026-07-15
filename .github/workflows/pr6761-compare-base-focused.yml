@@ -1,0 +1,100 @@
+name: PR 6761 compare base focused check
+
+on:
+  push:
+    branches:
+      - fix/pr-6761-focused-ci
+
+jobs:
+  compare-base-wiring:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify compare-with-base wiring
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path.cwd()
+          selector = (root / "studio/frontend/src/components/assistant-ui/model-selector.tsx").read_text()
+          pickers = (root / "studio/frontend/src/components/assistant-ui/model-selector/pickers.tsx").read_text()
+          chat = (root / "studio/frontend/src/features/chat/chat-page.tsx").read_text()
+          handoff = (root / "studio/frontend/src/features/chat/lib/training-compare-handoff.ts").read_text()
+          progress = (root / "studio/frontend/src/features/studio/sections/progress-section.tsx").read_text()
+
+          def require(condition: bool, message: str) -> None:
+              if not condition:
+                  raise SystemExit(message)
+
+          require(
+              "onCompareWithBase?: (adapter: LoraModelOption) => void" in selector,
+              "ModelSelector does not expose onCompareWithBase",
+          )
+          require(
+              "function handleCompareWithBase(adapter: LoraModelOption)" in selector,
+              "ModelSelector does not route compare clicks through a handler",
+          )
+          require(
+              "onCompareWithBase?.(adapter)" in selector,
+              "ModelSelector handler does not call onCompareWithBase",
+          )
+          require(
+              "onCompareWithBase ? handleCompareWithBase : undefined" in selector,
+              "ModelSelector does not pass compare handler to content",
+          )
+          require(
+              "const isAdapterLora = !isLocal && !isMerged && !isGguf;" in pickers,
+              "Fine-tuned rows do not restrict compare action to adapter LoRAs",
+          )
+          require(
+              "const canCompareWithBase = Boolean(onCompareWithBase) && isAdapterLora;" in pickers,
+              "Fine-tuned rows do not gate compare action correctly",
+          )
+          require(
+              'title="Compare with base model"' in pickers
+              and "e.stopPropagation();" in pickers
+              and "onCompareWithBase?.(adapter);" in pickers,
+              "Compare button is missing or does not call the compare callback",
+          )
+          require(
+              "loraPath: string | null;" in handoff
+              and "loraPath: string | null = null" in handoff
+              and 'loraPath: typeof parsed.loraPath === "string" ? parsed.loraPath : null' in handoff,
+              "Training compare handoff does not persist/read the LoRA path",
+          )
+          require(
+              "function findLoraByPath" in chat
+              and "findLoraByPath(state.loras, handoff.loraPath)" in chat,
+              "Chat compare handoff does not resolve the selected LoRA path",
+          )
+          require(
+              "onCompareWithBase={compareLoraWithBase}" in chat,
+              "Chat page does not wire ModelSelector compare action",
+          )
+          require(
+              "studio.training.compareInChat" in progress,
+              "Training progress compare-in-chat entry point was removed",
+          )
+
+          print("PASS: compare-with-base wiring checks passed")
+          PY
+
+  frontend-typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+          cache: npm
+          cache-dependency-path: studio/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: studio/frontend
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: studio/frontend
+        run: npm run typecheck
