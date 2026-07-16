@@ -1,0 +1,68 @@
+name: PR 7178 cross-platform security reproduction
+
+on:
+  push:
+    branches: [fix/pr7178-cross-platform-ci]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-14]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: studio/frontend
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: studio/frontend/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
+
+  browser-security-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            browser: chrome
+          - os: ubuntu-latest
+            browser: firefox
+          - os: windows-latest
+            browser: edge
+          - os: macos-14
+            browser: safari
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: .github/pr-repro/pr7178-browser
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: 22
+      - run: npm install --no-package-lock
+      - name: Enable Safari remote automation
+        if: matrix.browser == 'safari'
+        run: sudo safaridriver --enable
+      - name: Start browser harness
+        shell: bash
+        run: |
+          npx vite --host 127.0.0.1 --port 4174 > vite.log 2>&1 &
+          for attempt in {1..30}; do
+            curl --fail --silent http://127.0.0.1:4174/ > /dev/null && exit 0
+            sleep 1
+          done
+          cat vite.log
+          exit 1
+      - run: node run-browser.cjs ${{ matrix.browser }}
