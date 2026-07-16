@@ -1,0 +1,23 @@
+[[PackageOverrides]]
+name = "torch"
+version = "0.0.0"
+ecosystem = "PyPI"
+vulnerability.ignore = true
+effectiveUntil = 2026-10-16
+reason = "OSV-Scanner v1.9.2 assigns synthetic version 0.0.0 to this intentionally unpinned test dependency and reports historical advisories. Concrete environments resolve a real version, and OSV-Scanner v2 does not report this requirement."
+
+[[PackageOverrides]]
+name = "pytest"
+version = "0.0.0"
+ecosystem = "PyPI"
+vulnerability.ignore = true
+effectiveUntil = 2026-10-16
+reason = "OSV-Scanner v1.9.2 assigns synthetic version 0.0.0 to this intentionally unpinned test dependency and reports historical advisories. Concrete environments resolve a real version, and OSV-Scanner v2 does not report this requirement."
+
+[[PackageOverrides]]
+name = "pandas"
+version = "0.0.0"
+ecosystem = "PyPI"
+vulnerability.ignore = true
+effectiveUntil = 2026-10-16
+reason = "OSV-Scanner v1.9.2 assigns synthetic version 0.0.0 to this intentionally unpinned test dependency and reports historical advisories. Concrete environments resolve a real version, and OSV-Scanner v2 does not report this requirement."

@@ -1,0 +1,109 @@
+# Tauri 2's Linux runtime still resolves the gtk-rs GTK3 generation. These
+# entries are informational maintenance advisories rather than vulnerabilities;
+# keep them time-bounded so the upstream migration is reviewed regularly.
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0411"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0412"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0413"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0414"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0415"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0416"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0417"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0418"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0419"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0420"
+ignoreUntil = 2026-10-16
+reason = "Informational maintenance advisory in Tauri 2's transitive gtk-rs GTK3 stack; no patched release is selectable without an upstream Tauri migration."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory for a proc-macro used only by Tauri's transitive gtk-rs GTK3 build stack."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0057"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory for fxhash, pulled transitively by Tauri's HTML selector stack; no patched release exists."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0075"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory in urlpattern's transitive UNIC identifier stack; no patched release exists."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0080"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory in urlpattern's transitive UNIC identifier stack; no patched release exists."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0081"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory in urlpattern's transitive UNIC identifier stack; no patched release exists."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0098"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory in urlpattern's transitive UNIC identifier stack; no patched release exists."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2025-0100"
+ignoreUntil = 2026-10-16
+reason = "Informational unmaintained advisory in urlpattern's transitive UNIC identifier stack; no patched release exists."
+
+# Reachability-reviewed advisories whose patched major/minor cannot currently
+# be selected through the upstream Tauri dependency graph.
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2026-10-16
+reason = "The affected glib::VariantStrIter iterator APIs are unused by Unsloth and its resolved transitive crates; Tauri's GTK3 stack currently constrains glib below 0.20."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0097"
+ignoreUntil = 2026-10-16
+reason = "rand 0.7.3 is build-only through phf_codegen and uses a deterministically seeded SmallRng; the advisory requires ThreadRng plus a custom logger, and rand 0.7.3 has no log feature."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0194"
+ignoreUntil = 2026-10-16
+reason = "The quick-xml consumers do not parse attacker-controlled attributes: WinRT notification uses only escape(), plist never iterates attributes, and wayland-scanner parses trusted build-time protocol XML."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0195"
+ignoreUntil = 2026-10-16
+reason = "No resolved quick-xml consumer uses the affected NsReader or NamespaceResolver APIs; they use plain Reader or escape() only."
