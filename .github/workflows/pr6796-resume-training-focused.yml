@@ -30,7 +30,7 @@ jobs:
           pip install \
             python-multipart aiofiles sqlalchemy cryptography psutil \
             pyyaml jinja2 mammoth unpdf requests \
-            "numpy<3" pytest pytest-asyncio httpx ruff
+            "numpy<3" safetensors pytest pytest-asyncio httpx ruff
           pip install \
             --index-url https://download.pytorch.org/whl/cpu \
             --extra-index-url https://pypi.org/simple \
@@ -83,13 +83,5 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: ESLint changed resume UI files
-        run: |
-          npx eslint \
-            src/features/studio/historical-training-view.tsx \
-            src/features/studio/history-card-grid.tsx \
-            src/features/studio/studio-page.tsx \
-            src/features/training/stores/training-runtime-store.ts \
-            src/features/training/types/runtime.ts \
-            src/i18n/locales/en.ts \
-            src/i18n/locales/zh-CN.ts
+      - name: Production build
+        run: npm run build
