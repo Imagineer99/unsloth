@@ -1,0 +1,84 @@
+name: PR 7261 HF token validation focused check
+
+on:
+  push:
+    branches:
+      - fix/pr-7261-focused-ci
+
+jobs:
+  backend-token-validation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install \
+            python-multipart aiofiles sqlalchemy cryptography psutil \
+            pyyaml jinja2 mammoth unpdf requests \
+            "numpy<3" pytest pytest-asyncio httpx ruff
+
+      - name: Ruff changed backend modules
+        run: |
+          ruff check \
+            studio/backend/hub/routes/__init__.py \
+            studio/backend/hub/routes/token.py \
+            studio/backend/main.py \
+            studio/backend/routes/inference.py \
+            studio/backend/tests/test_hf_token_validation.py \
+            studio/backend/tests/test_utils.py \
+            studio/backend/utils/hf_token_validation.py \
+            studio/backend/utils/utils.py
+
+      - name: HF token validation tests
+        working-directory: studio/backend
+        run: |
+          python -m pytest -q \
+            tests/test_hf_token_validation.py \
+            tests/test_utils.py \
+            --tb=short
+
+  frontend-hf-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.17.1"
+          cache: npm
+          cache-dependency-path: studio/frontend/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: studio/frontend
+        run: npm ci
+
+      - name: Typecheck frontend
+        working-directory: studio/frontend
+        run: npm run typecheck
+
+      - name: ESLint touched HF auth frontend files
+        working-directory: studio/frontend
+        run: |
+          npx eslint \
+            src/app/routes/__root.tsx \
+            src/features/chat/api/chat-api.ts \
+            src/features/export/export-page.tsx \
+            src/features/hf-auth/api.ts \
+            src/features/hf-auth/confirm-token.ts \
+            src/features/hf-auth/hf-token-warning-dialog.tsx \
+            src/features/hf-auth/index.ts \
+            src/features/hf-auth/store.ts \
+            src/features/settings/tabs/general-tab.tsx \
+            src/features/training/api/train-api.ts \
+            src/features/training/hooks/use-training-actions.ts \
+            src/hooks/use-hf-token-validation.ts
