@@ -66,19 +66,9 @@ jobs:
         working-directory: studio/frontend
         run: npm run typecheck
 
-      - name: ESLint touched HF auth frontend files
+      - name: ESLint new HF auth frontend files
         working-directory: studio/frontend
         run: |
           npx eslint \
-            src/app/routes/__root.tsx \
-            src/features/chat/api/chat-api.ts \
-            src/features/export/export-page.tsx \
-            src/features/hf-auth/api.ts \
-            src/features/hf-auth/confirm-token.ts \
-            src/features/hf-auth/hf-token-warning-dialog.tsx \
-            src/features/hf-auth/index.ts \
-            src/features/hf-auth/store.ts \
-            src/features/settings/tabs/general-tab.tsx \
-            src/features/training/api/train-api.ts \
-            src/features/training/hooks/use-training-actions.ts \
+            src/features/hf-auth \
             src/hooks/use-hf-token-validation.ts
