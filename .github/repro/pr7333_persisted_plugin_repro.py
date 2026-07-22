@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import signal
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -70,7 +71,10 @@ def _claude_binary() -> Path:
         if binary.is_file():
             return binary
         raise AssertionError(f"CLAUDE_CODE_BIN does not exist: {binary}")
-    npm_root = subprocess.check_output(["npm", "root", "--global"], text=True).strip()
+    npm = shutil.which("npm")
+    if npm is None:
+        raise AssertionError("npm was not found on PATH")
+    npm_root = subprocess.check_output([npm, "root", "--global"], text=True).strip()
     binary = Path(npm_root) / "@anthropic-ai" / "claude-code" / "bin" / "claude.exe"
     if not binary.is_file():
         raise AssertionError(f"Claude Code binary not found at {binary}")
