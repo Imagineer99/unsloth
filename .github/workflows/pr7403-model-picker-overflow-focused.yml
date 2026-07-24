@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: PR 7403 model picker overflow focused check
+
+on:
+  push:
+    branches:
+      - fix/pr-7403-toolbar-overflow-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-check:
+    name: Rendered toolbar containment
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: studio/frontend/package-lock.json
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install focused dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev
+          python -m pip install pytest playwright
+          python -m playwright install --with-deps chromium
+          npm ci --prefix studio/frontend
+
+      - name: Run model-picker source contracts
+        run: python -m pytest tests/studio/test_model_picker_contracts.py -q
+
+      - name: Run focused frontend checks
+        working-directory: studio/frontend
+        run: |
+          npm run typecheck
+          npx eslint \
+            src/features/model-picker/components/model-selector/pickers.tsx \
+            src/features/model-picker/components/model-selector/pill-tabs.tsx
+          npm run build
+
+      - name: Install and start Studio
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash install.sh --local --no-torch
+          unsloth studio reset-password
+          UNSLOTH_API_ONLY=1 unsloth studio -H 127.0.0.1 -p 18899 \
+            > studio-pr7403.log 2>&1 &
+          echo "STUDIO_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 180); do
+            if curl -fs http://127.0.0.1:18899/api/health > /tmp/health.json; then
+              break
+            fi
+            sleep 1
+          done
+          python - <<'PY'
+          import json
+          with open("/tmp/health.json", encoding="utf-8") as handle:
+              assert json.load(handle)["status"] == "healthy"
+          PY
+
+      - name: Run rendered picker matrix
+        env:
+          BASE_URL: http://127.0.0.1:18899
+          STUDIO_NEW_PW: PR7403-CI-Password-Only
+          PW_ART_DIR: artifacts/pr7403-model-picker
+        run: python tests/studio/playwright_model_picker_overflow.py
+
+      - name: Stop Studio
+        if: always()
+        run: kill "${STUDIO_PID}" 2>/dev/null || true
+
+      - name: Upload screenshots and server log
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pr7403-model-picker-rendered-layout
+          path: |
+            artifacts/pr7403-model-picker
+            studio-pr7403.log
