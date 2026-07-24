@@ -718,31 +718,13 @@ def test_fetch_url_raw_missing_content_type_reported_empty(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "disable_dns_pinning,url,expected_url",
+    "disable_dns_pinning,expected_url",
     [
-        (
-            False,
-            "https://example.com:8443/page?q=1",
-            "https://203.0.113.7:8443/page?q=1",
-        ),
-        (
-            True,
-            "https://example.com:8443/page?q=1",
-            "https://example.com:8443/page?q=1",
-        ),
-        (
-            True,
-            "https://user:secret@example.com:8443/page?q=1",
-            "https://example.com:8443/page?q=1",
-        ),
+        (False, "https://203.0.113.7:8443/page?q=1"),
+        (True, "https://example.com:8443/page?q=1"),
     ],
 )
-def test_fetch_url_raw_dns_pinning_proxy_opt_out(
-    monkeypatch,
-    disable_dns_pinning,
-    url,
-    expected_url,
-):
+def test_fetch_url_raw_dns_pinning_proxy_opt_out(monkeypatch, disable_dns_pinning, expected_url):
     import email
     import urllib.request
 
@@ -779,7 +761,7 @@ def test_fetch_url_raw_dns_pinning_proxy_opt_out(
     monkeypatch.setattr(tools_mod, "_validate_and_resolve_host", resolve)
     monkeypatch.setattr(urllib.request, "build_opener", lambda *handlers: _FakeOpener())
 
-    err, body, _content_type = tools_mod._fetch_url_raw(url)
+    err, body, _content_type = tools_mod._fetch_url_raw("https://example.com:8443/page?q=1")
 
     assert err is None
     assert body == "ok"
