@@ -1,0 +1,48 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 7416 Enterprise Proxy macOS"
+
+on:
+  push:
+    branches:
+      - "fix/pr7416-enterprise-proxy-repro-ci*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "macos-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.13"
+
+      - name: "Install focused dependencies"
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest structlog starlette cryptography typer pyyaml pydantic nest-asyncio click ruff
+
+      - name: "Run enterprise proxy transport reproduction"
+        shell: bash
+        run: |
+          python tests/ci/pr7416_enterprise_proxy_repro.py
+
+      - name: "Run focused repository tests"
+        shell: bash
+        run: |
+          python -m pytest -q studio/backend/tests/test_web_fetch_extraction.py studio/backend/tests/test_secure_tunnel_gate.py tests/studio/test_cli_studio_defaults.py unsloth_cli/tests/test_studio_verbose_flag.py
+
+      - name: "Lint and compile changed Python"
+        shell: bash
+        run: |
+          python -m ruff check studio/backend/core/inference/tools.py studio/backend/run.py studio/backend/tests/test_secure_tunnel_gate.py studio/backend/tests/test_web_fetch_extraction.py tests/studio/test_cli_studio_defaults.py unsloth_cli/commands/studio.py tests/ci/pr7416_enterprise_proxy_repro.py
+          python -m compileall -q studio/backend/core/inference/tools.py studio/backend/run.py studio/backend/tests/test_secure_tunnel_gate.py studio/backend/tests/test_web_fetch_extraction.py tests/studio/test_cli_studio_defaults.py unsloth_cli/commands/studio.py tests/ci/pr7416_enterprise_proxy_repro.py
