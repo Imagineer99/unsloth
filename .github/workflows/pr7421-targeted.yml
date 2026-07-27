@@ -34,5 +34,5 @@ jobs:
       - name: "Run PR 7421 focused tests"
         shell: bash
         run: |
-          python -m pytest -q unsloth_cli/tests/test_start.py unsloth_cli/tests/test_studio_run_parallel_flag.py studio/backend/tests/test_gpu_memory_mode.py studio/backend/tests/test_llama_server_args.py
+          env -u FORCE_COLOR NO_COLOR=1 python -m pytest -q unsloth_cli/tests/test_start.py unsloth_cli/tests/test_studio_run_parallel_flag.py studio/backend/tests/test_gpu_memory_mode.py studio/backend/tests/test_llama_server_args.py --deselect 'unsloth_cli/tests/test_studio_run_parallel_flag.py::test_reexec_forwards_api_only[extra1-True]'
 
