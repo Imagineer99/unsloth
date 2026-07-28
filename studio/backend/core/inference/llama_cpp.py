@@ -526,29 +526,84 @@ def _hf_env_offline() -> bool:
         return os.environ.get("HF_HUB_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _hub_offline_env_truthy() -> bool:
+    """HF_HUB_OFFLINE specifically is truthy. huggingface_hub does not honor
+    TRANSFORMERS_OFFLINE, so a forced local-only guard may only no-op when the
+    Hub flag itself is already set."""
+    return os.environ.get("HF_HUB_OFFLINE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+# Overlapping offline guards share one env override: the count tracks active
+# guards and the saved values are restored only when the LAST guard exits, so
+# a request finishing early cannot re-enable network for one still running.
+_OFFLINE_GUARD_LOCK = threading.Lock()
+_OFFLINE_GUARD_STATE: dict = {"count": 0, "hub_prev": None, "transformers_prev": None}
+
+
 @contextlib.contextmanager
-def _hf_offline_if_dns_dead():
+def _hf_offline_if_dns_dead(force: bool = False):
     """Set HF_HUB_OFFLINE for this block only when DNS to huggingface.co fails;
     restores env on exit so a transient hiccup can't quarantine the process.
-    No-op if the user already set it."""
-    if "HF_HUB_OFFLINE" in os.environ:
+    No-op when the user already set it to a truthy value. ``force`` skips the
+    DNS probe and goes offline unconditionally (local-only background loads
+    resolve metadata from the cache without any network), overriding even an
+    explicitly falsy HF_HUB_OFFLINE=0 for the block and restoring it after.
+    Guards are refcounted so overlapping loads/validations each keep offline
+    until the last one exits."""
+    entered = False  # this guard joined or created the env override
+    owner = False  # this guard created it (first in)
+    with _OFFLINE_GUARD_LOCK:
+        if _OFFLINE_GUARD_STATE["count"] > 0:
+            if force:
+                # Join the active override so the env survives until every
+                # local-only guard exits, whichever request finishes first.
+                _OFFLINE_GUARD_STATE["count"] += 1
+                entered = True
+            # An ordinary guard never joins: its block tolerates either env
+            # state (it would have run online), so extending the forced
+            # window would only widen the exposure of concurrent online
+            # work to the process-global override. It no-ops instead.
+        elif _hf_env_offline() and (not force or _hub_offline_env_truthy()):
+            # User-set truthy env (count is 0): already offline, nothing to
+            # arrange or restore. A forced guard only trusts HF_HUB_OFFLINE
+            # itself: TRANSFORMERS_OFFLINE=1 alone leaves hub API calls (e.g.
+            # get_paths_info) online, so force still installs both flags.
+            pass
+        elif not force and "HF_HUB_OFFLINE" in os.environ:
+            # A user-pinned falsy value stays authoritative for ordinary loads.
+            pass
+        elif force or _probe_dns_dead():
+            _OFFLINE_GUARD_STATE["hub_prev"] = os.environ.get("HF_HUB_OFFLINE")
+            _OFFLINE_GUARD_STATE["transformers_prev"] = os.environ.get("TRANSFORMERS_OFFLINE")
+            os.environ["HF_HUB_OFFLINE"] = "1"
+            os.environ["TRANSFORMERS_OFFLINE"] = "1"
+            _OFFLINE_GUARD_STATE["count"] = 1
+            entered = True
+            owner = True
+    if not entered:
         yield False
         return
-    if not _probe_dns_dead():
-        yield False
-        return
-
-    transformers_was_set = "TRANSFORMERS_OFFLINE" in os.environ
-    os.environ["HF_HUB_OFFLINE"] = "1"
-    if not transformers_was_set:
-        os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    logger.warning("huggingface.co unreachable; using local HF cache for this load.")
+    if owner:
+        if force:
+            logger.info("Local-only load: forcing HF offline for this block.")
+        else:
+            logger.warning("huggingface.co unreachable; using local HF cache for this load.")
     try:
         yield True
     finally:
-        os.environ.pop("HF_HUB_OFFLINE", None)
-        if not transformers_was_set:
-            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+        with _OFFLINE_GUARD_LOCK:
+            _OFFLINE_GUARD_STATE["count"] -= 1
+            if _OFFLINE_GUARD_STATE["count"] == 0:
+                for key, prev in (
+                    ("HF_HUB_OFFLINE", _OFFLINE_GUARD_STATE["hub_prev"]),
+                    ("TRANSFORMERS_OFFLINE", _OFFLINE_GUARD_STATE["transformers_prev"]),
+                ):
+                    if prev is None:
+                        os.environ.pop(key, None)
+                    else:
+                        os.environ[key] = prev
+                _OFFLINE_GUARD_STATE["hub_prev"] = None
+                _OFFLINE_GUARD_STATE["transformers_prev"] = None
 
 
 try:
@@ -5550,6 +5605,7 @@ class LlamaCppBackend:
         force: bool = False,
         allow_smaller_fallback: bool = True,
         cancel_event: Optional[threading.Event] = None,
+        local_files_only: bool = False,
     ) -> str:
         """Download GGUF file(s) from HuggingFace. Returns local path.
 
@@ -5587,16 +5643,19 @@ class LlamaCppBackend:
         gguf_filename = None
         gguf_extra_shards: list[str] = []
         if hf_variant:
-            try:
-                from huggingface_hub import list_repo_files
+            # Local-only loads resolve from the cache alone: the live listing
+            # is both network and unnecessary for files already on disk.
+            if not local_files_only:
+                try:
+                    from huggingface_hub import list_repo_files
 
-                files = list_repo_files(hf_repo, token = hf_token)
-                gguf_files = _gguf_files_for_variant(files, hf_variant)
-                if gguf_files:
-                    gguf_filename = gguf_files[0]
-                    gguf_extra_shards = _gguf_extra_shards(gguf_files, gguf_filename)
-            except Exception as e:
-                logger.warning(f"Could not list repo files: {e}")
+                    files = list_repo_files(hf_repo, token = hf_token)
+                    gguf_files = _gguf_files_for_variant(files, hf_variant)
+                    if gguf_files:
+                        gguf_filename = gguf_files[0]
+                        gguf_extra_shards = _gguf_extra_shards(gguf_files, gguf_filename)
+                except Exception as e:
+                    logger.warning(f"Could not list repo files: {e}")
 
             # Fall back to the local cache when the repo listing is unavailable.
             if not gguf_filename:
@@ -5620,10 +5679,16 @@ class LlamaCppBackend:
                 # Resolve by variant so a newer revision's filename does not hide
                 # the complete older copy. Size-check against that older snapshot's
                 # own revision when its metadata remains available.
+                # Local-only loads skip the remote size check outright: the
+                # hub API behind it (get_paths_info) performs no offline-mode
+                # check and HF_HUB_OFFLINE is baked into hub constants at
+                # import, so only a per-call skip reliably keeps this off the
+                # network. A truncated cache then fails the load into
+                # candidate failover instead of being caught up front.
                 cached_main = cached_gguf_for_load(
                     hf_repo,
                     hf_variant,
-                    verify_sizes = True,
+                    verify_sizes = not local_files_only,
                     hf_token = hf_token,
                 )
             else:
@@ -5631,12 +5696,23 @@ class LlamaCppBackend:
                 cached_main = (
                     candidate[0]
                     if candidate is not None
-                    and _cached_candidate_matches_revision_size(hf_repo, candidate, hf_token)
+                    and (
+                        local_files_only
+                        or _cached_candidate_matches_revision_size(hf_repo, candidate, hf_token)
+                    )
                     else None
                 )
             if cached_main is not None:
                 logger.info(f"Reusing cached GGUF: {cached_main}")
                 return cached_main
+
+        # A local-only load reaching this point has no complete cached copy;
+        # fail closed instead of downloading (background loads never fetch).
+        if local_files_only:
+            raise RuntimeError(
+                f"GGUF '{hf_repo}' ({hf_variant or 'default'}) is not fully "
+                "available in the local cache; select it explicitly to download it."
+            )
 
         # Check disk space; fall back to a smaller variant if needed
         all_gguf_files = [gguf_filename] + gguf_extra_shards
@@ -5800,6 +5876,7 @@ class LlamaCppBackend:
         label: str,
         cancel_event: Optional[threading.Event] = None,
         near_path: Optional[str] = None,
+        local_files_only: bool = False,
     ) -> Optional[str]:
         """Resolve and fetch a companion GGUF (mmproj / MTP drafter) by name.
 
@@ -5820,6 +5897,12 @@ class LlamaCppBackend:
             if cached:
                 logger.info("Reusing cached %s: %s", label, cached)
                 return cached
+
+        # Background loads never download: without a cached copy the model
+        # runs without the optional companion instead of fetching it.
+        if local_files_only:
+            logger.info("Skipping %s fetch (local-only load)", label)
+            return None
 
         from utils.hf_cache_settings import get_hf_cache_paths
 
@@ -5909,6 +5992,7 @@ class LlamaCppBackend:
         hf_token: Optional[str] = None,
         cancel_event: Optional[threading.Event] = None,
         near_path: Optional[str] = None,
+        local_files_only: bool = False,
     ) -> Optional[str]:
         """Download the mmproj (vision projection) file from a GGUF repo.
 
@@ -5925,6 +6009,7 @@ class LlamaCppBackend:
             label = "mmproj",
             cancel_event = cancel_event,
             near_path = near_path,
+            local_files_only = local_files_only,
         )
 
     def _cached_repo_mtp_drafter(
@@ -5966,6 +6051,7 @@ class LlamaCppBackend:
         hf_repo: str,
         hf_token: Optional[str] = None,
         near_path: Optional[str] = None,
+        local_files_only: bool = False,
     ) -> Optional[str]:
         """Download the separate MTP drafter (speculative head) from a GGUF repo.
 
@@ -5999,7 +6085,7 @@ class LlamaCppBackend:
         # fetched). Online, _download_companion_gguf/hf_hub_download reuse the
         # current cached file and refetch a changed one, so skip the probe here
         # rather than pair new weights with a stale draft.
-        if _hf_env_offline():
+        if local_files_only or _hf_env_offline():
             cached = self._cached_repo_mtp_drafter(
                 hf_repo,
                 cache_dir = _hub_cache_dir_for_snapshot_path(near_path),
@@ -6014,6 +6100,7 @@ class LlamaCppBackend:
             pick = _pick_mtp,
             label = "MTP drafter",
             near_path = near_path,
+            local_files_only = local_files_only,
         )
 
     def _resolve_launch_mmproj_path(
@@ -6697,6 +6784,9 @@ class LlamaCppBackend:
         hf_repo: Optional[str] = None,
         hf_variant: Optional[str] = None,
         hf_token: Optional[str] = None,
+        # Background auto-loads: resolve every file (main quant, mmproj, MTP
+        # drafter) from the local cache only and never download.
+        local_files_only: bool = False,
         # Common
         model_identifier: str,
         is_vision: bool = False,
@@ -6734,6 +6824,7 @@ class LlamaCppBackend:
             "gguf_path": gguf_path,
             "mmproj_path": mmproj_path,
             "mtp_draft_path": mtp_draft_path,
+            "local_files_only": local_files_only,
             "hf_repo": hf_repo,
             "hf_variant": hf_variant,
             "hf_token": hf_token,
@@ -6861,11 +6952,15 @@ class LlamaCppBackend:
                         hf_repo,
                     )
                     hf_repo = _resolved_repo
-                with _hf_offline_if_dns_dead():
+                # Same local-only policy as the Phase 2 download below: this
+                # preflight runs FIRST, so without the flag it would be the
+                # download path a background load slips through.
+                with _hf_offline_if_dns_dead(force = local_files_only):
                     _preflight_model_path = self._download_gguf(
                         hf_repo = hf_repo,
                         hf_variant = hf_variant,
                         hf_token = hf_token,
+                        local_files_only = local_files_only,
                     )
                 self._reject_vulkan_diffusion_gpu_ids_before_teardown(
                     _preflight_model_path,
@@ -6903,11 +6998,14 @@ class LlamaCppBackend:
                         hf_repo,
                     )
                     hf_repo = _resolved_repo
-                with _hf_offline_if_dns_dead():
+                # Forced offline under local-only so even the cache-size
+                # verification (get_paths_info) stays off the network.
+                with _hf_offline_if_dns_dead(force = local_files_only):
                     model_path = _preflight_model_path or self._download_gguf(
                         hf_repo = hf_repo,
                         hf_variant = hf_variant,
                         hf_token = hf_token,
+                        local_files_only = local_files_only,
                     )
                     # Auto-download mmproj for vision models unless opted out.
                     if is_vision and not mmproj_path and not extra_args_disable_mmproj(extra_args):
@@ -6915,6 +7013,7 @@ class LlamaCppBackend:
                             hf_repo = hf_repo,
                             hf_token = hf_token,
                             near_path = model_path,
+                            local_files_only = local_files_only,
                         )
                     # Auto-download the separate MTP drafter (e.g. Gemma) when
                     # the requested spec mode can use it. Repos with the head
@@ -6933,6 +7032,7 @@ class LlamaCppBackend:
                             hf_repo = hf_repo,
                             hf_token = hf_token,
                             near_path = model_path,
+                            local_files_only = local_files_only,
                         )
             elif gguf_path:
                 if not Path(gguf_path).is_file():

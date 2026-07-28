@@ -1110,6 +1110,7 @@ class InferenceOrchestrator:
         subject: Optional[str] = None,
         tensor_parallel: bool = False,
         mlx_distributed: bool = False,
+        local_files_only: bool = False,
     ) -> bool:
         """Load a model for inference.
 
@@ -1122,7 +1123,24 @@ class InferenceOrchestrator:
         self.loading_models.add(model_name)
 
         try:
-            needed_major = "5" if needs_transformers_5(model_name) else "4"
+            # Parent-side metadata preflight stays offline for local-only
+            # loads: the tier probe reads model configs and GPU sizing calls
+            # hf model_info. The guard closes BEFORE the spawn below, so the
+            # worker does not inherit HF_HUB_OFFLINE for its whole lifetime
+            # (its own bootstrap guard scopes the load and restores for
+            # generation-time fetches).
+            import contextlib
+
+            from core.inference.llama_cpp import _hf_offline_if_dns_dead
+
+            def _preflight_offline():
+                # Ordinary loads keep their current (unguarded) behavior.
+                if local_files_only:
+                    return _hf_offline_if_dns_dead(force = True)
+                return contextlib.nullcontext()
+
+            with _preflight_offline():
+                needed_major = "5" if needs_transformers_5(model_name) else "4"
 
             # Build config dict for subprocess
             sub_config = {
@@ -1137,16 +1155,25 @@ class InferenceOrchestrator:
                 "gpu_ids": gpu_ids,
                 "tensor_parallel": bool(tensor_parallel),
                 "mlx_distributed": bool(mlx_distributed),
+                "local_files_only": bool(local_files_only),
+                # Route-resolved local snapshot: the worker rebuilds its
+                # ModelConfig from model_name, which would lose the rewrite.
+                "local_snapshot_path": (
+                    getattr(config, "path", None)
+                    if local_files_only and getattr(config, "path", None) != model_name
+                    else None
+                ),
                 "mlx_parallel_mode": ("tensor" if tensor_parallel else "pipeline")
                 if mlx_distributed
                 else None,
             }
-            resolved_gpu_ids, gpu_selection = prepare_gpu_selection(
-                gpu_ids,
-                model_name = model_name,
-                hf_token = hf_token,
-                load_in_4bit = load_in_4bit,
-            )
+            with _preflight_offline():
+                resolved_gpu_ids, gpu_selection = prepare_gpu_selection(
+                    gpu_ids,
+                    model_name = model_name,
+                    hf_token = hf_token,
+                    load_in_4bit = load_in_4bit,
+                )
             sub_config["resolved_gpu_ids"] = resolved_gpu_ids
             sub_config["gpu_selection"] = gpu_selection
             # Parent-detected backend for the worker's apply_gpu_ids().

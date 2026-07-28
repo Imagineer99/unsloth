@@ -5406,8 +5406,9 @@ async def _load_model_impl(
 
         # is_lora auto-detected from adapter_config.json on disk/HF.
         # DNS-probe wrap so offline loads skip 30-60s of soft-failed network
-        # checks before the worker starts.
-        with _hf_offline_if_dns_dead():
+        # checks before the worker starts. Local-only loads force offline so
+        # metadata resolution itself cannot reach the Hub.
+        with _hf_offline_if_dns_dead(force = request.local_files_only):
             config = ModelConfig.from_identifier(
                 model_id = model_identifier,
                 hf_token = request.hf_token,
@@ -5419,6 +5420,51 @@ async def _load_model_impl(
                 status_code = 400,
                 detail = f"Invalid model identifier: {model_log_label}",
             )
+
+        # A background auto-load promises on-device-only resolution, but a
+        # cache populated outside Studio can pass the partial check while
+        # missing shards, and from_pretrained on a repo id would download the
+        # gaps. Rewriting the load path to the locally resolved snapshot keeps
+        # the registry identity (config.identifier) intact while forcing the
+        # weight load to the files actually on disk, so an incomplete cache
+        # fails over to the next candidate instead of fetching.
+        from utils.paths import is_local_path
+
+        # Python audio runtimes fetch codec auxiliaries (SNAC/DAC/BiCodec repos)
+        # at load time regardless of where the weights live, so a local-only
+        # load of a non-GGUF audio model still hits the network. Refuse it.
+        if request.local_files_only and not config.is_gguf and getattr(config, "is_audio", False):
+            raise HTTPException(
+                status_code = 409,
+                detail = (
+                    f"Model '{model_log_label}' needs audio codec downloads; "
+                    "select it explicitly to load it."
+                ),
+            )
+
+        if request.local_files_only and not config.is_gguf and not is_local_path(config.path):
+            from hub.utils.local_snapshot import resolve_local_snapshot_path
+            from utils.hf_cache_settings import get_hf_cache_paths
+
+            # Resolve against the LIVE Studio-managed hub cache: Studio can
+            # move the cache at runtime without rewriting Hugging Face's
+            # import-time env constants, so the helper's default would search
+            # the stale location and 409 models the inventory just found.
+            local_snapshot = await asyncio.to_thread(
+                resolve_local_snapshot_path,
+                config.path,
+                request.hf_token,
+                str(get_hf_cache_paths().hub_cache),
+            )
+            if local_snapshot is None:
+                raise HTTPException(
+                    status_code = 409,
+                    detail = (
+                        f"Model '{model_log_label}' is not available on device; "
+                        "select it explicitly to download it."
+                    ),
+                )
+            config.path = local_snapshot
 
         # Normalize gpu_ids: empty list means auto-selection, same as None
         effective_gpu_ids = request.gpu_ids if request.gpu_ids else None
@@ -5450,7 +5496,13 @@ async def _load_model_impl(
         # to match. Off-loop: tier resolution reads configs.
         if effective_load_in_4bit and not config.is_gguf:
             from utils.transformers_version import latest_tier_active_for
-            if await asyncio.to_thread(latest_tier_active_for, config.identifier, request.hf_token):
+
+            # Local-only loads probe the tier against the resolved snapshot:
+            # a repo id would reach _remote_lora_base's raw HTTP request and
+            # Hub config reads, while a local path resolves from config.json
+            # on disk (non-canonical ids skip the remote adapter probe).
+            _tier_target = config.path if request.local_files_only else config.identifier
+            if await asyncio.to_thread(latest_tier_active_for, _tier_target, request.hf_token):
                 effective_load_in_4bit = False
                 logger.info(
                     f"Latest-transformers sidecar active for '{model_log_label}' - "
@@ -5472,10 +5524,17 @@ async def _load_model_impl(
 
         # Apply the training coexistence policy before the unload step below
         # frees the resident model. Off-loop: the default-mode guard does sync work.
+        # Local-only non-GGUF loads size against the resolved snapshot so the
+        # guard's memory estimation reads local files instead of hf model_info
+        # (which performs no offline-mode check). GGUF sizing already reads
+        # the cached file under its own local-only handling.
+        _guard_identifier = (
+            config.path if request.local_files_only and not config.is_gguf else model_identifier
+        )
         await asyncio.to_thread(
             _guard_chat_load_against_training,
             config,
-            model_identifier = model_identifier,
+            model_identifier = _guard_identifier,
             hf_token = request.hf_token,
             load_in_4bit = effective_load_in_4bit,
             max_seq_length = request.max_seq_length,
@@ -5584,6 +5643,10 @@ async def _load_model_impl(
                     hf_repo = config.gguf_hf_repo,
                     hf_variant = config.gguf_variant,
                     hf_token = request.hf_token,
+                    # Background auto-loads never download: main quant resolves
+                    # cache-only and the optional mmproj/MTP companions are
+                    # cached-or-skipped instead of fetched.
+                    local_files_only = request.local_files_only,
                 )
             else:
                 # Local mode: llama-server loads via -m <path>
@@ -5814,6 +5877,9 @@ async def _load_model_impl(
             approved_remote_code_fingerprint = request.approved_remote_code_fingerprint,
             gpu_ids = effective_gpu_ids,
             subject = current_subject,
+            # Threads the rewritten snapshot path and forced-offline load into
+            # the worker subprocess, which rebuilds its own ModelConfig.
+            local_files_only = request.local_files_only,
         )
 
         if not success:
@@ -6052,10 +6118,19 @@ async def validate_model(
 
     native_grant_backed = False
     model_log_label = request.model_path
+    # Local-only validation (background auto-loads) covers the WHOLE metadata
+    # and security preflight with a forced-offline env, not just the identifier
+    # probe: the upgrade, remote-code, and file-security helpers below all read
+    # Hub configs and would otherwise refetch them for a cache-only candidate.
+    import contextlib
+
+    _local_only_offline = contextlib.ExitStack()
     try:
         model_identifier, model_log_label, native_grant_backed = (
             _resolve_model_identifier_for_request(request, operation = "validate-model")
         )
+        if request.local_files_only:
+            _local_only_offline.enter_context(_hf_offline_if_dns_dead(force = True))
         config = ModelConfig.from_identifier(
             model_id = model_identifier,
             hf_token = request.hf_token,
@@ -6066,6 +6141,22 @@ async def validate_model(
             raise HTTPException(
                 status_code = 400,
                 detail = f"Invalid model identifier: {model_log_label}",
+            )
+
+        # Same audio gate as /load: non-GGUF audio models pull codec repos at
+        # load time, so a local-only candidate is rejected here before the
+        # frontend burns a load attempt on it.
+        if (
+            request.local_files_only
+            and not getattr(config, "is_gguf", False)
+            and getattr(config, "is_audio", False)
+        ):
+            raise HTTPException(
+                status_code = 409,
+                detail = (
+                    f"Model '{model_log_label}' needs audio codec downloads; "
+                    "select it explicitly to load it."
+                ),
             )
 
         # Apply the same training coexistence policy as /load before the frontend
@@ -6305,6 +6396,8 @@ async def validate_model(
             status_code = 400,
             detail = "Invalid model",
         )
+    finally:
+        _local_only_offline.close()
 
 
 # studio_router only: admin action, kept off the OpenAI-compatible /v1 mount.

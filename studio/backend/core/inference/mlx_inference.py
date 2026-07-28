@@ -524,6 +524,9 @@ class MLXInferenceBackend:
         dtype = None,
         parallel_mode = None,
         distributed_group = None,
+        # Accepted for worker parity; the load runs under the worker's forced
+        # offline env when set, which is what enforces local-only here.
+        local_files_only: bool = False,
     ) -> bool:
         import mlx.core as mx
 
@@ -603,8 +606,13 @@ class MLXInferenceBackend:
             else:
                 load_kwargs["tensor_group"] = distributed_group
 
+        # Registry identity stays the repo id (model_name); the LOAD source
+        # honors config.path so a route-resolved local snapshot (local-only
+        # loads against a moved live cache) is read instead of re-resolving
+        # the id through the import-time cache location.
+        load_source = getattr(config, "path", None) or model_name
         model, tokenizer_or_processor = FastMLXModel.from_pretrained(
-            model_name,
+            load_source,
             **load_kwargs,
         )
 
@@ -627,6 +635,10 @@ class MLXInferenceBackend:
             "hf_token": hf_token,
             # Per-model trust_remote_code reused by the native-template reload (matches transformers).
             "trust_remote_code": trust_remote_code,
+            # Local-only loads: generation-time repo fallbacks (native
+            # template reload) must also resolve from cache, not the Hub.
+            "local_files_only": local_files_only,
+            "model_path": load_source,
             "model": self._model,
             "tokenizer": self._tokenizer,
             "processor": self._processor,

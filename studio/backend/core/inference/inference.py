@@ -322,6 +322,7 @@ class InferenceBackend:
         hf_token: Optional[str] = None,
         trust_remote_code: bool = False,
         gpu_ids: Optional[list[int]] = None,
+        local_files_only: bool = False,
     ) -> bool:
         """Load any model: base, LoRA adapter, text, or vision."""
         # Keep the token so the native-template fallback can fetch a
@@ -364,6 +365,9 @@ class InferenceBackend:
                 "trust_remote_code": trust_remote_code,
                 "is_vision": config.is_vision,
                 "is_lora": config.is_lora,
+                # Local-only loads: generation-time repo fallbacks (native
+                # template reload) must also resolve from cache, not the Hub.
+                "local_files_only": local_files_only,
                 "is_audio": config.is_audio,
                 "audio_type": config.audio_type,
                 "has_audio_input": config.has_audio_input,
@@ -562,7 +566,11 @@ class InferenceBackend:
                     isinstance(processor, ProcessorMixin) or hasattr(processor, "image_processor")
                 ):
                     # LoRA adapters: use base model. Local merged exports: read base from export_metadata.json.
-                    processor_source = config.base_model if config.is_lora else config.identifier
+                    # Non-LoRA: config.path, not config.identifier. They are the
+                    # same for ordinary loads, but a local-only load rewrites
+                    # path to the cached snapshot and this fallback must stay
+                    # on those local files instead of refetching by repo id.
+                    processor_source = config.base_model if config.is_lora else config.path
                     if not config.is_lora and config.is_local:
                         _meta_path = Path(config.path) / "export_metadata.json"
                         try:
@@ -578,10 +586,14 @@ class InferenceBackend:
                     )
                     from transformers import AutoProcessor
 
+                    # Local-only loads: a LoRA base or export_metadata base_model
+                    # is a Hub repo id; resolve it from cache or fail the load
+                    # (candidate failover) instead of downloading the processor.
                     processor = AutoProcessor.from_pretrained(
                         processor_source,
                         token = hf_token if hf_token and hf_token.strip() else None,
                         trust_remote_code = trust_remote_code,
+                        local_files_only = local_files_only,
                     )
                     logger.info(f"Loaded {type(processor).__name__} from {processor_source}")
 
