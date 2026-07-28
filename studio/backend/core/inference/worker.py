@@ -13,6 +13,7 @@ mp.Queue, and exits on shutdown or unload. Pattern follows core/training/worker.
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 from loggers import get_logger
 import os
@@ -95,6 +96,28 @@ def _clean_token(value: str | None) -> str | None:
     return value if value and value.strip() else None
 
 
+@contextlib.contextmanager
+def _local_only_offline_env(enabled: bool):
+    """Force HF offline for a local-only background load. The worker is a
+    fresh per-load process, so scoping env here covers config resolution,
+    security gates, and every from_pretrained in the load, then restores it so
+    generation-time fetches (e.g. the chat template fallback) still work."""
+    if not enabled:
+        yield
+        return
+    prev = {key: os.environ.get(key) for key in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE")}
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        for key, value in prev.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 def _build_model_config(config: dict):
     """Build a ModelConfig from the config dict."""
     from utils.models import ModelConfig
@@ -107,6 +130,12 @@ def _build_model_config(config: dict):
     )
     if not mc:
         raise ValueError(f"Invalid model identifier: {model_name}")
+    # The route resolves a cached repo id to its local snapshot for local-only
+    # loads; from_identifier here rebuilds path as the repo id, losing that
+    # rewrite across the process boundary, so re-apply it.
+    snapshot_override = config.get("local_snapshot_path")
+    if snapshot_override:
+        mc.path = snapshot_override
     return mc
 
 
@@ -175,19 +204,48 @@ def _resolve_lora_4bit(mc, load_in_4bit: bool) -> bool:
     return load_in_4bit
 
 
-def _ensure_ssm_kernels(targets: list, resp_queue: Any) -> bool:
+def _ensure_ssm_kernels(
+    targets: list,
+    resp_queue: Any,
+    local_files_only: bool = False,
+) -> bool:
     """Install the SSM kernels the given model(s) lazy-import in from_pretrained; no-op for
     non-SSM models, idempotent. Returns True on success; on a fatal mamba-ssm failure sends a
     'loaded' failure response and returns False. Call BEFORE importing transformers, which
     snapshots its optional-backend gates at import (a later install may not be picked up).
+    Under ``local_files_only`` nothing is ever installed: kernels already present are used,
+    a missing fatal kernel fails the load into candidate failover, and the optional
+    causal-conv1d fast path is skipped (its torch fallback covers it).
     """
     try:
-        from utils.ssm_runtime import ensure_ssm_runtime
+        from utils.ssm_runtime import ensure_ssm_runtime, model_is_ssm
     except Exception as exc:
         logger.debug("ssm_runtime unavailable (%s); skipping SSM kernel pre-install", exc)
         return True
 
     _ssm_status = lambda m: _send_response(resp_queue, {"type": "status", "message": m})
+    if local_files_only:
+        import importlib.util
+        for ssm_target in dict.fromkeys(t for t in targets if t):
+            try:
+                needs_mamba = model_is_ssm(ssm_target)
+            except Exception:
+                needs_mamba = False
+            if needs_mamba and importlib.util.find_spec("mamba_ssm") is None:
+                _send_response(
+                    resp_queue,
+                    {
+                        "type": "loaded",
+                        "success": False,
+                        "message": (
+                            "This model needs the mamba-ssm kernel, which is not "
+                            "installed; select the model explicitly to install it."
+                        ),
+                        "error_kind": "ssm_runtime_install_failed",
+                    },
+                )
+                return False
+        return True
     try:
         for ssm_target in dict.fromkeys(t for t in targets if t):
             ensure_ssm_runtime(ssm_target, status_cb = _ssm_status)
@@ -285,7 +343,13 @@ def _run_security_gates(
 
 def _handle_load(backend, config: dict, resp_queue: Any) -> None:
     """Handle a load command: load a model into the backend."""
+    _offline_guard = contextlib.ExitStack()
     try:
+        # Local-only loads run the WHOLE load offline: config resolution,
+        # security gates, and from_pretrained can otherwise all reach the Hub.
+        _offline_guard.enter_context(
+            _local_only_offline_env(bool(config.get("local_files_only", False)))
+        )
         mc = _build_model_config(config)
 
         hf_token = _clean_token(config.get("hf_token"))
@@ -335,7 +399,11 @@ def _handle_load(backend, config: dict, resp_queue: Any) -> None:
                 str(mc.base_model) if (mc.is_lora and getattr(mc, "base_model", None)) else None
             )
             ssm_targets = [ssm_probe_identifier(config["model_name"], _ssm_base)]
-            if not _ensure_ssm_kernels(ssm_targets, resp_queue):
+            if not _ensure_ssm_kernels(
+                ssm_targets,
+                resp_queue,
+                local_files_only = bool(config.get("local_files_only", False)),
+            ):
                 return
 
         # Heartbeat keeps the orchestrator's inactivity deadline alive during slow
@@ -363,6 +431,7 @@ def _handle_load(backend, config: dict, resp_queue: Any) -> None:
                 "hf_token": hf_token,
                 "trust_remote_code": trust_remote_code,
                 "gpu_ids": config.get("resolved_gpu_ids"),
+                "local_files_only": bool(config.get("local_files_only", False)),
             }
             if getattr(backend, "device", None) == "mlx":
                 load_kwargs["parallel_mode"] = config.get("mlx_parallel_mode")
@@ -435,6 +504,8 @@ def _handle_load(backend, config: dict, resp_queue: Any) -> None:
                 "stack": traceback.format_exc(limit = 20),
             },
         )
+    finally:
+        _offline_guard.close()
 
 
 def _drain_skip_generate(cmd: dict, resp_queue: Any, drain_event) -> bool:
@@ -796,6 +867,16 @@ def run_inference_process(
 
     apply_gpu_ids(config.get("resolved_gpu_ids"), backend = config.get("device_backend"))
 
+    # Local-only background loads keep the ENTIRE bootstrap offline: base
+    # resolution, transformers activation, security gates, kernel probes and
+    # the initial load can all reach the Hub otherwise. Closed before the
+    # command loop so generation-time fetches (e.g. the chat template
+    # fallback) still work; error-path returns end the process anyway.
+    _bootstrap_offline = contextlib.ExitStack()
+    _bootstrap_offline.enter_context(
+        _local_only_offline_env(bool(config.get("local_files_only", False)))
+    )
+
     model_name = config["model_name"]
 
     # ── 0. MLX fast-path — skip torch/transformers ──
@@ -859,6 +940,7 @@ def run_inference_process(
             return
 
         # Enter the same command loop as the GPU path.
+        _bootstrap_offline.close()
         logger.info("MLX inference subprocess ready, entering command loop")
         while True:
             try:
@@ -1017,7 +1099,11 @@ def run_inference_process(
     from utils.ssm_runtime import ssm_probe_identifier
 
     _ssm_targets = [ssm_probe_identifier(model_name, _base)]
-    if not _ensure_ssm_kernels(_ssm_targets, resp_queue):
+    if not _ensure_ssm_kernels(
+        _ssm_targets,
+        resp_queue,
+        local_files_only = bool(config.get("local_files_only", False)),
+    ):
         return
 
     # ── 2. Import ML libraries (fresh in this clean process) ──
@@ -1078,6 +1164,8 @@ def run_inference_process(
             },
         )
         return
+
+    _bootstrap_offline.close()
 
     # ── 4. Command loop — process commands until shutdown ──
     # cancel_event is an mp.Event the parent can set anytime to cancel

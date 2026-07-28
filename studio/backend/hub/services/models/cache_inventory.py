@@ -327,7 +327,7 @@ def _scan_cached_gguf() -> list[dict]:
                     continue
                 repo_id = repo_info.repo_id
                 repo_path = Path(repo_info.repo_path)
-                snapshot_path = _cached_model_snapshot_path(repo_path)
+                snapshot_path = _cached_gguf_repo_snapshot_path(repo_path)
                 total_size = _repo_gguf_size_bytes(repo_info)
                 has_variant_state, variant_state_size = _gguf_variant_state_summary(
                     repo_id,
@@ -415,9 +415,22 @@ async def list_cached_gguf_response(hf_token: Optional[str] = None):
 
 class _CachedNonGgufPayload(NamedTuple):
     size_bytes: int
+    snapshot_size_bytes: int
     has_runnable_weights: bool
     model_format: ModelFormat
     last_modified: float
+
+
+def _snapshot_dir_mtime(revision) -> float:
+    """mtime of a revision's snapshot dir; the same signal latest_snapshot_dir
+    (and therefore the load-side snapshot resolution) selects by."""
+    snapshot_path = getattr(revision, "snapshot_path", None)
+    if not snapshot_path:
+        return 0.0
+    try:
+        return float(Path(snapshot_path).stat().st_mtime)
+    except OSError:
+        return 0.0
 
 
 def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
@@ -425,6 +438,12 @@ def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
     adapter_blobs: dict[str, tuple[int, float]] = {}
     safetensors_blobs: dict[str, tuple[int, float]] = {}
     checkpoint_blobs: dict[str, tuple[int, float]] = {}
+    # Per-revision selected-format byte sums, so the row can also report the
+    # size of the ONE snapshot a load resolves (newest by snapshot-dir mtime)
+    # rather than only the all-revisions total.
+    rev_category_sizes: dict[str, dict[str, int]] = {}
+    rev_snapshot_mtimes: dict[str, float] = {}
+    rev_has_config: dict[str, bool] = {}
     has_config = False
     has_adapter_config = False
     has_adapter_weights = False
@@ -433,7 +452,7 @@ def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
     has_checkpoint = False
 
     def _record_blob(
-        target: dict[str, tuple[int, float]], file_obj, rev_id: str, file_name: str
+        target: dict[str, tuple[int, float]], file_obj, rev_id: str, file_name: str, category: str
     ) -> None:
         blob_path = getattr(file_obj, "blob_path", None)
         size = int(file_obj.size_on_disk or 0)
@@ -441,9 +460,13 @@ def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
         value = (size, _blob_mtime(file_obj))
         target[key] = value
         all_weight_blobs[key] = value
+        per_rev = rev_category_sizes.setdefault(rev_id, {})
+        per_rev[category] = per_rev.get(category, 0) + size
+        per_rev["all"] = per_rev.get("all", 0) + size
 
     for revision in repo_info.revisions:
         rev_id = getattr(revision, "commit_hash", None) or str(id(revision))
+        rev_snapshot_mtimes[rev_id] = _snapshot_dir_mtime(revision)
         for f in revision.files:
             file_name = str(f.file_name)
             lower = file_name.lower()
@@ -452,6 +475,7 @@ def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
                 continue
             if name == "config.json":
                 has_config = True
+                rev_has_config[rev_id] = True
                 continue
             if name == "adapter_config.json":
                 has_adapter_config = True
@@ -461,15 +485,15 @@ def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
             is_checkpoint = _is_checkpoint_weight_name(name)
             if is_adapter:
                 has_adapter_weights = True
-                _record_blob(adapter_blobs, f, rev_id, file_name)
+                _record_blob(adapter_blobs, f, rev_id, file_name, "adapter")
             if is_safetensors:
                 has_safetensors = True
                 if _is_transformers_safetensors_weight_name(name):
                     has_transformers_safetensors = True
-                _record_blob(safetensors_blobs, f, rev_id, file_name)
+                _record_blob(safetensors_blobs, f, rev_id, file_name, "safetensors")
             if is_checkpoint:
                 has_checkpoint = True
-                _record_blob(checkpoint_blobs, f, rev_id, file_name)
+                _record_blob(checkpoint_blobs, f, rev_id, file_name, "checkpoint")
 
     model_format = (
         _classify_non_gguf_model_format(
@@ -485,22 +509,134 @@ def _repo_non_gguf_model_payload(repo_info) -> _CachedNonGgufPayload:
     )
     if model_format == "adapter":
         selected_blobs = adapter_blobs
+        selected_category = "adapter"
     elif model_format == "safetensors":
         selected_blobs = safetensors_blobs
+        selected_category = "safetensors"
     elif model_format == "checkpoint":
         selected_blobs = checkpoint_blobs
+        selected_category = "checkpoint"
     else:
         selected_blobs = all_weight_blobs
+        selected_category = "all"
+
+    size_bytes = sum(size for size, _mtime in selected_blobs.values())
+    # The one snapshot a load resolves (newest snapshot-dir mtime) among the
+    # revisions holding selected-format weights. For safetensors rows the
+    # snapshot resolvers additionally require config.json in the SAME
+    # revision, so sizing must use that predicate too: a weight-only newer
+    # revision would otherwise be sized while the older complete revision is
+    # what actually loads. Falls back to weight-only revisions, then to the
+    # all-revisions total.
+    weight_revs = [
+        rev_id
+        for rev_id, sizes in rev_category_sizes.items()
+        if sizes.get(selected_category, 0) > 0
+    ]
+    if selected_category == "safetensors":
+        complete_revs = [rev_id for rev_id in weight_revs if rev_has_config.get(rev_id, False)]
+        if complete_revs:
+            weight_revs = complete_revs
+    if weight_revs:
+        newest_rev = max(weight_revs, key = lambda rev_id: rev_snapshot_mtimes.get(rev_id, 0.0))
+        snapshot_size_bytes = rev_category_sizes[newest_rev].get(selected_category, 0)
+    else:
+        snapshot_size_bytes = size_bytes
 
     return _CachedNonGgufPayload(
-        size_bytes = sum(size for size, _mtime in selected_blobs.values()),
+        size_bytes = size_bytes,
+        snapshot_size_bytes = snapshot_size_bytes,
         has_runnable_weights = model_format != "unknown",
         model_format = model_format,
         last_modified = max((mtime for _size, mtime in selected_blobs.values()), default = 0.0),
     )
 
 
+def _newest_snapshot_where(repo_path: Path, loadable) -> Optional[Path]:
+    """Newest snapshots/* dir (by mtime) whose entry names satisfy *loadable*.
+
+    Inactive-cache rows emit the selected snapshot path as their load_id,
+    which the load consumes directly (it bypasses the repo-id resolver), so
+    the snapshot must actually hold the format the row was classified from.
+    """
+    snapshots = repo_path / "snapshots"
+    try:
+        revisions = [entry for entry in snapshots.iterdir() if entry.is_dir()]
+    except OSError:
+        return None
+
+    def _ok(rev: Path) -> bool:
+        try:
+            names = [entry.name for entry in rev.iterdir()]
+        except OSError:
+            return False
+        return loadable(names)
+
+    candidates = [rev for rev in revisions if _ok(rev)]
+    if not candidates:
+        return None
+    try:
+        return max(candidates, key = lambda rev: rev.stat().st_mtime).resolve()
+    except OSError:
+        return None
+
+
+def _weightful_snapshot_path(repo_path: Path) -> Optional[Path]:
+    """Newest snapshot holding config.json plus a safetensors weight (the
+    non-GGUF resolvers' complete-revision predicate)."""
+    return _newest_snapshot_where(
+        repo_path,
+        lambda names: "config.json" in names and any(n.endswith(".safetensors") for n in names),
+    )
+
+
+def _gguf_snapshot_path(repo_path: Path) -> Optional[Path]:
+    """Newest snapshot holding a GGUF file (top level or one folder deep,
+    where multi-quant repos keep per-quant subfolders)."""
+    direct = _newest_snapshot_where(
+        repo_path,
+        lambda names: any(_is_gguf_filename(n.lower()) for n in names),
+    )
+    if direct is not None:
+        return direct
+    snapshots = repo_path / "snapshots"
+    try:
+        revisions = [entry for entry in snapshots.iterdir() if entry.is_dir()]
+    except OSError:
+        return None
+
+    def _has_nested_gguf(rev: Path) -> bool:
+        try:
+            return any(True for _ in rev.glob("*/*.gguf"))
+        except OSError:
+            return False
+
+    candidates = [rev for rev in revisions if _has_nested_gguf(rev)]
+    if not candidates:
+        return None
+    try:
+        return max(candidates, key = lambda rev: rev.stat().st_mtime).resolve()
+    except OSError:
+        return None
+
+
 def _cached_model_snapshot_path(repo_path: Path) -> Optional[Path]:
+    weightful = _weightful_snapshot_path(repo_path)
+    if weightful is not None:
+        return weightful
+    resolved = hf_cache_scan.resolve_hf_cache_realpath(repo_path)
+    if not resolved:
+        return None
+    path = Path(resolved)
+    return path if path.is_dir() else None
+
+
+def _cached_gguf_repo_snapshot_path(repo_path: Path) -> Optional[Path]:
+    """Snapshot path for a GGUF row: a safetensors-bearing revision of a
+    mixed repo must not become the GGUF row's load target."""
+    gguf_snapshot = _gguf_snapshot_path(repo_path)
+    if gguf_snapshot is not None:
+        return gguf_snapshot
     resolved = hf_cache_scan.resolve_hf_cache_realpath(repo_path)
     if not resolved:
         return None
@@ -636,6 +772,7 @@ def _scan_cached_models() -> list[dict]:
                 row = {
                     "repo_id": repo_id,
                     "size_bytes": payload.size_bytes,
+                    "snapshot_size_bytes": payload.snapshot_size_bytes,
                     "cache_path": str(repo_info.repo_path),
                     "partial": snapshot_partial,
                     "partial_transport": (

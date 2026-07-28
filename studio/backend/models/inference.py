@@ -40,6 +40,13 @@ class LoadRequest(BaseModel):
     gguf_variant: Optional[str] = Field(
         None, description = "GGUF quantization variant (e.g. 'Q4_K_M')"
     )
+    local_files_only: bool = Field(
+        False,
+        description = (
+            "Resolve a cached repo id against the local snapshot only and "
+            "never download missing files (background auto-loads)."
+        ),
+    )
     trust_remote_code: bool = Field(
         False,
         description = "Allow loading models with custom code (e.g. NVIDIA Nemotron). Only enable for repos you trust.",
@@ -263,6 +270,14 @@ class ValidateModelRequest(BaseModel):
             "GGUF GPU-memory strategy intended for the follow-up load. Manual "
             "placement bypasses the training coexistence estimate: Auto layers "
             "delegate fitting to llama.cpp, while explicit layers are user-owned."
+        ),
+    )
+    local_files_only: bool = Field(
+        False,
+        description = (
+            "Background auto-loads: resolve model metadata from the local "
+            "cache only and reject candidates whose runtime would pull "
+            "remote auxiliaries (e.g. audio codec models)."
         ),
     )
     include_context_length: bool = Field(

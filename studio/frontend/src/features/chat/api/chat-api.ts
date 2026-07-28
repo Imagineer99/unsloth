@@ -192,6 +192,9 @@ export async function validateModel(
       // --fit, while a pinned layer count is owned by the user. Tell validate
       // so it applies the same training-guard policy as /load.
       gpu_memory_mode: payload.gpu_memory_mode,
+      // Background auto-loads: resolve metadata from the local cache only
+      // and reject candidates whose runtime pulls remote auxiliaries.
+      local_files_only: payload.local_files_only ?? false,
     }),
   });
   return parseJsonOrThrow<ValidateModelResponse>(response);
@@ -403,6 +406,9 @@ export interface CachedModelRepo {
   repo_id: string;
   load_id?: string | null;
   size_bytes: number;
+  /** Weight bytes of the newest cached snapshot only (what a load resolves);
+   * size_bytes sums selected-format blobs across every cached revision. */
+  snapshot_size_bytes?: number | null;
   /** Epoch seconds of the newest downloaded weight file; sorts Downloaded
    * newest-first. Optional for older-backend compatibility. */
   last_modified?: number;
@@ -969,6 +975,9 @@ export async function listGgufVariants(
   options?: {
     preferLocalCache?: boolean;
     localPath?: string | null;
+    /** Aborts the underlying fetch; background scans pass a timeout signal so
+     * one hung request cannot gate Send forever. */
+    signal?: AbortSignal;
   },
 ): Promise<GgufVariantsResponse> {
   const params = new URLSearchParams({ repo_id: repoId });
@@ -981,6 +990,7 @@ export async function listGgufVariants(
   }
   const response = await authFetch(`/api/models/gguf-variants?${params}`, {
     headers: hubTokenHeader(hfToken),
+    signal: options?.signal,
   });
   return parseJsonOrThrow<GgufVariantsResponse>(response);
 }
