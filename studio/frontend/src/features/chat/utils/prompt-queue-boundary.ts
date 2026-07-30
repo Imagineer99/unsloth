@@ -1,17 +1,48 @@
+import { usePromptQueueUI } from "../stores/prompt-queue-ui-store";
+
 export const PROMPT_QUEUE_STOP_EVENT = "unsloth:prompt-queue-stop";
+export const PROMPT_QUEUE_RUN_FAILED_EVENT = "unsloth:prompt-queue-run-failed";
 
-export interface PromptQueueStopOptions {
-  /** Also cancel the prompt the queue already dispatched. Navigation passes `false` to
-   * leave it generating; an explicit stop passes `true` (the default). */
-  cancelActiveRun?: boolean;
-}
+export type PromptQueueStopEventDetail = {
+  threadIds?: string[];
+};
 
-export function requestPromptQueueStop(options: PromptQueueStopOptions = {}) {
+export type PromptQueueRunFailedEventDetail = {
+  threadId?: string | null;
+};
+
+export function requestPromptQueueStop(threadIds?: string[]) {
   if (typeof window === "undefined") {
     return;
   }
-  const { cancelActiveRun = true } = options;
   window.dispatchEvent(
-    new CustomEvent(PROMPT_QUEUE_STOP_EVENT, { detail: { cancelActiveRun } }),
+    new CustomEvent<PromptQueueStopEventDetail>(PROMPT_QUEUE_STOP_EVENT, {
+      detail: threadIds && threadIds.length > 0 ? { threadIds } : undefined,
+    }),
+  );
+}
+
+export function requestTemporaryPromptQueueStop() {
+  const threadIds = [
+    ...new Set(
+      Object.entries(usePromptQueueUI.getState().byThreadId)
+        .filter(([, entry]) => entry.temporary)
+        .map(([threadId]) => threadId),
+    ),
+  ];
+  if (threadIds.length > 0) {
+    requestPromptQueueStop(threadIds);
+  }
+}
+
+export function notifyPromptQueueRunFailed(threadId?: string | null) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent<PromptQueueRunFailedEventDetail>(
+      PROMPT_QUEUE_RUN_FAILED_EVENT,
+      { detail: { threadId } },
+    ),
   );
 }

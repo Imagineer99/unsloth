@@ -30,7 +30,11 @@ import {
   validateModel,
 } from "../api/chat-api";
 import { formatEta, formatRate } from "../utils/format-transfer";
-import { confirmStopRunningChatsIfNeeded } from "../utils/confirm-stop-running-chats";
+import {
+  confirmStopRunningChatsIfNeeded,
+  getLocalPromptQueueThreadIds,
+} from "../utils/confirm-stop-running-chats";
+import { requestPromptQueueStop } from "../utils/prompt-queue-boundary";
 import {
   GPU_LAYERS_AUTO,
   isLocalModelPath,
@@ -947,6 +951,10 @@ export function useChatModelRuntime() {
               ? (await consumeNativePathToken(nativePathToken, "load-model")).nativePathLease
               : undefined;
 
+            const promptQueueThreadIds = getLocalPromptQueueThreadIds();
+            if (promptQueueThreadIds.length > 0) {
+              requestPromptQueueStop(promptQueueThreadIds);
+            }
             if (currentCheckpoint) {
               // With chats generating, skip this preliminary unload: it cancels them ahead of /load's
               // preflight, so a rejected target truncates replies for a model that never loads
@@ -1760,6 +1768,10 @@ export function useChatModelRuntime() {
       if (bailIfLoading()) return false;
 
       async function performUnload(): Promise<void> {
+        const promptQueueThreadIds = getLocalPromptQueueThreadIds();
+        if (promptQueueThreadIds.length > 0) {
+          requestPromptQueueStop(promptQueueThreadIds);
+        }
         await unloadModel({
           model_path: params.checkpoint,
           force_cancel_active: stopDecision.forceCancelActive,

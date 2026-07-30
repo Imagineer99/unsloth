@@ -8,6 +8,8 @@ import { projectHasSources } from "@/features/rag/api/rag-api";
 import { apiUrl } from "@/lib/api-base";
 import { parseParamCountB } from "@/lib/model-size";
 import { createLoadingToastIcon, toast } from "@/lib/toast";
+import { notifyPromptQueueRunFailed } from "../utils/prompt-queue-boundary";
+import { consumeQueuedChatRunSettings } from "../utils/queued-chat-run-settings";
 import type { MessageTiming, ToolCallMessagePart } from "@assistant-ui/core";
 import type { ChatModelAdapter } from "@assistant-ui/react";
 import { parsePartialJsonObject } from "assistant-stream/utils";
@@ -1232,6 +1234,7 @@ function extractAudioPartBase64(
 // Exported for tests.
 export function findLatestUserAudioBase64(
   messages: RunMessages,
+  includePendingAudio = true,
 ): string | undefined {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
@@ -1262,7 +1265,9 @@ export function findLatestUserAudioBase64(
   }
 
   // Runtime store (main composer's audio upload).
-  const pendingAudio = useChatRuntimeStore.getState().pendingAudioBase64;
+  const pendingAudio = includePendingAudio
+    ? useChatRuntimeStore.getState().pendingAudioBase64
+    : null;
   return pendingAudio ?? undefined;
 }
 
@@ -2114,13 +2119,22 @@ export function createOpenAIStreamAdapter(
       // switches chats while waiting for model load / auto-load.
       const resolvedThreadId =
         (unstable_threadId ?? runtime.activeThreadId) || undefined;
+      const queuedRunSettings =
+        consumeQueuedChatRunSettings(resolvedThreadId);
+      if (queuedRunSettings) {
+        runtime = { ...runtime, ...queuedRunSettings };
+      }
       const threadAlreadyResearched = Boolean(
         resolvedThreadId &&
           useResearchRunStore.getState().claimedThreadIds[resolvedThreadId],
       );
       if (runtime.deepResearchEnabled && threadAlreadyResearched) {
-        runtime.setDeepResearchEnabled(false);
-        runtime = useChatRuntimeStore.getState();
+        if (queuedRunSettings) {
+          runtime = { ...runtime, deepResearchEnabled: false };
+        } else {
+          runtime.setDeepResearchEnabled(false);
+          runtime = useChatRuntimeStore.getState();
+        }
       }
       if (
         runtime.deepResearchEnabled &&
@@ -2148,7 +2162,16 @@ export function createOpenAIStreamAdapter(
             throw new Error("Load a model first.");
           }
         }
-        runtime = useChatRuntimeStore.getState();
+        const liveRuntime = useChatRuntimeStore.getState();
+        runtime = queuedRunSettings
+          ? {
+              ...liveRuntime,
+              ...queuedRunSettings,
+              params: queuedRunSettings.params.checkpoint
+                ? queuedRunSettings.params
+                : liveRuntime.params,
+            }
+          : liveRuntime;
         if (!resolvedThreadId) throw new Error("Research requires a saved chat.");
         if (!unstable_assistantMessageId) {
           throw new Error(
@@ -2306,7 +2329,13 @@ export function createOpenAIStreamAdapter(
             createdRun,
             detachResearchFollow,
           );
-          runtime.setDeepResearchEnabled(false);
+          if (
+            !queuedRunSettings ||
+            resolvedThreadId ===
+              useChatRuntimeStore.getState().activeThreadId
+          ) {
+            runtime.setDeepResearchEnabled(false);
+          }
           if (abortSignal.aborted) {
             const detached = Boolean(
               (abortSignal.reason as { detach?: boolean } | undefined)?.detach,
@@ -2408,6 +2437,13 @@ export function createOpenAIStreamAdapter(
           store.clearPendingImageEditReference();
         }
       };
+      const notifyQueuedRunFailed = () => {
+        // A queued dispatch can fail validation before runningByThreadId turns
+        // on. Remove only that chat's queue; unrelated queues keep running.
+        if (queuedRunSettings) {
+          notifyPromptQueueRunFailed(resolvedThreadId ?? null);
+        }
+      };
 
       // Wait for in-progress model load before inferring.
       if (runtime.modelLoading) {
@@ -2416,11 +2452,12 @@ export function createOpenAIStreamAdapter(
           await waitForModelReady(abortSignal);
         } catch (error) {
           clearSelectedImageEditReference();
+          notifyQueuedRunFailed();
           throw error;
         }
       }
 
-      if (!useChatRuntimeStore.getState().params.checkpoint) {
+      if (!runtime.params.checkpoint) {
         // Prefer a model already loaded by the CLI/API before auto-loading.
         let loaded: boolean;
         let blockedByTrustRemoteCode: boolean;
@@ -2429,6 +2466,7 @@ export function createOpenAIStreamAdapter(
             await autoLoadSmallestModel());
         } catch (error) {
           clearSelectedImageEditReference();
+          notifyQueuedRunFailed();
           throw error;
         }
         if (!loaded) {
@@ -2443,12 +2481,22 @@ export function createOpenAIStreamAdapter(
             },
           );
           clearSelectedImageEditReference();
+          notifyQueuedRunFailed();
           throw new Error("Load a model first.");
         }
       }
 
       // Re-read store after auto-load / model-ready wait.
-      runtime = useChatRuntimeStore.getState();
+      const liveRuntime = useChatRuntimeStore.getState();
+      runtime = queuedRunSettings
+        ? queuedRunSettings.params.checkpoint
+          ? {
+            ...liveRuntime,
+            ...queuedRunSettings,
+            params: queuedRunSettings.params,
+          }
+          : liveRuntime
+        : liveRuntime;
       const { params } = runtime;
       const {
         supportsTools,
@@ -2486,6 +2534,7 @@ export function createOpenAIStreamAdapter(
             "Turn on Enable connections in Settings → Connections to use hosted models.",
         });
         clearSelectedImageEditReference();
+        notifyQueuedRunFailed();
         throw new Error("Connections disabled.");
       }
       const externalProvider = isExternalRequest
@@ -2505,6 +2554,7 @@ export function createOpenAIStreamAdapter(
           description: "Open Settings → Connections and add it again.",
         });
         clearSelectedImageEditReference();
+        notifyQueuedRunFailed();
         throw new Error("Connection not found.");
       }
       // Local providers and custom Gemini bases allow an empty key.
@@ -2526,6 +2576,7 @@ export function createOpenAIStreamAdapter(
           description: "Open Settings → Connections and set the API key again.",
         });
         clearSelectedImageEditReference();
+        notifyQueuedRunFailed();
         throw new Error("Missing connection API key.");
       }
 
@@ -2586,6 +2637,7 @@ export function createOpenAIStreamAdapter(
           description:
             "Select an OpenAI image-generation model, then retry the edit.",
         });
+        notifyQueuedRunFailed();
         throw new Error("Image generation edit unavailable.");
       }
 
@@ -2621,6 +2673,7 @@ export function createOpenAIStreamAdapter(
             description:
               "The original image reference is missing. Generate the image again, then retry the edit.",
           });
+          notifyQueuedRunFailed();
           throw new Error("Generated image edit reference missing.");
         }
         let insertAt = outboundMessages.length;
@@ -2741,7 +2794,10 @@ export function createOpenAIStreamAdapter(
       // Scan post-prune history so a refused user turn's image/audio
       // doesn't gate or mis-attribute the next turn.
       const imageBase64 = findLatestUserImageBase64(survivingMessages);
-      const audioBase64 = findLatestUserAudioBase64(survivingMessages);
+      const audioBase64 = findLatestUserAudioBase64(
+        survivingMessages,
+        !queuedRunSettings,
+      );
       const hasOutboundImage = Boolean(imageBase64);
 
       // Keep render_html local-only and mirror the backend image-turn gate.
@@ -2800,7 +2856,7 @@ export function createOpenAIStreamAdapter(
         }
       }
       // Clear pending audio from store after extracting (consumed on send).
-      if (audioBase64) {
+      if (audioBase64 && !queuedRunSettings) {
         const audioName = runtime.pendingAudioName;
         if (audioName) {
           const lastUserMsg = [...survivingMessages]
@@ -3586,13 +3642,11 @@ export function createOpenAIStreamAdapter(
                         },
                       }
                     : {}),
-                  auto_heal_tool_calls:
-                    useChatRuntimeStore.getState().autoHealToolCalls,
-                  nudge_tool_calls: useChatRuntimeStore.getState().nudgeToolCalls,
-                  max_tool_calls_per_message:
-                    useChatRuntimeStore.getState().maxToolCallsPerMessage,
+                  auto_heal_tool_calls: runtime.autoHealToolCalls,
+                  nudge_tool_calls: runtime.nudgeToolCalls,
+                  max_tool_calls_per_message: runtime.maxToolCallsPerMessage,
                   tool_call_timeout: (() => {
-                    const mins = useChatRuntimeStore.getState().toolCallTimeout;
+                    const mins = runtime.toolCallTimeout;
                     return mins >= 9999 ? 9999 : mins * 60;
                   })(),
                 }
@@ -4426,8 +4480,7 @@ export function createOpenAIStreamAdapter(
           meta?.usage &&
           typeof meta.usage.prompt_tokens === "number" &&
           typeof meta.usage.completion_tokens === "number" &&
-          typeof meta.usage.total_tokens === "number" &&
-          useChatRuntimeStore.getState().params.checkpoint === params.checkpoint
+          typeof meta.usage.total_tokens === "number"
         ) {
           const usage = {
             promptTokens: meta.usage.prompt_tokens,
@@ -4443,7 +4496,10 @@ export function createOpenAIStreamAdapter(
               .getState()
               .setThreadContextUsage(usageThreadKey, usage);
           }
-          if (usageThreadIsVisible) {
+          if (
+            usageThreadIsVisible &&
+            useChatRuntimeStore.getState().params.checkpoint === params.checkpoint
+          ) {
             useChatRuntimeStore.getState().setContextUsage(usage);
           }
         }

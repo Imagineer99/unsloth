@@ -79,9 +79,9 @@ import {
   updateStoredChatThread,
 } from "./utils/chat-history-storage";
 import { isChatThreadDeleted } from "./utils/chat-thread-tombstones";
+import { requestTemporaryPromptQueueStop } from "./utils/prompt-queue-boundary";
 import { syncExportedRepositoryToBackend } from "./utils/delete-thread-message";
 import { getImageInputUnavailableReason } from "./utils/image-input-support";
-import { requestPromptQueueStop } from "./utils/prompt-queue-boundary";
 import { isAssistantLocalThreadId } from "./utils/thread-ids";
 
 const pendingHistoryAppendByMessageId = new Map<string, Promise<void>>();
@@ -1201,6 +1201,7 @@ function useStudioRuntimeAdapters(
       },
 
       append({ parentId, message }: ExportedMessageRepositoryItem) {
+        const localThreadId = aui.threadListItem().getState().id;
         const initializeThread = aui.threadListItem().initialize();
         trackRunStartReady(
           message.id,
@@ -1216,7 +1217,12 @@ function useStudioRuntimeAdapters(
           // persisted. Compare panes intentionally don't write global activeThreadId.
           if (modelType === "base" && !pairId) {
             const store = useChatRuntimeStore.getState();
-            if (store.activeThreadId !== remoteId) {
+            const visibleThreadId = aui.threads().getState().mainThreadId;
+            if (
+              (visibleThreadId === localThreadId ||
+                visibleThreadId === remoteId) &&
+              store.activeThreadId !== remoteId
+            ) {
               store.setActiveThreadId(remoteId);
             }
           }
@@ -1226,7 +1232,12 @@ function useStudioRuntimeAdapters(
           }
           if (thread?.modelType === "base" && !thread.pairId) {
             const store = useChatRuntimeStore.getState();
-            if (store.activeThreadId !== remoteId) {
+            const visibleThreadId = aui.threads().getState().mainThreadId;
+            if (
+              (visibleThreadId === localThreadId ||
+                visibleThreadId === remoteId) &&
+              store.activeThreadId !== remoteId
+            ) {
               store.setActiveThreadId(remoteId);
             }
           }
@@ -1347,10 +1358,10 @@ function ThreadAutoSwitch({
 
   useEffect(() => {
     if (!isLoading && mainThreadId !== threadId) {
-      if (syncActiveThreadId) {
-        // Stop queueing prompts to the outgoing thread but leave its run alone: its runtime
-        // stays mounted and keeps streaming. Only an explicit Stop cancels one.
-        requestPromptQueueStop({ cancelActiveRun: false });
+      // Saved chats keep running in the background, but a temporary chat is
+      // unreachable after this switch and must not retain an active queue.
+      if (useChatRuntimeStore.getState().incognito) {
+        requestTemporaryPromptQueueStop();
       }
       const switchResult = aui.threads().switchToThread(threadId) as unknown;
       if (
@@ -1381,14 +1392,15 @@ function ThreadNewChatSwitch({
 }: { nonce: string }): ReactElement | null {
   const aui = useAui();
   const isLoading = useAuiState(({ threads }) => threads.isLoading);
-  // The outgoing thread is not read here: New Chat leaves it running.
   useEffect(() => {
     if (isLoading) {
       return;
     }
-    // New Chat leaves the previous conversation generating: its runtime stays mounted and
-    // the sidebar spins. Stopping it is its own Stop button's job.
-    requestPromptQueueStop({ cancelActiveRun: false });
+    // Saved chats keep running in the background. A temporary chat is never
+    // persisted, so abandoning it must also discard its otherwise unreachable queue.
+    if (useChatRuntimeStore.getState().incognito) {
+      requestTemporaryPromptQueueStop();
+    }
     // Switch to a fresh local thread without persisting it yet; persistence
     // still happens on first message append.
     void aui.threads().switchToNewThread();
@@ -1417,29 +1429,29 @@ function ActiveThreadSync({
 }
 
 // Exposes the current thread's cancelRun() via the shared store so external
-// surfaces (e.g. the sidebar trash button) can stop an in-flight stream before
-// deleting the thread, mirroring the Stop -> Trash sequence.
+// surfaces can stop an in-flight stream before deleting the thread.
 function CancelRegistrar(): ReactElement | null {
   const aui = useAui();
   const mainThreadId = useAuiState(({ threads }) => threads.mainThreadId);
-  const isRunning = useChatRuntimeStore((s) =>
-    mainThreadId ? Boolean(s.runningByThreadId[mainThreadId]) : false,
-  );
 
   useEffect(() => {
-    if (!mainThreadId || !isRunning) return;
+    if (!mainThreadId) return;
+    const runtime = aui.threads().__internal_getAssistantRuntime?.();
     const cancel = () => {
       try {
-        aui.thread().cancelRun();
+        runtime?.threads.getById(mainThreadId).cancelRun();
       } catch {
         // Run may have already ended between the caller's read and this call.
       }
     };
     useChatRuntimeStore.getState().registerThreadCancel(mainThreadId, cancel);
     return () => {
-      useChatRuntimeStore.getState().clearThreadCancel(mainThreadId);
+      const store = useChatRuntimeStore.getState();
+      if (!store.runningByThreadId[mainThreadId]) {
+        store.clearThreadCancel(mainThreadId);
+      }
     };
-  }, [aui, mainThreadId, isRunning]);
+  }, [aui, mainThreadId]);
 
   return null;
 }
