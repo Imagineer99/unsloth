@@ -33,10 +33,10 @@ def _run_focused_tests(backend: Path) -> None:
         print(f"FOCUSED_TEST_START {test}", flush = True)
         command = [sys.executable, "-m", "pytest", "-q", "--tb=short", test]
         if sys.platform == "win32" and test in windows_deselects:
-            for test_name in windows_deselects[test]:
-                node_id = f"{test}::{test_name}"
-                command.extend(("--deselect", node_id))
-                print(f"WINDOWS_DESELECT {node_id}", flush = True)
+            test_names = windows_deselects[test]
+            command.extend(("-k", " and ".join(f"not {name}" for name in test_names)))
+            for test_name in test_names:
+                print(f"WINDOWS_DESELECT {test}::{test_name}", flush = True)
         subprocess.run(
             command,
             cwd = backend,
