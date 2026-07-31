@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 import tempfile
@@ -27,6 +28,15 @@ def _run_focused_tests(backend: Path) -> None:
             check = True,
         )
         print(f"FOCUSED_TEST_PASS {test}", flush = True)
+
+
+def _same_path(actual: str, expected: Path) -> bool:
+    """Compare paths across Windows casing and macOS /var -> /private/var aliases."""
+    normalized_actual = os.path.normcase(os.path.realpath(os.path.abspath(actual)))
+    normalized_expected = os.path.normcase(
+        os.path.realpath(os.path.abspath(str(expected)))
+    )
+    return normalized_actual == normalized_expected
 
 
 def main() -> int:
@@ -98,19 +108,20 @@ def main() -> int:
         if fixed:
             assert terminal not in row_paths
             assert prefixed not in row_paths
-            assert direct == str(main.resolve())
-            assert directory == str(main.resolve())
+            assert _same_path(direct, main)
+            assert _same_path(directory, main)
             assert main.name in {variant.filename for variant in core_variants}
             assert main.name in {variant.filename for variant in hub_variants}
             main_quant = next(
                 variant.quant for variant in hub_variants if variant.filename == main.name
             )
-            assert model_config._find_local_gguf_by_variant(
+            selected_variant = model_config._find_local_gguf_by_variant(
                 str(root), main_quant
-            ) == str(main.resolve())
+            )
+            assert selected_variant is not None and _same_path(selected_variant, main)
             config = model_config.ModelConfig.from_identifier(str(main))
             assert config is not None and config.is_gguf
-            assert config.gguf_file == str(main.resolve())
+            assert config.gguf_file is not None and _same_path(config.gguf_file, main)
             print(
                 "PASS_AFTER inventory=true detect=true config_is_gguf=true "
                 "companions_filtered=true variant_round_trip=true",
