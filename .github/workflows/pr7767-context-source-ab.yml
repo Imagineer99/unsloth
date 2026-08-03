@@ -1,0 +1,42 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 7767 Context Source A/B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-7767-context-source-*-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install backend test dependencies"
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2 mammoth unpdf requests 'numpy<3' pytest pytest-asyncio httpx
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple 'torch>=2.4,<2.11'
+          pip install 'transformers>=4.51,<5.5'
+
+      - name: "Verify failed-Hub cache context source"
+        shell: bash
+        run: |
+          cd studio/backend
+          python -m pytest -q tests/test_cached_gguf_routes.py::test_failed_hub_context_follows_the_cache_the_variants_were_read_from --tb=short
+
