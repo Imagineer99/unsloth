@@ -1,0 +1,66 @@
+# Disposable focused verification for upstream PR #7788.
+
+name: PR 7788 GGUF fallback context focused check
+
+on:
+  push:
+    branches:
+      - fix/pr-7788-gguf-fallback-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  focused-check:
+    name: GGUF fallback cache context A/B
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2 mammoth unpdf requests 'numpy<3' pytest pytest-asyncio httpx ruff
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple 'torch>=2.4,<2.11'
+          pip install 'transformers>=4.51,<5.5'
+
+      - name: Confirm the test-only commit reproduces the mismatch
+        working-directory: studio/backend
+        run: |
+          git checkout 285d9a6372e2c2aa2b6004af1935a91c575808fa -- hub/services/models/gguf_variants.py
+          set +e
+          python -m pytest -q tests/test_cached_gguf_routes.py::test_failed_hub_context_follows_the_cache_the_variants_were_read_from --tb=short 2>&1 | tee /tmp/pr7788-before.log
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "Expected the pre-fix implementation to fail, but it passed."
+            exit 1
+          fi
+          grep -F "('org/repo', False)" /tmp/pr7788-before.log
+          echo "PRE_FIX_REPRODUCED"
+
+      - name: Verify the current PR fix and cached-GGUF suite
+        working-directory: studio/backend
+        run: |
+          git checkout 89bc4b3c4d140208ebc57b480f62fed4a8d5f884 -- hub/services/models/gguf_variants.py
+          python -m pytest -q tests/test_cached_gguf_routes.py::test_failed_hub_context_follows_the_cache_the_variants_were_read_from --tb=short
+          python -m pytest -q tests/test_cached_gguf_routes.py --tb=short
+          echo "CURRENT_HEAD_PASSED"
+
+      - name: Ruff and patch sanity
+        run: |
+          ruff check \
+            studio/backend/hub/services/models/gguf_variants.py \
+            studio/backend/tests/test_cached_gguf_routes.py
+          git diff --check
