@@ -39,4 +39,3 @@ jobs:
         run: |
           cd studio/backend
           python -m pytest -q tests/test_cached_gguf_routes.py::test_failed_hub_context_follows_the_cache_the_variants_were_read_from --tb=short
-
