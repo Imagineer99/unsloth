@@ -1,0 +1,62 @@
+name: Disposable macOS Codex profile repro
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-codex-profile:
+    name: macOS Codex ${{ matrix.codex-version }} (${{ matrix.expect }})
+    runs-on: macos-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - codex-version: latest
+            expect: routed
+          - codex-version: 0.133.0
+            expect: legacy-rejected
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "24"
+
+      - name: Fresh-install latest main and Codex
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --editable . pytest
+          npm install --global "@openai/codex@${{ matrix.codex-version }}"
+
+      - name: Record macOS executable resolution
+        run: |
+          sw_vers
+          uname -a
+          printf 'PATH=%s\n' "$PATH"
+          npm prefix --global
+          type -a python codex unsloth
+          which -a python codex unsloth
+          python --version
+          codex --version
+          unsloth --help >/dev/null
+
+      - name: Run focused Unsloth Codex tests
+        run: |
+          python -m pytest unsloth_cli/tests/test_start.py \
+            -k 'codex and (catalog or config or requested_model or launch_uses_ephemeral_home)' \
+            -q
+
+      - name: Probe real Codex profile selection
+        run: |
+          python .github/scripts/macos_codex_profile_probe.py \
+            --expect "${{ matrix.expect }}"
