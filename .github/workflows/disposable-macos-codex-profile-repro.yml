@@ -1,6 +1,9 @@
 name: Disposable macOS Codex profile repro
 
 on:
+  push:
+    branches:
+      - fix/macos-codex-profile-repro-ci-20260804
   workflow_dispatch:
 
 permissions:
