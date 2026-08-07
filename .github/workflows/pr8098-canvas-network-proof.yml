@@ -1,0 +1,98 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 8098 Canvas Network Consent A-B Proof"
+
+on:
+  push:
+    branches:
+      - "fix/pr-8098-canvas-network-repro"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22"
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install frontend dependencies"
+        shell: bash
+        run: |
+          cd studio/frontend
+          npm install -g npm@^11 --no-fund --no-audit
+          npm ci --strict-allow-scripts --no-fund --no-audit
+
+      - name: "Positive proof: the PR makes the global setting the only frontend gate"
+        shell: bash
+        run: |
+          cd studio/frontend
+          node --experimental-strip-types --test tests/artifact-frame-network-access.test.ts
+
+      - name: "Install focused backend test dependencies"
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r studio/backend/requirements/studio.txt
+          pip install python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2 mammoth unpdf requests 'numpy<3' pytest pytest-asyncio httpx
+          pip install --index-url https://download.pytorch.org/whl/cpu --extra-index-url https://pypi.org/simple 'torch>=2.4,<2.11'
+          pip install 'transformers>=4.51,<5.5'
+
+      - name: "Positive proof: allow_network selects strict or permissive backend CSP"
+        shell: bash
+        run: |
+          cd studio/backend
+          PYTHONPATH=. python -m pytest tests/test_artifact_preview_frame_csp.py -q --tb=short
+
+      - name: "Browser proof: only the permissive canvas makes the network request"
+        shell: bash
+        run: |
+          pip install playwright==1.56.0
+          python -m playwright install --with-deps chromium
+          python .github/scripts/pr8098_canvas_network_browser_probe.py
+
+      - name: "Negative mutation: restoring the fence source gate must be caught"
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          surface = Path('studio/frontend/src/features/chat/artifacts/artifact-surface.tsx')
+          s = surface.read_text()
+          needle = '            fill={true}\n            className="h-full"'
+          replacement = '            fill={true}\n            allowNetworkAccess={artifact.source === "tool"}\n            className="h-full"'
+          assert needle in s
+          surface.write_text(s.replace(needle, replacement, 1))
+          frame = Path('studio/frontend/src/features/chat/artifacts/html-frame.tsx')
+          s = frame.read_text()
+          s = s.replace('  fill = false,\n}: {', '  fill = false,\n  allowNetworkAccess = false,\n}: {', 1)
+          s = s.replace('  fill?: boolean;\n}) {', '  fill?: boolean;\n  allowNetworkAccess?: boolean;\n}) {', 1)
+          s = s.replace('if (networkAccessEnabled) {', 'if (allowNetworkAccess && networkAccessEnabled) {', 1)
+          s = s.replace('[networkAccessEnabled, code]', '[allowNetworkAccess, networkAccessEnabled, code]', 1)
+          frame.write_text(s)
+          PY
+          cd studio/frontend
+          set +e
+          node --experimental-strip-types --test tests/artifact-frame-network-access.test.ts > /tmp/pr8098-negative.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/pr8098-negative.log
+          if [ "$status" -eq 0 ]; then
+            echo 'FAIL negative mutation unexpectedly passed'
+            exit 1
+          fi
+          grep -q 'the preview frame must not discriminate on artifact.source' /tmp/pr8098-negative.log
+          grep -q 'networkAccessEnabled' /tmp/pr8098-negative.log
+          echo 'PASS negative mutation failed for the intended source-gate assertions'
