@@ -85,16 +85,23 @@ jobs:
         env:
           REPRO_VARIANT: ${{ matrix.variant }}
           PW_ART_DIR: ${{ github.workspace }}\evidence
-          WEBVIEW2_CDP_URL: http://127.0.0.1:9222
+          WEBVIEW2_CDP_URL: http://127.0.0.1:39383
+          WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: --remote-debugging-port=39383 --remote-allow-origins=*
+          WEBVIEW2_USER_DATA_FOLDER: ${{ runner.temp }}\pr8264-webview2-${{ matrix.variant }}
           NO_PROXY: 127.0.0.1,localhost
         run: |
           New-Item -ItemType Directory -Force -Path $env:PW_ART_DIR | Out-Null
-          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222 --remote-allow-origins=*'
           $exe = Resolve-Path 'source/studio/src-tauri/target/debug/unsloth-studio.exe'
           $stdout = Join-Path $env:PW_ART_DIR "tauri-$env:REPRO_VARIANT.stdout.log"
           $stderr = Join-Path $env:PW_ART_DIR "tauri-$env:REPRO_VARIANT.stderr.log"
           $app = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
           try {
+            Start-Sleep -Seconds 5
+            Get-CimInstance Win32_Process -Filter "Name = 'msedgewebview2.exe'" |
+              Select-Object ProcessId, ParentProcessId, CommandLine |
+              Format-List | Out-File (Join-Path $env:PW_ART_DIR "webview2-$env:REPRO_VARIANT.log")
+            Get-NetTCPConnection -LocalPort 39383 -ErrorAction SilentlyContinue |
+              Format-List | Out-File (Join-Path $env:PW_ART_DIR "tcp-$env:REPRO_VARIANT.log")
             python harness/.github/scripts/pr8264_tauri_playwright.py
           } finally {
             if (-not $app.HasExited) {
