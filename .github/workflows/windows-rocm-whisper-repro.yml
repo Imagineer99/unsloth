@@ -1,0 +1,83 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "Windows ROCm Whisper Repro"
+
+on:
+  push:
+    branches:
+      - "fix/windows-rocm-whisper-libomp-repro-ci*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Reproduce published release contract"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $llamaUrl = "https://github.com/unslothai/llama.cpp/releases/download/b10333-mix-e34b418/app-b10333-mix-e34b418-windows-x64-rocm-gfx1150.zip"
+          $whisperUrl = "https://github.com/unslothai/whisper.cpp/releases/download/v1.9.2-unsloth.9/whisper-prebuilt-manifest.json"
+          Invoke-WebRequest $llamaUrl -OutFile llama-rocm.zip
+          Invoke-WebRequest $whisperUrl -OutFile whisper-prebuilt-manifest.json
+          Expand-Archive llama-rocm.zip -DestinationPath ci-rocm-runtime
+          if (Test-Path ci-rocm-runtime\libomp140.x86_64.dll) { throw "release unexpectedly contains libomp140.x86_64.dll" }
+          foreach ($required in @('ggml.dll', 'ggml-base.dll', 'ggml-hip.dll')) { if (-not (Test-Path (Join-Path ci-rocm-runtime $required))) { throw "release is missing $required" } }
+          $manifest = Get-Content whisper-prebuilt-manifest.json -Raw | ConvertFrom-Json
+          $slim = $manifest.artifacts | Where-Object { $_.os -eq 'windows' -and $_.arch -eq 'x64' -and $_.backend -eq 'slim' } | Select-Object -First 1
+          if (-not $slim) { throw "Windows x64 slim artifact not found" }
+          if ($slim.requires_ggml_sonames -notcontains 'libomp140.x86_64.dll') { throw "manifest no longer reproduces the libomp requirement" }
+          Write-Host "REPRO: Whisper requires libomp140.x86_64.dll while the paired ROCm llama archive omits it"
+
+      - name: "Run focused regression controls"
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest -q tests/studio/install/test_install_whisper_prebuilt_logic.py
+
+      - name: "Select Whisper slim against the released ROCm runtime"
+        shell: pwsh
+        run: |
+          $probe = @'
+          import json
+          import sys
+          from pathlib import Path
+          
+          repo = Path.cwd()
+          sys.path.insert(0, str(repo / "studio"))
+          import install_whisper_prebuilt as installer
+          
+          bin_dir = repo / "ci-rocm-runtime"
+          manifest = installer.parse_manifest(json.loads((repo / "whisper-prebuilt-manifest.json").read_text()))
+          installer.installed_llama_runtime = lambda: (bin_dir, "b10333-mix-e34b418", "rocm-gfx1150")
+          host = installer.HostInfo(
+              system = "Windows",
+              machine = "amd64",
+              whisper_os = "windows",
+              whisper_arch = "x64",
+              archive_ext = ".zip",
+              is_windows = True,
+              is_macos = False,
+              is_apple_silicon = False,
+              has_rocm = True,
+              rocm_gfx = "gfx1150",
+          )
+          selected = installer.select_slim_artifact(manifest, host, "rocm")
+          assert selected is not None, "released Windows ROCm runtime was rejected"
+          assert selected["asset"] == "whisper-v1.9.2-unsloth.9-windows-x64-slim.zip"
+          print("PASS: released Windows ROCm runtime selects the Whisper slim artifact")
+          '@
+          $probe | python -
