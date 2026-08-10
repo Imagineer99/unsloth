@@ -55,7 +55,7 @@ jobs:
 
       - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
         with:
-          save-if: false
+          cache-on-failure: true
           workspaces: source/studio/src-tauri -> target
 
       - name: Install frontend
@@ -86,6 +86,7 @@ jobs:
           REPRO_VARIANT: ${{ matrix.variant }}
           PW_ART_DIR: ${{ github.workspace }}\evidence
           WEBVIEW2_CDP_URL: http://127.0.0.1:9222
+          NO_PROXY: 127.0.0.1,localhost
         run: |
           New-Item -ItemType Directory -Force -Path $env:PW_ART_DIR | Out-Null
           $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222 --remote-allow-origins=*'

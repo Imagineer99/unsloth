@@ -27,9 +27,10 @@ ARTIFACTS.mkdir(parents = True, exist_ok = True)
 def wait_for_cdp(timeout: float = 120.0) -> None:
     deadline = time.monotonic() + timeout
     last_error: Exception | None = None
+    direct = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     while time.monotonic() < deadline:
         try:
-            with urllib.request.urlopen(f"{CDP_URL}/json/version", timeout = 2) as response:
+            with direct.open(f"{CDP_URL}/json/version", timeout = 2) as response:
                 if response.status == 200:
                     return
         except Exception as error:  # noqa: BLE001 - retain the final connection failure
