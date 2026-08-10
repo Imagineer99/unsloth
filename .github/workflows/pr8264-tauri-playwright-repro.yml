@@ -58,19 +58,27 @@ jobs:
           save-if: false
           workspaces: source/studio/src-tauri -> target
 
-      - name: Install frontend, Tauri CLI, and Playwright client
+      - name: Install frontend
         shell: pwsh
-        run: |
-          npm ci --prefix source/studio/frontend --no-fund --no-audit
-          npm ci --prefix source/studio --no-fund --no-audit
-          python -m pip install --quiet "playwright==1.56.0" "pillow>=10,<13"
+        working-directory: source/studio/frontend
+        run: npm ci --no-fund --no-audit
+
+      - name: Install Tauri CLI
+        shell: pwsh
+        working-directory: source/studio
+        run: npm ci --no-fund --no-audit
+
+      - name: Install Playwright client
+        shell: pwsh
+        run: python -m pip install --quiet "playwright==1.56.0" "pillow>=10,<13"
 
       - name: Build real Tauri desktop executable
         shell: pwsh
+        working-directory: source/studio
         env:
           TAURI_SIGNING_PRIVATE_KEY: ''
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-        run: npx --prefix source/studio tauri build --debug --no-bundle
+        run: npx tauri build --debug --no-bundle
 
       - name: Launch Tauri and capture Playwright evidence
         shell: pwsh
