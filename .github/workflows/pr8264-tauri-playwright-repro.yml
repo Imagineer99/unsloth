@@ -1,0 +1,105 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: PR 8264 Tauri Playwright A-B
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/pr-8264-tauri-playwright-repro-ci
+
+permissions:
+  contents: read
+
+jobs:
+  tauri-playwright:
+    name: Tauri WebView2 ${{ matrix.variant }}
+    runs-on: windows-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: before
+            repository: unslothai/unsloth
+            source_ref: 29fa2f7eeb5d3df0d5d53266fd082a158abb2267
+          - variant: after
+            repository: oobabooga/unsloth
+            source_ref: 799ede8aa4e7918df90f2e775f719519affc7986
+
+    steps:
+      - name: Checkout disposable harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          path: harness
+
+      - name: Checkout ${{ matrix.variant }} source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.source_ref }}
+          persist-credentials: false
+          path: source
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '24'
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8  # stable @ 2026-03-27
+
+      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4  # v2.9.1
+        with:
+          save-if: false
+          workspaces: source/studio/src-tauri -> target
+
+      - name: Install frontend, Tauri CLI, and Playwright client
+        shell: pwsh
+        run: |
+          npm ci --prefix source/studio/frontend --no-fund --no-audit
+          npm ci --prefix source/studio --no-fund --no-audit
+          python -m pip install --quiet "playwright==1.56.0" "pillow>=10,<13"
+
+      - name: Build real Tauri desktop executable
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: npx --prefix source/studio tauri build --debug --no-bundle
+
+      - name: Launch Tauri and capture Playwright evidence
+        shell: pwsh
+        env:
+          REPRO_VARIANT: ${{ matrix.variant }}
+          PW_ART_DIR: ${{ github.workspace }}\evidence
+          WEBVIEW2_CDP_URL: http://127.0.0.1:9222
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:PW_ART_DIR | Out-Null
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9222 --remote-allow-origins=*'
+          $exe = Resolve-Path 'source/studio/src-tauri/target/debug/unsloth-studio.exe'
+          $stdout = Join-Path $env:PW_ART_DIR "tauri-$env:REPRO_VARIANT.stdout.log"
+          $stderr = Join-Path $env:PW_ART_DIR "tauri-$env:REPRO_VARIANT.stderr.log"
+          $app = Start-Process -FilePath $exe -PassThru -RedirectStandardOutput $stdout -RedirectStandardError $stderr
+          try {
+            python harness/.github/scripts/pr8264_tauri_playwright.py
+          } finally {
+            if (-not $app.HasExited) {
+              Stop-Process -Id $app.Id -Force -ErrorAction SilentlyContinue
+            }
+            Get-Process msedgewebview2 -ErrorAction SilentlyContinue |
+              Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Upload ${{ matrix.variant }} desktop evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pr8264-tauri-${{ matrix.variant }}
+          path: evidence
+          if-no-files-found: warn
+          retention-days: 7
