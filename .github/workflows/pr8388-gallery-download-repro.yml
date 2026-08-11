@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: PR 8388 Gallery Download Repro
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/pr8388-gallery-download-repro-ci
+      - fix/pr8388-gallery-download-repro-ci-negative
+
+permissions:
+  contents: read
+
+jobs:
+  gallery-download-runtime:
+    name: Gallery native-save runtime probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version: 22.17.1
+
+      - name: Record implementation under test
+        shell: bash
+        run: |
+          git log -4 --oneline
+          git status --short
+
+      - name: Run image and video gallery download probe
+        run: node --experimental-strip-types .github/scripts/pr8388-gallery-download-probe.mjs
