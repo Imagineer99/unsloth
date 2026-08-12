@@ -26,11 +26,44 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Enforce a narrow AppLocker deny rule
+      - name: Create the managed install and generated launcher
+        shell: powershell
+        env:
+          UNSLOTH_VERBOSE: '1'
+        run: |
+          $ErrorActionPreference = 'Continue'
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\install.ps1 --tauri --no-torch *>&1 |
+            Tee-Object -FilePath logs\baseline-install.log
+          $installerExit = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          if ($installerExit -ne 0) {
+            Write-Host "::error::Baseline desktop install failed with exit $installerExit."
+            exit 1
+          }
+
+          $unslothExe = Join-Path $env:USERPROFILE '.unsloth\studio\unsloth_studio\Scripts\unsloth.exe'
+          if (-not (Test-Path -LiteralPath $unslothExe -PathType Leaf)) {
+            Write-Host "::error::Baseline install did not create $unslothExe."
+            exit 1
+          }
+          Write-Host "Baseline install created: $unslothExe"
+
+      - name: Enforce a narrow AppLocker deny rule for a standard user
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          New-Item -ItemType Directory -Force -Path logs | Out-Null
+
+          $probeUser = 'AppLockerProbe'
+          $probePassword = 'Issue8490-AppLocker-Probe!'
+          & net.exe user $probeUser $probePassword /add /passwordchg:no
+          if ($LASTEXITCODE -ne 0) { throw "Could not create $probeUser (exit $LASTEXITCODE)" }
+          $probeAccount = [System.Security.Principal.NTAccount]::new($env:COMPUTERNAME, $probeUser)
+          $probeSid = $probeAccount.Translate(
+            [System.Security.Principal.SecurityIdentifier]
+          ).Value
 
           $blockedExe = Join-Path $env:USERPROFILE '.unsloth\studio\unsloth_studio\Scripts\unsloth.exe'
           $escapedBlockedExe = [System.Security.SecurityElement]::Escape($blockedExe)
@@ -39,12 +72,12 @@ jobs:
           $policy = @"
           <AppLockerPolicy Version="1">
             <RuleCollection Type="Exe" EnforcementMode="Enabled">
-              <FilePathRule Id="$allowId" Name="Allow all other executables" Description="Keep the hosted runner usable" UserOrGroupSid="S-1-1-0" Action="Allow">
+              <FilePathRule Id="$allowId" Name="Allow all other executables" Description="Keep the probe user usable" UserOrGroupSid="$probeSid" Action="Allow">
                 <Conditions>
                   <FilePathCondition Path="*" />
                 </Conditions>
               </FilePathRule>
-              <FilePathRule Id="$denyId" Name="Block generated Unsloth console launcher" Description="Reproduce issue 8490" UserOrGroupSid="S-1-1-0" Action="Deny">
+              <FilePathRule Id="$denyId" Name="Block generated Unsloth console launcher" Description="Reproduce issue 8490" UserOrGroupSid="$probeSid" Action="Deny">
                 <Conditions>
                   <FilePathCondition Path="$escapedBlockedExe" />
                 </Conditions>
@@ -64,22 +97,55 @@ jobs:
 
           Get-AppLockerPolicy -Effective -Xml |
             Set-Content -LiteralPath logs\applocker-effective.xml -Encoding UTF8
-          Write-Host "AppLocker will block only: $blockedExe"
 
-      - name: Run the desktop installer and require the policy failure
+          $probeIdentity = "$env:COMPUTERNAME\$probeUser"
+          Test-AppLockerPolicy -XmlPolicy $policyPath -Path $blockedExe -User $probeIdentity |
+            Format-List * | Out-File -LiteralPath logs\applocker-test.txt -Encoding utf8
+          $policyTest = Get-Content -LiteralPath logs\applocker-test.txt -Raw
+          if ($policyTest -notmatch 'Denied') {
+            throw "Test-AppLockerPolicy did not deny $blockedExe for $probeIdentity.`n$policyTest"
+          }
+
+          & icacls.exe (Join-Path $env:USERPROFILE '.unsloth') `
+            /grant "${probeUser}:(OI)(CI)M" /T /C | Out-File logs\icacls.txt
+          if ($LASTEXITCODE -ne 0) { throw "Could not grant the probe user access (exit $LASTEXITCODE)" }
+          Write-Host "AppLocker will block only $blockedExe for standard user $probeIdentity."
+
+      - name: Re-run the desktop installer as the standard user
         shell: powershell
         env:
           UNSLOTH_VERBOSE: '1'
         run: |
-          $ErrorActionPreference = 'Continue'
+          $ErrorActionPreference = 'Stop'
           (Get-Date).ToString('o') | Set-Content -LiteralPath logs\install-started-at.txt
 
+          $probeRoot = 'C:\Users\Public\issue-8490-applocker-repro'
+          New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+          Copy-Item -LiteralPath .\install.ps1 -Destination (Join-Path $probeRoot 'install.ps1') -Force
+          $wrapper = @'
+          $ErrorActionPreference = 'Continue'
+          $env:USERPROFILE = $env:UNSLOTH_REPRO_PROFILE
           & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File .\install.ps1 --tauri --no-torch *>&1 |
-            Tee-Object -FilePath logs\install.log
-          $installerExit = $LASTEXITCODE
+            -File $env:UNSLOTH_REPRO_INSTALLER --tauri --no-torch *>&1 |
+            Tee-Object -FilePath C:\Users\Public\issue-8490-applocker-repro\install.log
+          exit $LASTEXITCODE
+          '@
+          $wrapperPath = Join-Path $probeRoot 'invoke-installer.ps1'
+          $wrapper | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
+
+          $env:UNSLOTH_REPRO_PROFILE = $env:USERPROFILE
+          $env:UNSLOTH_REPRO_INSTALLER = Join-Path $probeRoot 'install.ps1'
+          $securePassword = ConvertTo-SecureString 'Issue8490-AppLocker-Probe!' -AsPlainText -Force
+          $credential = [System.Management.Automation.PSCredential]::new(
+            "$env:COMPUTERNAME\AppLockerProbe",
+            $securePassword
+          )
+          $process = Start-Process -FilePath powershell.exe `
+            -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath) `
+            -Credential $credential -LoadUserProfile -WorkingDirectory $probeRoot -Wait -PassThru
+          $installerExit = $process.ExitCode
+          Copy-Item -LiteralPath (Join-Path $probeRoot 'install.log') -Destination logs\install.log
           $installerExit | Set-Content -LiteralPath logs\installer-exit-code.txt
-          $global:LASTEXITCODE = 0
 
           if ($installerExit -eq 0) {
             Write-Host '::error::The installer unexpectedly succeeded; AppLocker did not reproduce issue 8490.'
@@ -140,3 +206,4 @@ jobs:
             Set-Content -LiteralPath $emptyPolicy -Encoding UTF8
           Set-AppLockerPolicy -XmlPolicy $emptyPolicy
           Stop-Service -Name AppIDSvc -Force -ErrorAction SilentlyContinue
+          & net.exe user AppLockerProbe /delete 2>&1 | Out-Null
