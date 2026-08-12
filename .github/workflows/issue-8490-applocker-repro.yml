@@ -122,19 +122,18 @@ jobs:
           $probeRoot = 'C:\Users\Public\issue-8490-applocker-repro'
           New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
           Copy-Item -LiteralPath .\install.ps1 -Destination (Join-Path $probeRoot 'install.ps1') -Force
-          $wrapper = @'
+          $wrapperTemplate = @'
           $ErrorActionPreference = 'Continue'
-          $env:USERPROFILE = $env:UNSLOTH_REPRO_PROFILE
+          $env:USERPROFILE = '{0}'
           & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File $env:UNSLOTH_REPRO_INSTALLER --tauri --no-torch *>&1 |
+            -File '{1}' --tauri --no-torch *>&1 |
             Tee-Object -FilePath C:\Users\Public\issue-8490-applocker-repro\install.log
           exit $LASTEXITCODE
           '@
+          $wrapper = $wrapperTemplate -f $env:USERPROFILE, (Join-Path $probeRoot 'install.ps1')
           $wrapperPath = Join-Path $probeRoot 'invoke-installer.ps1'
           $wrapper | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
 
-          $env:UNSLOTH_REPRO_PROFILE = $env:USERPROFILE
-          $env:UNSLOTH_REPRO_INSTALLER = Join-Path $probeRoot 'install.ps1'
           $securePassword = ConvertTo-SecureString 'Us8490!Probe' -AsPlainText -Force
           $credential = [System.Management.Automation.PSCredential]::new(
             "$env:COMPUTERNAME\AppLockerProbe",
