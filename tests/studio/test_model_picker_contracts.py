@@ -818,6 +818,24 @@ def test_context_commit_rechecks_persistence_only_shortcut():
     assert "if (effectivePersistenceOnly)" in src
 
 
+def test_pending_numeric_draft_enables_active_model_reload():
+    """A focused NumericValueInput keeps its edit outside the parent config until
+    blur. The active-model Reload button must still enable for that pending draft,
+    otherwise the first click only blurs the field and sends no load request."""
+    numeric = _read("features/model-picker/components/numeric-value-input.tsx")
+    page = _read("features/model-picker/components/model-config-page.tsx")
+    assert "onPendingChange?: (pending: boolean) => void;" in numeric
+    assert "onPendingChange?.(true);" in numeric
+    assert numeric.count("onPendingChange?.(false);") >= 3
+    assert "const [numericDraftPending, setNumericDraftPending] = useState(false);" in page
+    assert page.count("onPendingChange={setNumericDraftPending}") == 3
+    assert page.count("onPendingChange={onPendingChange}") >= 5
+    assert re.search(
+        r"isActiveModel &&\s*atBaseline &&\s*!rememberChanged &&\s*!numericDraftPending",
+        page,
+    )
+
+
 def test_reset_enabled_for_explicit_context_pin_at_native():
     """An explicit customContextLength that equals the native ceiling is still a user
     override, so contextAtDefault must require customContextLength == null."""

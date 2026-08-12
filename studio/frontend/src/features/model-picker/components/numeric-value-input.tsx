@@ -47,6 +47,7 @@ export const NumericValueInput = forwardRef<
     max?: number;
     step: number;
     onChange: (v: number) => void;
+    onPendingChange?: (pending: boolean) => void;
     displayValue?: string;
     className?: string;
     ariaLabel?: string;
@@ -60,6 +61,7 @@ export const NumericValueInput = forwardRef<
     max,
     step,
     onChange,
+    onPendingChange,
     displayValue,
     className,
     ariaLabel,
@@ -111,6 +113,7 @@ export const NumericValueInput = forwardRef<
           const raw = draftRef.current;
           const final = commitDraft(raw);
           dirtyRef.current = false;
+          onPendingChange?.(false);
           lastBlurCommittedRef.current = null;
           if (final == null) {
             draftRef.current = String(value);
@@ -134,7 +137,7 @@ export const NumericValueInput = forwardRef<
         return null;
       },
     }),
-    [draft, focused, max, min, onChange, step, value],
+    [draft, focused, max, min, onChange, onPendingChange, step, value],
   );
 
   const displayed = focused ? draft : (displayValue ?? String(value));
@@ -154,6 +157,7 @@ export const NumericValueInput = forwardRef<
       onFocus={(e) => {
         cancelBlurCommitRef.current = false;
         dirtyRef.current = false;
+        onPendingChange?.(false);
         lastBlurCommittedRef.current = null;
         const next = String(value);
         draftRef.current = next;
@@ -183,10 +187,12 @@ export const NumericValueInput = forwardRef<
             lastBlurCommittedRef.current = final !== value ? final : null;
           }
         }
+        onPendingChange?.(false);
         setFocused(false);
       }}
       onChange={(e) => {
         dirtyRef.current = true;
+        onPendingChange?.(true);
         lastBlurCommittedRef.current = null;
         const next = sanitizeNumeric(e.target.value, (min ?? 0) < 0);
         draftRef.current = next;
@@ -198,6 +204,7 @@ export const NumericValueInput = forwardRef<
         } else if (e.key === "Escape") {
           cancelBlurCommitRef.current = true;
           dirtyRef.current = false;
+          onPendingChange?.(false);
           lastBlurCommittedRef.current = null;
           const next = String(value);
           draftRef.current = next;
