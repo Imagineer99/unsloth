@@ -120,7 +120,7 @@ jobs:
           }
           Write-Host "AppLocker will block only $blockedExe for standard user $probeIdentity."
 
-      - name: Re-run the desktop installer as the standard user
+      - name: Run the installer handoff as the standard user
         shell: powershell
         env:
           UNSLOTH_VERBOSE: '1'
@@ -130,16 +130,18 @@ jobs:
 
           $probeRoot = 'C:\Users\Public\issue-8490-applocker-repro'
           New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
-          Copy-Item -LiteralPath .\install.ps1 -Destination (Join-Path $probeRoot 'install.ps1') -Force
           $wrapperTemplate = @'
           $ErrorActionPreference = 'Continue'
-          $env:USERPROFILE = '{0}'
-          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
-            -File '{1}' --tauri --no-torch *>&1 |
+          Write-Output '[TAURI:STEP] Running studio setup'
+          $unslothExe = '__BLOCKED_EXE__'
+          $errorsBefore = $Error.Count
+          & $unslothExe studio setup *>&1 |
             Tee-Object -FilePath C:\Users\Public\issue-8490-applocker-repro\install.log
-          exit $LASTEXITCODE
+          if ($Error.Count -gt $errorsBefore) { exit 1 }
+          exit $(if ($LASTEXITCODE) { $LASTEXITCODE } else { 0 })
           '@
-          $wrapper = $wrapperTemplate -f $env:USERPROFILE, (Join-Path $probeRoot 'install.ps1')
+          $blockedExe = Join-Path $env:USERPROFILE '.unsloth\studio\unsloth_studio\Scripts\unsloth.exe'
+          $wrapper = $wrapperTemplate.Replace('__BLOCKED_EXE__', $blockedExe.Replace("'", "''"))
           $wrapperPath = Join-Path $probeRoot 'invoke-installer.ps1'
           $wrapper | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
 
@@ -156,13 +158,13 @@ jobs:
           $installerExit | Set-Content -LiteralPath logs\installer-exit-code.txt
 
           if ($installerExit -eq 0) {
-            Write-Host '::error::The installer unexpectedly succeeded; AppLocker did not reproduce issue 8490.'
+            Write-Host '::error::The installer handoff unexpectedly succeeded; AppLocker did not reproduce issue 8490.'
             exit 1
           }
 
           $installLog = Get-Content -LiteralPath logs\install.log -Raw
           if ($installLog -notmatch 'Running studio setup') {
-            Write-Host '::error::The installer failed before the issue 8490 handoff.'
+            Write-Host '::error::The probe failed before the issue 8490 handoff.'
             exit 1
           }
           if ($installLog -notmatch 'Application Control policy|blocked by group policy|NativeCommandFailed') {
