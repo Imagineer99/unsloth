@@ -235,12 +235,14 @@ function MaxSeqLengthSetting({
   inputMax,
   onChange,
   inputRef,
+  onPendingChange,
 }: {
   value: number;
   max: number;
   inputMax: number;
   onChange: (value: number) => void;
   inputRef?: Ref<NumericValueInputHandle>;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -258,6 +260,7 @@ function MaxSeqLengthSetting({
           max={inputMax}
           step={MAX_SEQ_LENGTH_STEP}
           onChange={onChange}
+          onPendingChange={onPendingChange}
           ariaLabel="Max Seq Length"
           className={NUMBER_INPUT_CLASS}
           size={8}
@@ -290,6 +293,7 @@ function AdvancedGpuSlider({
   displayValue,
   info,
   inputRef,
+  onPendingChange,
 }: {
   label: string;
   value: number;
@@ -299,6 +303,7 @@ function AdvancedGpuSlider({
   displayValue?: string;
   info?: ReactNode;
   inputRef?: Ref<NumericValueInputHandle>;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -314,6 +319,7 @@ function AdvancedGpuSlider({
           max={max}
           step={1}
           onChange={onChange}
+          onPendingChange={onPendingChange}
           displayValue={displayValue}
           ariaLabel={label}
           className={NUMBER_INPUT_CLASS}
@@ -344,6 +350,7 @@ function GpuMemorySettings({
   gpuDevices,
   gpuLayersInputRef,
   moeLayersInputRef,
+  onPendingChange,
 }: {
   config: PerModelConfig;
   update: (patch: Partial<PerModelConfig>) => void;
@@ -353,6 +360,7 @@ function GpuMemorySettings({
   gpuDevices: SystemGpuDevice[];
   gpuLayersInputRef?: Ref<NumericValueInputHandle>;
   moeLayersInputRef?: Ref<NumericValueInputHandle>;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const mode = config.gpuMemoryMode ?? "auto";
   const isManual = mode === "manual";
@@ -440,6 +448,7 @@ function GpuMemorySettings({
           <AdvancedGpuSlider
             label="GPU Layers"
             inputRef={gpuLayersInputRef}
+            onPendingChange={onPendingChange}
             value={Math.max(GPU_LAYERS_AUTO, Math.min(gpuLayers, gpuLayersMax))}
             min={GPU_LAYERS_AUTO}
             max={gpuLayersMax}
@@ -457,6 +466,7 @@ function GpuMemorySettings({
             <AdvancedGpuSlider
               label="MoE Layers on CPU"
               inputRef={moeLayersInputRef}
+              onPendingChange={onPendingChange}
               value={Math.min(nCpuMoe, moeLayersMax)}
               min={0}
               max={moeLayersMax}
@@ -626,6 +636,7 @@ function GgufAdvancedSettings({
   gpuDevices,
   gpuLayersInputRef,
   moeLayersInputRef,
+  onPendingChange,
 }: {
   config: PerModelConfig;
   update: (patch: Partial<PerModelConfig>) => void;
@@ -638,6 +649,7 @@ function GgufAdvancedSettings({
   gpuDevices: SystemGpuDevice[];
   gpuLayersInputRef?: Ref<NumericValueInputHandle>;
   moeLayersInputRef?: Ref<NumericValueInputHandle>;
+  onPendingChange?: (pending: boolean) => void;
 }) {
   const batchAdviceId = useId();
   const ubatchAdviceId = useId();
@@ -929,6 +941,7 @@ function GgufAdvancedSettings({
         gpuDevices={gpuDevices}
         gpuLayersInputRef={gpuLayersInputRef}
         moeLayersInputRef={moeLayersInputRef}
+        onPendingChange={onPendingChange}
       />
 
       <ChatTemplateSetting config={config} onEditTemplate={onEditTemplate} />
@@ -1055,6 +1068,7 @@ export function ModelConfigPage({
   const maxSeqLengthInputRef = useRef<NumericValueInputHandle>(null);
   const gpuLayersInputRef = useRef<NumericValueInputHandle>(null);
   const moeLayersInputRef = useRef<NumericValueInputHandle>(null);
+  const [numericDraftPending, setNumericDraftPending] = useState(false);
   const nativePathToken =
     target.meta.nativePathToken ??
     (isActiveModel ? activeNativePathToken : null);
@@ -1434,6 +1448,7 @@ export function ModelConfigPage({
                   max={maxContext}
                   step={1}
                   onChange={setContextLength}
+                  onPendingChange={setNumericDraftPending}
                   displayValue={
                     config.customContextLength == null &&
                     nativeContextLength == null &&
@@ -1485,6 +1500,7 @@ export function ModelConfigPage({
                 gpuDevices={gpuDevices}
                 gpuLayersInputRef={gpuLayersInputRef}
                 moeLayersInputRef={moeLayersInputRef}
+                onPendingChange={setNumericDraftPending}
               />
             )}
 
@@ -1501,6 +1517,7 @@ export function ModelConfigPage({
               max={maxSeqLengthMax}
               inputMax={MAX_SEQ_LENGTH_MAX}
               inputRef={maxSeqLengthInputRef}
+              onPendingChange={setNumericDraftPending}
               onChange={(value) =>
                 update({
                   maxSeqLength: clampMaxSeqLength(value, MAX_SEQ_LENGTH_MAX),
@@ -1568,7 +1585,10 @@ export function ModelConfigPage({
             className="h-8"
             disabled={
               stagedMetadataPending ||
-              (isActiveModel && atBaseline && !rememberChanged)
+              (isActiveModel &&
+                atBaseline &&
+                !rememberChanged &&
+                !numericDraftPending)
             }
             onClick={handleRun}
           >
