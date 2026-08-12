@@ -1,0 +1,209 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+# Disposable verification for issue #8490. Keep the generated console launcher
+# blocked while exercising the installer's Python-module setup handoff.
+name: Issue 8490 Windows AppLocker fix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/issue-8490-applocker-fix-ci
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: setup bypasses blocked unsloth.exe
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the fixed source and create the launcher
+        shell: powershell
+        env:
+          UNSLOTH_VERBOSE: '1'
+          UNSLOTH_CI_SOURCE_OVERLAY: ${{ github.workspace }}
+        run: |
+          $ErrorActionPreference = 'Continue'
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\install.ps1 --tauri --no-torch *>&1 |
+            Tee-Object -FilePath logs\baseline-install.log
+          $installerExit = $LASTEXITCODE
+          $global:LASTEXITCODE = 0
+          if ($installerExit -ne 0) {
+            Write-Host "::error::Baseline desktop install failed with exit $installerExit."
+            exit 1
+          }
+
+          $probeVenv = 'C:\Users\Public\issue-8490-probe-env'
+          & py.exe -3.13 -m venv $probeVenv
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the public policy-probe venv' }
+          $scripts = Join-Path $probeVenv 'Scripts'
+          $venvPython = Join-Path $scripts 'python.exe'
+          & $venvPython -m pip install $env:GITHUB_WORKSPACE
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Could not install the fixed source into the public policy-probe venv'
+          }
+          foreach ($name in 'unsloth.exe', 'python.exe') {
+            $path = Join-Path $scripts $name
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Baseline install did not create $path"
+            }
+          }
+
+      - name: Block only the generated launcher for a standard user
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probeUser = 'AppLockerProbe'
+          $probePassword = 'Us8490!Probe'
+          & net.exe user $probeUser $probePassword /add /passwordchg:no
+          if ($LASTEXITCODE -ne 0) { throw "Could not create $probeUser" }
+
+          $probeAccount = [System.Security.Principal.NTAccount]::new($env:COMPUTERNAME, $probeUser)
+          $probeSid = $probeAccount.Translate(
+            [System.Security.Principal.SecurityIdentifier]
+          ).Value
+          $blockedExe = 'C:\Users\Public\issue-8490-probe-env\Scripts\unsloth.exe'
+          $escapedExe = [System.Security.SecurityElement]::Escape($blockedExe)
+          $policy = @"
+          <AppLockerPolicy Version="1">
+            <RuleCollection Type="Exe" EnforcementMode="Enabled">
+              <FilePathRule Id="$([guid]::NewGuid())" Name="Allow all other executables" Description="Keep the hosted runner usable" UserOrGroupSid="S-1-1-0" Action="Allow">
+                <Conditions><FilePathCondition Path="*" /></Conditions>
+              </FilePathRule>
+              <FilePathRule Id="$([guid]::NewGuid())" Name="Block generated Unsloth launcher" Description="Verify issue 8490" UserOrGroupSid="$probeSid" Action="Deny">
+                <Conditions><FilePathCondition Path="$escapedExe" /></Conditions>
+              </FilePathRule>
+            </RuleCollection>
+          </AppLockerPolicy>
+          "@
+          $policyPath = Join-Path $PWD 'logs\applocker-policy.xml'
+          $policy | Set-Content -LiteralPath $policyPath -Encoding UTF8
+
+          & sc.exe config AppIDSvc start= auto
+          if ($LASTEXITCODE -ne 0) { throw 'Could not configure AppIDSvc' }
+          Start-Service AppIDSvc
+          Set-AppLockerPolicy -XmlPolicy $policyPath
+          & gpupdate.exe /target:computer /force
+          if ($LASTEXITCODE -ne 0) { throw 'gpupdate failed' }
+
+          $identity = "$env:COMPUTERNAME\$probeUser"
+          $decision = Test-AppLockerPolicy -XmlPolicy $policyPath -Path $blockedExe -User $identity
+          $decision | Format-List * | Out-File logs\applocker-test.txt -Encoding utf8
+          if (($decision.PolicyDecision | Out-String) -notmatch 'Denied') {
+            throw "AppLocker did not deny $blockedExe for $identity"
+          }
+
+          & icacls.exe 'C:\Users\Public\issue-8490-probe-env' `
+            /grant "${probeUser}:(OI)(CI)M" /T /C /Q | Out-File logs\icacls.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant probe-environment access' }
+          & icacls.exe (Join-Path $env:USERPROFILE '.unsloth') `
+            /grant "${probeUser}:(OI)(CI)M" /T /C /Q | Out-File logs\icacls.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant managed-environment access' }
+          & icacls.exe $env:USERPROFILE /grant "${probeUser}:(RX)" /Q |
+            Out-File logs\icacls.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant profile traversal' }
+          & icacls.exe $env:GITHUB_WORKSPACE /grant "${probeUser}:(OI)(CI)RX" /T /C /Q |
+            Out-File logs\icacls.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw 'Could not grant source-overlay access' }
+
+      - name: Prove the launcher is blocked but the module entry point succeeds
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          (Get-Date).ToString('o') | Set-Content logs\probe-started-at.txt
+          $probeRoot = 'C:\Users\Public\issue-8490-applocker-fix'
+          New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+          & icacls.exe $probeRoot /grant 'AppLockerProbe:(OI)(CI)M' /Q | Out-Null
+
+          $scripts = 'C:\Users\Public\issue-8490-probe-env\Scripts'
+          $wrapperTemplate = @'
+          $ErrorActionPreference = 'Continue'
+          $blockedExe = '__BLOCKED_EXE__'
+          $errorsBefore = $Error.Count
+          & $blockedExe --version
+          $blockedExit = if ($Error.Count -gt $errorsBefore) { 1 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+          Write-Output "NEGATIVE_CONTROL_EXIT=$blockedExit"
+          if ($blockedExit -eq 0) { exit 90 }
+
+          $Error.Clear()
+          $ErrorActionPreference = 'Stop'
+          $pythonExe = '__PYTHON_EXE__'
+          & $pythonExe -m unsloth_cli --version
+          $fixedExit = if ($LASTEXITCODE) { $LASTEXITCODE } else { 0 }
+          Write-Output "FIXED_HANDOFF_EXIT=$fixedExit"
+          exit $fixedExit
+          '@
+          $wrapper = $wrapperTemplate.Replace(
+            '__BLOCKED_EXE__', (Join-Path $scripts 'unsloth.exe').Replace("'", "''")
+          )
+          $wrapper = $wrapper.Replace(
+            '__PYTHON_EXE__', (Join-Path $scripts 'python.exe').Replace("'", "''")
+          )
+          $wrapperPath = Join-Path $probeRoot 'verify-fix.ps1'
+          $wrapper | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
+          $stdout = Join-Path $probeRoot 'stdout.log'
+          $stderr = Join-Path $probeRoot 'stderr.log'
+          New-Item -ItemType File -Force -Path $stdout, $stderr | Out-Null
+
+          $password = ConvertTo-SecureString 'Us8490!Probe' -AsPlainText -Force
+          $credential = [System.Management.Automation.PSCredential]::new(
+            "$env:COMPUTERNAME\AppLockerProbe", $password
+          )
+          $process = Start-Process powershell.exe `
+            -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath) `
+            -Credential $credential -LoadUserProfile -WorkingDirectory $probeRoot `
+            -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+          Get-Content $stdout, $stderr | Set-Content logs\verification.log -Encoding UTF8
+          $process.ExitCode | Set-Content logs\verification-exit-code.txt
+
+          $log = Get-Content logs\verification.log -Raw
+          if ($process.ExitCode -ne 0) { throw "Fixed handoff failed with exit $($process.ExitCode).`n$log" }
+          if ($log -notmatch 'NEGATIVE_CONTROL_EXIT=1') { throw "Blocked-launcher control did not fail.`n$log" }
+          if ($log -notmatch 'FIXED_HANDOFF_EXIT=0') { throw "Python module handoff did not succeed.`n$log" }
+          Write-Host 'PASS: unsloth.exe stayed blocked and the Python module entry point succeeded.'
+
+      - name: Require the negative-control AppLocker event
+        shell: powershell
+        run: |
+          $startedAt = [datetime](Get-Content logs\probe-started-at.txt -Raw)
+          $events = @(Get-WinEvent -FilterHashtable @{
+            LogName = 'Microsoft-Windows-AppLocker/EXE and DLL'
+            StartTime = $startedAt.AddSeconds(-5)
+          } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'unsloth\.exe' })
+          $events | Format-List TimeCreated, Id, Message |
+            Out-File logs\applocker-events.txt -Encoding utf8 -Width 300
+          if ($events.Count -eq 0) { throw 'No AppLocker event named unsloth.exe' }
+          Write-Host 'PASS: Windows recorded the launcher block.'
+
+      - name: Upload verification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-8490-applocker-fix
+          path: logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Remove the local AppLocker policy
+        if: always()
+        shell: powershell
+        run: |
+          '<AppLockerPolicy Version="1" />' |
+            Set-Content $env:RUNNER_TEMP\empty-applocker-policy.xml -Encoding UTF8
+          Set-AppLockerPolicy -XmlPolicy $env:RUNNER_TEMP\empty-applocker-policy.xml
+          Stop-Service AppIDSvc -Force -ErrorAction SilentlyContinue
+          if (Get-LocalUser AppLockerProbe -ErrorAction SilentlyContinue) {
+            & net.exe user AppLockerProbe /delete 2>$null | Out-Null
+          }
+          $global:LASTEXITCODE = 0
