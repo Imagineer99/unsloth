@@ -72,7 +72,7 @@ jobs:
           $policy = @"
           <AppLockerPolicy Version="1">
             <RuleCollection Type="Exe" EnforcementMode="Enabled">
-              <FilePathRule Id="$allowId" Name="Allow all other executables" Description="Keep the probe user usable" UserOrGroupSid="$probeSid" Action="Allow">
+              <FilePathRule Id="$allowId" Name="Allow all other executables" Description="Keep the hosted runner usable" UserOrGroupSid="S-1-1-0" Action="Allow">
                 <Conditions>
                   <FilePathCondition Path="*" />
                 </Conditions>
@@ -107,7 +107,7 @@ jobs:
           }
 
           & icacls.exe (Join-Path $env:USERPROFILE '.unsloth') `
-            /grant "${probeUser}:(OI)(CI)M" /T /C | Out-File logs\icacls.txt
+            /grant "${probeUser}:(OI)(CI)M" /C | Out-File logs\icacls.txt
           if ($LASTEXITCODE -ne 0) { throw "Could not grant the probe user access (exit $LASTEXITCODE)" }
           Write-Host "AppLocker will block only $blockedExe for standard user $probeIdentity."
 
