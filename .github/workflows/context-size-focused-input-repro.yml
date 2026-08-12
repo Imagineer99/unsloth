@@ -113,6 +113,10 @@ jobs:
         run: |
           set -o pipefail
           python tests/studio/playwright_model_config.py 2>&1 | tee logs/modelcfg-probe.log
+          grep -F "PASS reproduced disabled Reload: typed Context Length 8192" logs/modelcfg-probe.log
+          grep -F "PASS reproduced ignored first Reload click: no load request sent" logs/modelcfg-probe.log
+          grep -F "PASS reproduced apparent reset: unsaved Context Length 8192 reopened as loaded value 2048" logs/modelcfg-probe.log
+          grep -F "PASS positive control: blur enabled Reload model" logs/modelcfg-probe.log
           grep -F "OK idle: explicit Context Length stayed at 8192 for 15000 ms" logs/modelcfg-probe.log
           grep -F "OK persist(request): /api/inference/load max_seq_length=8192" logs/modelcfg-probe.log
           grep -F "OK persist(reload): Context Length still '8192' after reload" logs/modelcfg-probe.log

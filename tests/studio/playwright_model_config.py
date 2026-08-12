@@ -732,11 +732,77 @@ with sync_playwright() as p:
             ctx_in.click()
             ctx_in.fill(str(DISTINCT_CTX))
             if CONTEXT_REPRO_ONLY:
+                # Negative proof for the reported path. NumericValueInput owns the
+                # focused draft, so the parent config still equals the loaded
+                # baseline and Reload is disabled. A real first mouse click can
+                # blur/commit the field, but cannot activate a disabled button.
+                requests_before_click = len(load_posts)
+                focused_btn = primary_button(popover)
+                if focused_btn is None:
+                    fail("Reload model button missing during focused-draft proof")
+                elif not focused_btn.is_disabled():
+                    fail("Reload model unexpectedly enabled before Context Length blur")
+                else:
+                    info(
+                        "PASS reproduced disabled Reload: typed Context Length "
+                        f"{DISTINCT_CTX}, Remember off, input still focused"
+                    )
+                    shoot("05a-focused-draft-disabled")
+                    box = focused_btn.bounding_box()
+                    if box is None:
+                        fail("disabled Reload model button has no bounding box")
+                    else:
+                        page.mouse.click(
+                            box["x"] + box["width"] / 2,
+                            box["y"] + box["height"] / 2,
+                        )
+                        page.wait_for_timeout(1500)
+                        if len(load_posts) == requests_before_click:
+                            info("PASS reproduced ignored first Reload click: no load request sent")
+                        else:
+                            fail(
+                                "disabled Reload click unexpectedly sent a load request: "
+                                f"{load_posts[requests_before_click:]!r}"
+                            )
+
+                # Dismiss the unsaved panel and prove that reopening rehydrates the
+                # still-loaded context, which is what presents to the user as a reset.
+                close_picker()
+                popover = open_picker()
+                if open_config(popover, MODEL_HINT) is None:
+                    fail("could not reopen run-settings after ignored Reload click")
+                else:
+                    ctx_in = context_input(popover)
+                    reopened = ctx_in.input_value() if ctx_in else None
+                    if _as_int(reopened) == _as_int(default_ctx):
+                        info(
+                            "PASS reproduced apparent reset: unsaved Context Length "
+                            f"{DISTINCT_CTX} reopened as loaded value {reopened}"
+                        )
+                    else:
+                        fail(
+                            "ignored Reload did not reopen at the loaded context "
+                            f"(expected {default_ctx!r}, got {reopened!r})"
+                        )
+                    shoot("05b-reopened-loaded-context")
+
+                # Positive control: the exact same edit works once the draft is
+                # committed by leaving the field before clicking Reload.
+                if ctx_in is None:
+                    fail("Context Length input missing for post-blur positive control")
+                else:
+                    ctx_in.click()
+                    ctx_in.fill(str(DISTINCT_CTX))
                 # With Remember off, the primary button remains disabled until the
                 # numeric draft commits on blur. Exercise the normal user path of
                 # leaving the field before waiting for asynchronous status updates.
-                ctx_in.press("Tab")
-                page.wait_for_timeout(300)
+                    ctx_in.press("Tab")
+                    page.wait_for_timeout(300)
+                    committed_btn = primary_button(popover)
+                    if committed_btn is None or committed_btn.is_disabled():
+                        fail("Reload model did not enable after Context Length blur")
+                    else:
+                        info("PASS positive control: blur enabled Reload model")
                 # The report describes an apparently asynchronous reset. Leave the
                 # draft open across multiple inference-status polling intervals and
                 # continuously prove that current main does not replace it.
