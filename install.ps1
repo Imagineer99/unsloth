@@ -4725,7 +4725,11 @@ exit 0
         Remove-Item Env:_UNSLOTH_ROCM_GFX_ARCH_HANDOFF -ErrorAction SilentlyContinue
     }
     try {
-        & $UnslothExe @studioArgs
+        # Run the package through the venv interpreter instead of the generated
+        # console-script launcher. Application Control policies commonly block
+        # unsigned executables from user-writable locations, while the managed
+        # Python interpreter remains allowed.
+        & $VenvPython -m unsloth_cli @studioArgs
         $setupExit = $LASTEXITCODE
     } finally {
         if ($hadPreviousUnslothStudioHome) {

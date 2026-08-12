@@ -4,11 +4,11 @@
 import os as _os
 import sys as _sys
 
-# Are we the `unsloth` console script, rather than a library import? Both the
-# stream guard below and the `-np<N>` rewrite further down are entry-point
-# behaviour and must not reach into a host application that imports us.
+# Are we the `unsloth` console script or `python -m unsloth_cli`, rather than a
+# library import? Both the stream guard below and the `-np<N>` rewrite further
+# down are entry-point behaviour and must not reach into a host application that imports us.
 _entry_base = _os.path.basename(_sys.argv[0]).lower() if _sys.argv else ""
-_is_entry_point = _entry_base in {"unsloth", "unsloth.exe"}
+_is_entry_point = _entry_base in {"unsloth", "unsloth.exe", "__main__.py"}
 
 # Typer renders help via rich, whose box characters cp1252 and cp437 cannot encode,
 # so `unsloth --help` dies once stdout is a pipe or a file. Windows gets UTF-8, as
@@ -42,7 +42,7 @@ from unsloth_cli.commands.studio import (
 )
 
 
-# Canonicalise `-np<N>` only under the `unsloth` console-script;
+# Canonicalise `-np<N>` only under an Unsloth CLI entry point;
 # third-party scripts that import unsloth_cli keep their argv intact.
 if _is_entry_point:
     _expand_attached_np_short()

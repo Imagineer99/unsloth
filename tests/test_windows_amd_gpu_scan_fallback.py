@@ -228,7 +228,7 @@ def test_gpu_name_list_wraps_the_whole_if_in_an_array():
 def test_installer_forwards_the_arch_through_a_private_handoff():
     src = INSTALL_PS1.read_text(encoding = "utf-8")
     forward = src.index(f"$env:{HANDOFF} = $ROCmGfxArch")
-    invoke = src.index("& $UnslothExe @studioArgs")
+    invoke = src.index("& $VenvPython -m unsloth_cli @studioArgs")
     assert forward < invoke, "the arch must be handed over before setup.ps1 is invoked"
 
 
@@ -520,7 +520,7 @@ def _run_handoff_lifecycle(
     tmp_path: Path, *, arch: str | None, inherited: str | None, fails: bool
 ) -> dict:
     body = _handoff_lifecycle_block().replace(
-        "& $UnslothExe @studioArgs",
+        "& $VenvPython -m unsloth_cli @studioArgs",
         "throw 'setup exploded'"
         if fails
         else "$script:SeenByChild = $env:_UNSLOTH_ROCM_GFX_ARCH_HANDOFF",
@@ -536,7 +536,7 @@ def _run_handoff_lifecycle(
                 "$previousSetupRuntimeGateHandoff = $null; $hadPreviousSetupRuntimeGateHandoff = $false",
                 "$previousProxyHandoff = $null; $hadPreviousProxyHandoff = $false",
                 "$UnslothProxyHandoffJson = $null",
-                "$UnslothExe = 'stub'; $studioArgs = @(); $setupExit = 0",
+                "$VenvPython = 'stub'; $studioArgs = @(); $setupExit = 0",
                 "$script:SeenByChild = '<never ran>'",
                 "$ROCmGfxArch = " + ("$null" if arch is None else f"'{arch}'"),
                 "try {",
