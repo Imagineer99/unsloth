@@ -6,7 +6,8 @@ name: Context size Auto-fit repro
 on:
   push:
     branches:
-      - fix/context-size-repro-ci
+      - fix/context-focused-reload
+      - fix/context-focused-reload-negative
 
 permissions:
   contents: read
@@ -37,7 +38,6 @@ jobs:
           git diff --name-only f20d465c752c1b39d86928ffd716c9fc14713ebe..HEAD | tee tested-files.txt
           test -z "$(git diff --name-only f20d465c752c1b39d86928ffd716c9fc14713ebe..HEAD -- \
             studio/backend/core/inference/llama_cpp.py \
-            studio/frontend/src/features/model-picker/components/model-config-page.tsx \
             studio/frontend/src/features/model-picker/components/model-selector/use-model-selector-state.ts)"
 
       - name: Linux dependencies
@@ -99,7 +99,7 @@ jobs:
           echo "::add-mask::$NEW"
           echo "STUDIO_MODELCFG_NEW_PW=$NEW" >> "$GITHUB_ENV"
 
-      - name: Attempt reported Auto-mode reset
+      - name: Verify focused draft reloads on first click
         shell: bash
         env:
           BASE_URL: http://127.0.0.1:18898
@@ -113,12 +113,8 @@ jobs:
         run: |
           set -o pipefail
           python tests/studio/playwright_model_config.py 2>&1 | tee logs/modelcfg-probe.log
-          grep -F "PASS reproduced disabled Reload: typed Context Length 8192" logs/modelcfg-probe.log
-          grep -F "PASS reproduced ignored first Reload click: no load request sent" logs/modelcfg-probe.log
-          grep -F "PASS reproduced apparent reset: unsaved Context Length 8192 reopened as loaded value 2048" logs/modelcfg-probe.log
-          grep -F "PASS positive control: blur enabled Reload model" logs/modelcfg-probe.log
-          grep -F "OK idle: explicit Context Length stayed at 8192 for 15000 ms" logs/modelcfg-probe.log
-          grep -F "OK persist(request): /api/inference/load max_seq_length=8192" logs/modelcfg-probe.log
+          grep -F "PASS fixed: Reload enabled for focused Context Length draft 8192 with Remember off" logs/modelcfg-probe.log
+          grep -F "PASS fixed first click: /api/inference/load max_seq_length=8192" logs/modelcfg-probe.log
           grep -F "OK persist(reload): Context Length still '8192' after reload" logs/modelcfg-probe.log
 
       - name: Stop Studio

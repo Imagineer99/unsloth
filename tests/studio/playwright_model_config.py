@@ -732,112 +732,64 @@ with sync_playwright() as p:
             ctx_in.click()
             ctx_in.fill(str(DISTINCT_CTX))
             if CONTEXT_REPRO_ONLY:
-                # Negative proof for the reported path. NumericValueInput owns the
-                # focused draft, so the parent config still equals the loaded
-                # baseline and Reload is disabled. A real first mouse click can
-                # blur/commit the field, but cannot activate a disabled button.
+                # The fix must enable Reload from the focused numeric draft itself.
+                # No Tab, outside click, or other blur is allowed before this click:
+                # that would hide the bug by committing the draft first.
                 requests_before_click = len(load_posts)
                 focused_btn = primary_button(popover)
                 if focused_btn is None:
-                    fail("Reload model button missing during focused-draft proof")
-                elif not focused_btn.is_disabled():
-                    fail("Reload model unexpectedly enabled before Context Length blur")
+                    fail("Reload model button missing during first-click proof")
+                elif focused_btn.is_disabled():
+                    fail("Reload model stayed disabled for a focused Context Length draft")
+                elif not ctx_in.evaluate("el => document.activeElement === el"):
+                    fail("Context Length lost focus before the first-click proof")
                 else:
                     info(
-                        "PASS reproduced disabled Reload: typed Context Length "
-                        f"{DISTINCT_CTX}, Remember off, input still focused"
+                        "PASS fixed: Reload enabled for focused Context Length draft "
+                        f"{DISTINCT_CTX} with Remember off"
                     )
-                    shoot("05a-focused-draft-disabled")
-                    box = focused_btn.bounding_box()
-                    if box is None:
-                        fail("disabled Reload model button has no bounding box")
-                    else:
-                        page.mouse.click(
-                            box["x"] + box["width"] / 2,
-                            box["y"] + box["height"] / 2,
-                        )
-                        page.wait_for_timeout(1500)
-                        if len(load_posts) == requests_before_click:
-                            info("PASS reproduced ignored first Reload click: no load request sent")
-                        else:
-                            fail(
-                                "disabled Reload click unexpectedly sent a load request: "
-                                f"{load_posts[requests_before_click:]!r}"
-                            )
-
-                # Dismiss the unsaved panel and prove that reopening rehydrates the
-                # still-loaded context, which is what presents to the user as a reset.
-                close_picker()
-                popover = open_picker()
-                if open_config(popover, MODEL_HINT) is None:
-                    fail("could not reopen run-settings after ignored Reload click")
-                else:
-                    ctx_in = context_input(popover)
-                    reopened = ctx_in.input_value() if ctx_in else None
-                    if _as_int(reopened) == _as_int(default_ctx):
+                    shoot("05-focused-draft-enabled")
+                    focused_btn.click()
+                    page.wait_for_timeout(2500)
+                    first_click_posts = load_posts[requests_before_click:]
+                    first_click_value = None
+                    for body in first_click_posts:
+                        try:
+                            payload = json.loads(body) if body else {}
+                        except Exception:
+                            payload = {}
+                        if payload.get("max_seq_length") == DISTINCT_CTX:
+                            first_click_value = DISTINCT_CTX
+                            break
+                    if first_click_value == DISTINCT_CTX:
                         info(
-                            "PASS reproduced apparent reset: unsaved Context Length "
-                            f"{DISTINCT_CTX} reopened as loaded value {reopened}"
+                            "PASS fixed first click: /api/inference/load "
+                            f"max_seq_length={DISTINCT_CTX}"
                         )
                     else:
                         fail(
-                            "ignored Reload did not reopen at the loaded context "
-                            f"(expected {default_ctx!r}, got {reopened!r})"
+                            "first Reload click did not send the focused draft "
+                            f"max_seq_length={DISTINCT_CTX}; posts={first_click_posts!r}"
                         )
-                    shoot("05b-reopened-loaded-context")
-
-                # Positive control: the exact same edit works once the draft is
-                # committed by leaving the field before clicking Reload.
-                if ctx_in is None:
-                    fail("Context Length input missing for post-blur positive control")
-                else:
-                    ctx_in.click()
-                    ctx_in.fill(str(DISTINCT_CTX))
-                # With Remember off, the primary button remains disabled until the
-                # numeric draft commits on blur. Exercise the normal user path of
-                # leaving the field before waiting for asynchronous status updates.
-                    ctx_in.press("Tab")
-                    page.wait_for_timeout(300)
-                    committed_btn = primary_button(popover)
-                    if committed_btn is None or committed_btn.is_disabled():
-                        fail("Reload model did not enable after Context Length blur")
-                    else:
-                        info("PASS positive control: blur enabled Reload model")
-                # The report describes an apparently asynchronous reset. Leave the
-                # draft open across multiple inference-status polling intervals and
-                # continuously prove that current main does not replace it.
-                deadline = time.monotonic() + CONTEXT_REPRO_IDLE_MS / 1000
-                while time.monotonic() < deadline:
-                    page.wait_for_timeout(1000)
-                    current = _as_int(ctx_in.input_value())
-                    if current != DISTINCT_CTX:
-                        fail(
-                            "explicit Context Length reset while idle in Auto mode "
-                            f"(expected {DISTINCT_CTX}, got {current})"
-                        )
-                        break
-                else:
-                    info(
-                        "OK idle: explicit Context Length stayed at "
-                        f"{DISTINCT_CTX} for {CONTEXT_REPRO_IDLE_MS} ms"
-                    )
+                    shoot("06-after-first-click-load")
             else:
                 page.wait_for_timeout(300)
-            shoot("05-ctx-set")
-            btn = primary_button(popover)
-            if btn is None:
-                fail("primary Load/Save button not found in run-settings")
-            else:
+            if not CONTEXT_REPRO_ONLY:
+                shoot("05-ctx-set")
+                btn = primary_button(popover)
+                if btn is None:
+                    fail("primary Load/Save button not found in run-settings")
+                    btn = None
+                if btn is not None:
                 # Keep the input focused. The button click must commit the draft
                 # and use it in the same load request.
-                btn.click()
-                page.wait_for_timeout(2500)
-                shoot("06-after-load")
+                    btn.click()
+                    page.wait_for_timeout(2500)
+                    shoot("06-after-load")
 
                 # (a) localStorage stored the distinctive context.
-                cfg = read_configs()
-                entries = entries_for_model(cfg)
-                if not CONTEXT_REPRO_ONLY:
+                    cfg = read_configs()
+                    entries = entries_for_model(cfg)
                     got_ls = any(e.get("customContextLength") == DISTINCT_CTX for e in entries)
                     if got_ls:
                         info(f"OK persist(localStorage): customContextLength={DISTINCT_CTX} stored")
@@ -848,27 +800,24 @@ with sync_playwright() as p:
                         )
 
                 # (b) the load request carried max_seq_length == distinctive value.
-                got_req = False
-                for body in load_posts:
-                    try:
-                        payload = json.loads(body) if body else {}
-                    except Exception:
-                        payload = {}
-                    if payload.get("max_seq_length") == DISTINCT_CTX:
-                        got_req = True
-                        break
-                if got_req:
-                    info(f"OK persist(request): /api/inference/load max_seq_length={DISTINCT_CTX}")
-                else:
+                    got_req = False
+                    for body in load_posts:
+                        try:
+                            payload = json.loads(body) if body else {}
+                        except Exception:
+                            payload = {}
+                        if payload.get("max_seq_length") == DISTINCT_CTX:
+                            got_req = True
+                            break
+                    if got_req:
+                        info(f"OK persist(request): /api/inference/load max_seq_length={DISTINCT_CTX}")
+                    else:
                     # The UI may debounce the load; localStorage is the primary
                     # proof, so only warn if the request was missed.
-                    message = (
-                        "no /api/inference/load carried "
-                        f"max_seq_length={DISTINCT_CTX}; posts={load_posts!r}"
-                    )
-                    if CONTEXT_REPRO_ONLY:
-                        fail(message)
-                    else:
+                        message = (
+                            "no /api/inference/load carried "
+                            f"max_seq_length={DISTINCT_CTX}; posts={load_posts!r}"
+                        )
                         runtime_warn(message)
 
     # (c) survives a full browser reload.
