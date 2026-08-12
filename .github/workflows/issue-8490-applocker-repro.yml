@@ -107,7 +107,7 @@ jobs:
           }
 
           & icacls.exe (Join-Path $env:USERPROFILE '.unsloth') `
-            /grant "${probeUser}:(OI)(CI)M" /C | Out-File logs\icacls.txt
+            /grant "${probeUser}:(OI)(CI)M" /T /C /Q | Out-File logs\icacls.txt
           if ($LASTEXITCODE -ne 0) { throw "Could not grant the probe user access (exit $LASTEXITCODE)" }
           Write-Host "AppLocker will block only $blockedExe for standard user $probeIdentity."
 
