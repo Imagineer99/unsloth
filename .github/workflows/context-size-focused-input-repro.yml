@@ -75,6 +75,7 @@ jobs:
           mkdir -p logs
           set -o pipefail
           bash install.sh --local --no-torch 2>&1 | tee logs/install.log
+          echo "$UNSLOTH_STUDIO_HOME/bin" >> "$GITHUB_PATH"
 
       - name: Install Chromium
         shell: bash
