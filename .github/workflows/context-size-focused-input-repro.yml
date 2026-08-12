@@ -35,10 +35,10 @@ jobs:
         run: |
           git merge-base --is-ancestor f20d465c752c1b39d86928ffd716c9fc14713ebe HEAD
           git diff --name-only f20d465c752c1b39d86928ffd716c9fc14713ebe..HEAD | tee tested-files.txt
-          ! git diff --name-only f20d465c752c1b39d86928ffd716c9fc14713ebe..HEAD -- \
+          test -z "$(git diff --name-only f20d465c752c1b39d86928ffd716c9fc14713ebe..HEAD -- \
             studio/backend/core/inference/llama_cpp.py \
             studio/frontend/src/features/model-picker/components/model-config-page.tsx \
-            studio/frontend/src/features/model-picker/components/model-selector/use-model-selector-state.ts
+            studio/frontend/src/features/model-picker/components/model-selector/use-model-selector-state.ts)"
 
       - name: Linux dependencies
         shell: bash
