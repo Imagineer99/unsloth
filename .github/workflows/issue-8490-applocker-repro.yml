@@ -137,8 +137,7 @@ jobs:
           Write-Output '[TAURI:STEP] Running studio setup'
           $unslothExe = '__BLOCKED_EXE__'
           $errorsBefore = $Error.Count
-          & $unslothExe studio setup *>&1 |
-            Tee-Object -FilePath C:\Users\Public\issue-8490-applocker-repro\install.log
+          & $unslothExe studio setup
           if ($Error.Count -gt $errorsBefore) { exit 1 }
           exit $(if ($LASTEXITCODE) { $LASTEXITCODE } else { 0 })
           '@
@@ -146,6 +145,9 @@ jobs:
           $wrapper = $wrapperTemplate.Replace('__BLOCKED_EXE__', $blockedExe.Replace("'", "''"))
           $wrapperPath = Join-Path $probeRoot 'invoke-installer.ps1'
           $wrapper | Set-Content -LiteralPath $wrapperPath -Encoding UTF8
+          $probeStdout = Join-Path $probeRoot 'stdout.log'
+          $probeStderr = Join-Path $probeRoot 'stderr.log'
+          New-Item -ItemType File -Force -Path $probeStdout, $probeStderr | Out-Null
 
           $securePassword = ConvertTo-SecureString 'Us8490!Probe' -AsPlainText -Force
           $credential = [System.Management.Automation.PSCredential]::new(
@@ -154,9 +156,12 @@ jobs:
           )
           $process = Start-Process -FilePath powershell.exe `
             -ArgumentList @('-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', $wrapperPath) `
-            -Credential $credential -LoadUserProfile -WorkingDirectory $probeRoot -Wait -PassThru
+            -Credential $credential -LoadUserProfile -WorkingDirectory $probeRoot `
+            -RedirectStandardOutput $probeStdout -RedirectStandardError $probeStderr `
+            -Wait -PassThru
           $installerExit = $process.ExitCode
-          Copy-Item -LiteralPath (Join-Path $probeRoot 'install.log') -Destination logs\install.log
+          Get-Content -LiteralPath $probeStdout, $probeStderr |
+            Set-Content -LiteralPath logs\install.log -Encoding UTF8
           $installerExit | Set-Content -LiteralPath logs\installer-exit-code.txt
 
           if ($installerExit -eq 0) {
