@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+# Disposable reproduction for issue #8490. This deliberately installs a local
+# AppLocker deny rule for only the generated unsloth.exe console launcher. The
+# runner is ephemeral, and the policy is still removed in the final cleanup.
+name: Issue 8490 Windows AppLocker repro
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/issue-8490-applocker-repro-ci
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: desktop installer / blocked unsloth.exe
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Enforce a narrow AppLocker deny rule
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+
+          $blockedExe = Join-Path $env:USERPROFILE '.unsloth\studio\unsloth_studio\Scripts\unsloth.exe'
+          $escapedBlockedExe = [System.Security.SecurityElement]::Escape($blockedExe)
+          $allowId = [guid]::NewGuid()
+          $denyId = [guid]::NewGuid()
+          $policy = @"
+          <AppLockerPolicy Version="1">
+            <RuleCollection Type="Exe" EnforcementMode="Enabled">
+              <FilePathRule Id="$allowId" Name="Allow all other executables" Description="Keep the hosted runner usable" UserOrGroupSid="S-1-1-0" Action="Allow">
+                <Conditions>
+                  <FilePathCondition Path="*" />
+                </Conditions>
+              </FilePathRule>
+              <FilePathRule Id="$denyId" Name="Block generated Unsloth console launcher" Description="Reproduce issue 8490" UserOrGroupSid="S-1-1-0" Action="Deny">
+                <Conditions>
+                  <FilePathCondition Path="$escapedBlockedExe" />
+                </Conditions>
+              </FilePathRule>
+            </RuleCollection>
+          </AppLockerPolicy>
+          "@
+          $policyPath = Join-Path $PWD 'logs\applocker-policy.xml'
+          $policy | Set-Content -LiteralPath $policyPath -Encoding UTF8
+
+          & sc.exe config AppIDSvc start= auto
+          if ($LASTEXITCODE -ne 0) { throw "Could not configure AppIDSvc (exit $LASTEXITCODE)" }
+          Start-Service -Name AppIDSvc
+          Set-AppLockerPolicy -XmlPolicy $policyPath
+          & gpupdate.exe /target:computer /force
+          if ($LASTEXITCODE -ne 0) { throw "gpupdate failed (exit $LASTEXITCODE)" }
+
+          Get-AppLockerPolicy -Effective -Xml |
+            Set-Content -LiteralPath logs\applocker-effective.xml -Encoding UTF8
+          Write-Host "AppLocker will block only: $blockedExe"
+
+      - name: Run the desktop installer and require the policy failure
+        shell: powershell
+        env:
+          UNSLOTH_VERBOSE: '1'
+        run: |
+          $ErrorActionPreference = 'Continue'
+          (Get-Date).ToString('o') | Set-Content -LiteralPath logs\install-started-at.txt
+
+          & powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass `
+            -File .\install.ps1 --tauri --no-torch *>&1 |
+            Tee-Object -FilePath logs\install.log
+          $installerExit = $LASTEXITCODE
+          $installerExit | Set-Content -LiteralPath logs\installer-exit-code.txt
+          $global:LASTEXITCODE = 0
+
+          if ($installerExit -eq 0) {
+            Write-Host '::error::The installer unexpectedly succeeded; AppLocker did not reproduce issue 8490.'
+            exit 1
+          }
+
+          $installLog = Get-Content -LiteralPath logs\install.log -Raw
+          if ($installLog -notmatch 'Running studio setup') {
+            Write-Host '::error::The installer failed before the issue 8490 handoff.'
+            exit 1
+          }
+          if ($installLog -notmatch 'Application Control policy|blocked by group policy|NativeCommandFailed') {
+            Write-Host '::error::The installer failed at studio setup, but its diagnostics do not show an application-control failure.'
+            exit 1
+          }
+
+          Write-Host "PASS: installer reached studio setup and unsloth.exe was blocked (exit $installerExit)."
+
+      - name: Require an AppLocker block event for unsloth.exe
+        if: always()
+        shell: powershell
+        run: |
+          $startedAt = [datetime](Get-Content -LiteralPath logs\install-started-at.txt -Raw)
+          $events = @(
+            Get-WinEvent -FilterHashtable @{
+              LogName = 'Microsoft-Windows-AppLocker/EXE and DLL'
+              StartTime = $startedAt.AddSeconds(-5)
+            } -ErrorAction SilentlyContinue |
+              Where-Object { $_.Message -match 'unsloth\.exe' }
+          )
+          $events | Format-List TimeCreated, Id, LevelDisplayName, Message |
+            Out-File -LiteralPath logs\applocker-events.txt -Encoding utf8 -Width 300
+
+          if ($events.Count -eq 0) {
+            Write-Host '::error::No AppLocker event naming unsloth.exe was recorded.'
+            exit 1
+          }
+          $events | ForEach-Object {
+            Write-Host "AppLocker event $($_.Id): $($_.Message)"
+          }
+          Write-Host 'PASS: Windows recorded the unsloth.exe policy block.'
+
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: issue-8490-applocker-repro
+          path: logs/
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Remove the local AppLocker policy
+        if: always()
+        shell: powershell
+        run: |
+          $emptyPolicy = Join-Path $env:RUNNER_TEMP 'empty-applocker-policy.xml'
+          '<AppLockerPolicy Version="1" />' |
+            Set-Content -LiteralPath $emptyPolicy -Encoding UTF8
+          Set-AppLockerPolicy -XmlPolicy $emptyPolicy
+          Stop-Service -Name AppIDSvc -Force -ErrorAction SilentlyContinue
