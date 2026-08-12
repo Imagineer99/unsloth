@@ -732,6 +732,11 @@ with sync_playwright() as p:
             ctx_in.click()
             ctx_in.fill(str(DISTINCT_CTX))
             if CONTEXT_REPRO_ONLY:
+                # With Remember off, the primary button remains disabled until the
+                # numeric draft commits on blur. Exercise the normal user path of
+                # leaving the field before waiting for asynchronous status updates.
+                ctx_in.press("Tab")
+                page.wait_for_timeout(300)
                 # The report describes an apparently asynchronous reset. Leave the
                 # draft open across multiple inference-status polling intervals and
                 # continuously prove that current main does not replace it.
