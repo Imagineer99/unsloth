@@ -130,6 +130,8 @@ jobs:
 
           $probeRoot = 'C:\Users\Public\issue-8490-applocker-repro'
           New-Item -ItemType Directory -Force -Path $probeRoot | Out-Null
+          & icacls.exe $probeRoot /grant 'AppLockerProbe:(OI)(CI)M' /Q | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "Could not grant access to $probeRoot" }
           $wrapperTemplate = @'
           $ErrorActionPreference = 'Continue'
           Write-Output '[TAURI:STEP] Running studio setup'
@@ -173,6 +175,8 @@ jobs:
           }
 
           Write-Host "PASS: installer reached studio setup and unsloth.exe was blocked (exit $installerExit)."
+          $global:LASTEXITCODE = 0
+          exit 0
 
       - name: Require an AppLocker block event for unsloth.exe
         if: always()
