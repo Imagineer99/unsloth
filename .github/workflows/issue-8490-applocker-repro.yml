@@ -109,6 +109,15 @@ jobs:
           & icacls.exe (Join-Path $env:USERPROFILE '.unsloth') `
             /grant "${probeUser}:(OI)(CI)M" /T /C /Q | Out-File logs\icacls.txt
           if ($LASTEXITCODE -ne 0) { throw "Could not grant the probe user access (exit $LASTEXITCODE)" }
+          & icacls.exe $env:USERPROFILE /grant "${probeUser}:(RX)" /Q |
+            Out-File logs\icacls.txt -Append
+          if ($LASTEXITCODE -ne 0) { throw "Could not grant profile traversal (exit $LASTEXITCODE)" }
+          $legacyLink = Join-Path $env:USERPROFILE 'unsloth_studio'
+          if (Test-Path -LiteralPath $legacyLink) {
+            & icacls.exe $legacyLink /grant "${probeUser}:(OI)(CI)M" /C /Q |
+              Out-File logs\icacls.txt -Append
+            if ($LASTEXITCODE -ne 0) { throw "Could not grant legacy-link access (exit $LASTEXITCODE)" }
+          }
           Write-Host "AppLocker will block only $blockedExe for standard user $probeIdentity."
 
       - name: Re-run the desktop installer as the standard user
