@@ -57,7 +57,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
 
           $probeUser = 'AppLockerProbe'
-          $probePassword = 'Issue8490-AppLocker-Probe!'
+          $probePassword = 'Us8490!Probe'
           & net.exe user $probeUser $probePassword /add /passwordchg:no
           if ($LASTEXITCODE -ne 0) { throw "Could not create $probeUser (exit $LASTEXITCODE)" }
           $probeAccount = [System.Security.Principal.NTAccount]::new($env:COMPUTERNAME, $probeUser)
@@ -135,7 +135,7 @@ jobs:
 
           $env:UNSLOTH_REPRO_PROFILE = $env:USERPROFILE
           $env:UNSLOTH_REPRO_INSTALLER = Join-Path $probeRoot 'install.ps1'
-          $securePassword = ConvertTo-SecureString 'Issue8490-AppLocker-Probe!' -AsPlainText -Force
+          $securePassword = ConvertTo-SecureString 'Us8490!Probe' -AsPlainText -Force
           $credential = [System.Management.Automation.PSCredential]::new(
             "$env:COMPUTERNAME\AppLockerProbe",
             $securePassword
@@ -168,6 +168,10 @@ jobs:
         if: always()
         shell: powershell
         run: |
+          if (-not (Test-Path -LiteralPath logs\install-started-at.txt)) {
+            Write-Host '::warning::The repro installer step did not start; no AppLocker event is expected.'
+            exit 0
+          }
           $startedAt = [datetime](Get-Content -LiteralPath logs\install-started-at.txt -Raw)
           $events = @(
             Get-WinEvent -FilterHashtable @{
@@ -206,4 +210,7 @@ jobs:
             Set-Content -LiteralPath $emptyPolicy -Encoding UTF8
           Set-AppLockerPolicy -XmlPolicy $emptyPolicy
           Stop-Service -Name AppIDSvc -Force -ErrorAction SilentlyContinue
-          & net.exe user AppLockerProbe /delete 2>&1 | Out-Null
+          if (Get-LocalUser -Name AppLockerProbe -ErrorAction SilentlyContinue) {
+            & net.exe user AppLockerProbe /delete 2>$null | Out-Null
+          }
+          $global:LASTEXITCODE = 0
