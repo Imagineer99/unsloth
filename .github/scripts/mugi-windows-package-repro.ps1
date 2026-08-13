@@ -13,7 +13,7 @@ $studioHome = Join-Path $env:USERPROFILE '.unsloth\studio'
 $managedVenv = Join-Path $studioHome 'unsloth_studio'
 $managedPython = Join-Path $managedVenv 'Scripts\python.exe'
 $managedStub = Join-Path $managedVenv 'Scripts\unsloth.exe'
-$cmdShim = Join-Path $env:USERPROFILE '.local\bin\unsloth.cmd'
+$cmdShim = Join-Path $studioHome 'bin\unsloth.cmd'
 
 New-Item -ItemType Directory -Force -Path $logs | Out-Null
 Start-Transcript -Path (Join-Path $logs 'package-repro.log') -Force | Out-Null
