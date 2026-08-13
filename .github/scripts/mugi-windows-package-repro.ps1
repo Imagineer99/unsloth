@@ -224,20 +224,8 @@ try {
         }
     }
 
-    $userBin = Join-Path $env:USERPROFILE '.local\bin'
-    foreach ($name in 'uv.exe', 'uvx.exe') {
-        $tool = Join-Path $userBin $name
-        Require-Path $tool
-        & $tool --version
-        if ($LASTEXITCODE -ne 0) { throw "$name failed after reinstall." }
-    }
-    $leftovers = @(Get-ChildItem -LiteralPath $userBin -Force |
-        Where-Object { $_.Name -match '\.(rollback|tmp)\.' })
-    if ($leftovers) { throw "Transactional files remain: $($leftovers.Name -join ', ')" }
-
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     "user_path=$userPath" | Set-Content -LiteralPath (Join-Path $logs 'user-path.txt')
-    if ($userPath -notlike "*$userBin*") { throw "User PATH does not contain $userBin" }
 
     $savedProcessPath = $env:Path
     try {
@@ -248,6 +236,20 @@ try {
         & cmd.exe /d /c "uv --version && uvx --version && unsloth.cmd --version" |
             Tee-Object -FilePath (Join-Path $logs 'fresh-terminal.log')
         if ($LASTEXITCODE -ne 0) { throw 'A fresh registry-PATH terminal could not run uv, uvx and unsloth.cmd.' }
+
+        $transactionDirs = @(
+            (Join-Path $env:USERPROFILE '.local\bin'),
+            (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links'),
+            (Split-Path -Parent (Get-Command uv.exe -CommandType Application -ErrorAction Stop).Source),
+            (Split-Path -Parent (Get-Command uvx.exe -CommandType Application -ErrorAction Stop).Source),
+            (Split-Path -Parent $cmdShim)
+        ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Container) } |
+            Select-Object -Unique
+        $leftovers = @($transactionDirs | ForEach-Object {
+            Get-ChildItem -LiteralPath $_ -Force -ErrorAction SilentlyContinue |
+                Where-Object { $_.Name -match '\.(rollback|tmp)\.' }
+        })
+        if ($leftovers) { throw "Transactional files remain: $($leftovers.FullName -join ', ')" }
     } finally {
         $env:Path = $savedProcessPath
     }
