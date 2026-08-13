@@ -1,5 +1,17 @@
 ; Unsloth NSIS installer hooks
 
+!macro NSIS_HOOK_PREINSTALL
+  ; Windows bundles carry only install.ps1 now. NSIS writes the current resource manifest
+  ; and deletes nothing, so an in-place upgrade from a release that shipped both would keep
+  ; install.sh forever and make the non-recursive RMDir "$INSTDIR" fail at uninstall.
+  Delete "$INSTDIR\install.sh"
+!macroend
+
+!macro NSIS_HOOK_PREUNINSTALL
+  ; Same file, for anyone uninstalling a version that never ran the hook above.
+  Delete "$INSTDIR\install.sh"
+!macroend
+
 !macro NSIS_HOOK_POSTUNINSTALL
   ; Desktop uninstall must not remove $PROFILE\.unsloth. The CLI/web
   ; installers also use that tree for environments, models, outputs, and
