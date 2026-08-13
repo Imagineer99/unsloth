@@ -54,7 +54,7 @@ on:
       - 'pyproject.toml'
       - '.github/workflows/windows-application-control-ci.yml'
   push:
-    branches: [main]
+    branches: [main, fix/windows-hardening-stack]
   workflow_dispatch:
 
 concurrency:

@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - "fix/windows-hardening-stack"
+    paths-ignore:
+      - ".github/workflows/pr-8575-8586-8592-windows-repro.yml"
+      - ".github/workflows/windows-application-control-ci.yml"
   workflow_dispatch:
 
 permissions:
