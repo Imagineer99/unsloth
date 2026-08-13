@@ -1,0 +1,36 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "Mugi 0.1.702 Windows Package Repro"
+
+on:
+  push:
+    branches:
+      - "fix/windows-hardening-stack"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-latest"
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: "Test signed Mugi Windows package"
+        shell: pwsh
+        run: |
+          ./.github/scripts/mugi-windows-package-repro.ps1 -InstallerUrl 'https://cdn.discordapp.com/attachments/1370108548419158187/1537435286374588416/Unsloth-Desktop-0_1_702_beta-Windows.exe?ex=6a7f07b0&is=6a7db630&hm=fc2cba687b00f67ea1774d69c057ce06df2b638f09b72257593c22aca578fa3d&' -ExpectedSha256 '0CD85A9859F9EE15D4D64F5FFB5EE736FD2E6B7EE805F08C0D19B3152B81292F'
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: mugi-windows-package-evidence
+          path: mugi-package-logs/
+          retention-days: 7
+          if-no-files-found: warn
+

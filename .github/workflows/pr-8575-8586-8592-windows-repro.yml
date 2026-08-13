@@ -10,6 +10,8 @@ on:
       - ".github/workflows/windows-application-control-ci.yml"
       - ".github/workflows/pr-8575-8586-8592-virgin-windows.yml"
       - ".github/scripts/pr-stack-virgin-postinstall.ps1"
+      - ".github/workflows/mugi-0-1-702-windows-package.yml"
+      - ".github/scripts/mugi-windows-package-repro.ps1"
   workflow_dispatch:
 
 permissions:

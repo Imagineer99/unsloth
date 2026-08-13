@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - "fix/windows-hardening-stack"
+    paths-ignore:
+      - ".github/workflows/mugi-0-1-702-windows-package.yml"
+      - ".github/scripts/mugi-windows-package-repro.ps1"
   workflow_dispatch:
 
 permissions:
