@@ -23,7 +23,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Literal, Optional, Sequence
+from typing import List, Literal, Optional, Sequence, Tuple
 import typer
 
 from unsloth_cli import _studio_deps, _studio_runtime_gate
@@ -171,6 +171,81 @@ def _windows_hidden_subprocess_kwargs() -> dict[str, object]:
     return kwargs
 
 
+# Windows materialises the `unsloth` entry point as a generated, unsigned .exe that
+# Application Control denies while the signed interpreter beside it still runs, so
+# every managed invocation goes through the interpreter (issue #8490).
+#
+# Byte-identical to WINDOWS_CLI_ENTRYPOINT in studio/src-tauri/src/process.rs and to
+# $script:UnslothCliTrampoline in install.ps1, which carries the full rationale for
+# both halves and for the deliberate absence of -I.
+_WINDOWS_CLI_ENTRYPOINT = (
+    "import sys, os; sys.path[:1] = [x for x in sys.path[:1] if getattr(sys.flags, 'safe_path', False) or x not in ('', os.getcwd())]; "
+    "sys.argv[0] = 'unsloth'; from unsloth_cli import app; sys.exit(app())"
+)
+
+# Asks the managed interpreter whether the trampoline's import would succeed, by
+# performing that exact import. The sys.path[0] scrub is
+# _WINDOWS_CLI_ENTRYPOINT's, kept a separate literal because a parity test
+# literal_evals that constant; the two must agree or the probe answers for a
+# different sys.path than the launch uses.
+#
+# `from unsloth_cli import app` rather than a find_spec, deliberately. find_spec
+# locates without executing, which sounds like the lighter question and is the
+# wrong one: it answers True for an empty unsloth_cli/ directory (a namespace
+# package), for a package whose __init__ raises, and for one whose dependencies
+# an interrupted install never fetched. Every one of those is a venv the
+# trampoline cannot start, and this probe gates the headless-public strip of
+# .bootstrap_password, so a false pass there is a public Studio with no login
+# page and no plaintext recovery credential. Paying the import is what makes the
+# probe's answer the launch's answer.
+_MANAGED_CLI_IMPORT_PROBE = (
+    "import sys, os; sys.path[:1] = [x for x in sys.path[:1] if getattr(sys.flags, 'safe_path', False) or x not in ('', os.getcwd())]; "
+    "from unsloth_cli import app; sys.exit(0)"
+)
+
+# Seconds, and generous: this is a bare interpreter start plus the CLI package
+# import, and it can run from cold on a machine whose antivirus is scanning the
+# venv it just quarantined a file out of. The caller treats a timeout as "no
+# verdict" rather than as a missing package, so overrunning it is not fatal.
+_MANAGED_CLI_IMPORT_PROBE_TIMEOUT = 60
+
+# CreateProcess refuses a program blocked by an Application Control policy with
+# ERROR_ACCESS_DISABLED_BY_POLICY, which Python surfaces as OSError.winerror.
+_ERROR_ACCESS_DISABLED_BY_POLICY = 1260
+
+
+def _managed_cli_argv(
+    python: Path,
+    *args: str,
+    isolated: bool = False,
+) -> List[str]:
+    """argv that runs the managed `unsloth` CLI through *python*.
+
+    -X utf8 rather than PYTHONUTF8 so the encoding holds even for a caller that
+    scrubs the environment. -X utf8 precedes -I because -I implies -E, which
+    would discard PYTHONUTF8 but cannot touch a command-line -X.
+
+    *isolated* mirrors the Isolation enum in studio/src-tauri/src/process.rs and
+    carries the same rule: the default is inherit, because -I implies -E and -s
+    and so drops PYTHONPATH, PYTHONWARNINGS, PYTHONHASHSEED and user
+    site-packages that the console script honoured, an observable difference on
+    machines with no policy at all. Only a caller that must reproduce an
+    already-isolated launch asks for it, and today that is the desktop updater's
+    health probe, matching build_update_command's Isolation::Isolated.
+    """
+    flags = ["-X", "utf8", "-I"] if isolated else ["-X", "utf8"]
+    return [str(python), *flags, "-c", _WINDOWS_CLI_ENTRYPOINT, *args]
+
+
+def _is_application_control_block(error: OSError) -> bool:
+    """True when Windows refused to start a program because a policy blocks it.
+
+    Distinct from a missing or corrupt executable: nothing ran, so the failure
+    says nothing about the program itself.
+    """
+    return getattr(error, "winerror", None) == _ERROR_ACCESS_DISABLED_BY_POLICY
+
+
 @contextlib.contextmanager
 def _studio_runtime_launch_guard(*, inherited: bool = False):
     guard = _studio_runtime_gate.studio_runtime_launch_guard(
@@ -251,6 +326,65 @@ def _studio_venv_python() -> Optional[Path]:
     else:
         p = STUDIO_HOME / "unsloth_studio" / "bin" / "python"
     return p if p.is_file() else None
+
+
+def _managed_cli_site_packages_layout(python: Path) -> bool:
+    """On-disk hint that the venv holding *python* still carries the CLI.
+
+    Weaker than the import probe below and only used when the probe could not be
+    run at all: an empty ``unsloth_cli/`` or an orphaned dist-info left by an
+    interrupted install answers yes here without being importable.
+
+    The dist-info is accepted alongside the package directory because an
+    editable install of the checkout leaves a .pth and no unsloth_cli/ here.
+    """
+    site_packages = python.parent.parent / "Lib" / "site-packages"
+    if (site_packages / "unsloth_cli").is_dir():
+        return True
+    return any(site_packages.glob("unsloth-*.dist-info"))
+
+
+def _managed_cli_package_present(python: Path) -> bool:
+    """Whether the venv holding *python* can still import the package the CLI runs.
+
+    Windows only, and only asked when the console script is gone. The generated
+    unsloth.exe is what proves a CLI on POSIX, but on Windows nothing launches it
+    any more (issue #8490) and antivirus quarantine deletes the unsigned stub
+    while leaving the environment perfectly able to run.
+
+    Asked of the interpreter rather than of site-packages, because the two are
+    not the same claim. What Windows launches is the trampoline's
+    ``from unsloth_cli import app``, so an orphaned ``unsloth-*.dist-info`` (a
+    moved editable checkout, an interrupted install) or an empty ``unsloth_cli/``
+    directory is metadata, not a runnable CLI. It matters here specifically:
+    this gate stands in front of the headless-public strip of
+    .bootstrap_password, so passing a venv that then fails to import is the one
+    outcome the gate's placement exists to prevent -- a public Studio with no
+    login page and no plaintext recovery credential.
+
+    The probe runs the trampoline's own ``from unsloth_cli import app`` rather
+    than a cheaper spec lookup (see _MANAGED_CLI_IMPORT_PROBE for why the cheaper
+    one answers a different question), with the same sys.path[0] scrub applied so
+    an ``unsloth_cli`` directory in the caller's cwd cannot answer for the venv.
+    """
+    if platform.system() != "Windows":
+        return False
+    try:
+        probe = subprocess.run(
+            [str(python), "-X", "utf8", "-c", _MANAGED_CLI_IMPORT_PROBE],
+            capture_output = True,
+            timeout = _MANAGED_CLI_IMPORT_PROBE_TIMEOUT,
+            # Same as every other managed-interpreter probe here: a non-interactive
+            # Windows launch must not flash a console window (issue #8490's sibling).
+            **_windows_hidden_subprocess_kwargs(),
+        )
+    except (OSError, subprocess.SubprocessError):
+        # The probe itself never produced a verdict (no interpreter, a policy
+        # block, a hang). That is not evidence of a broken package, so fall back
+        # to the on-disk layout rather than aborting a venv quarantine only
+        # half broke -- the failure this whole fallback exists to remove.
+        return _managed_cli_site_packages_layout(python)
+    return probe.returncode == 0
 
 
 def _hsa_override_gfx_arch(value: Optional[str]) -> Optional[str]:
@@ -2413,10 +2547,15 @@ def run(
         # Re-exec via the studio venv's `unsloth` console-script. Windows ships it as
         # unsloth.exe, so the bare name is never a file there and `unsloth run` aborted
         # with "venv missing 'unsloth' entry point" on a perfectly good install.
+        #
+        # On Windows the file is no longer what gets launched (see the launch_head
+        # below) and no longer the only thing that proves a CLI: quarantine deletes
+        # the stub and leaves the environment able to run, so the installed package
+        # answers for it.
         studio_bin = studio_python.parent / (
             "unsloth.exe" if platform.system() == "Windows" else "unsloth"
         )
-        if not studio_bin.is_file():
+        if not studio_bin.is_file() and not _managed_cli_package_present(studio_python):
             typer.echo("Unsloth venv missing 'unsloth' entry point. Re-run: unsloth studio setup")
             raise typer.Exit(1)
         # `run` serves the same Unsloth UI (unless --api-only); a public launch must
@@ -2469,8 +2608,16 @@ def run(
     )
 
     if not in_studio_venv:
+        # Windows launches the child through the venv interpreter rather than the
+        # console script it just validated: Application Control blocks the
+        # generated unsloth.exe on some machines, and the signed python.exe beside
+        # it is not blocked. POSIX keeps execing the script directly, which is what
+        # the os.execvp below needs anyway.
+        launch_head = (
+            _managed_cli_argv(studio_python) if sys.platform == "win32" else [str(studio_bin)]
+        )
         args = [
-            str(studio_bin),
+            *launch_head,
             "studio",
             "run",
             "--model",
@@ -3764,6 +3911,15 @@ class _WindowsLauncherUpdateTransaction:
     """Keep the managed Windows launcher recoverable during a Python update."""
 
     _VERSION_TIMEOUT_SECONDS = 10
+    # Sentinel rather than a message: _launcher_health_error matches on identity,
+    # so it can never be confused with a real diagnostic that happens to read the
+    # same way, and it never reaches a user.
+    _POLICY_BLOCKED = "an Application Control policy blocked the launcher"
+    # Absence is not corruption. Quarantine takes the unsigned stub and leaves the
+    # environment intact, and nothing executes the stub any more, so the CLI can be
+    # perfectly healthy without it. Kept apart from the PE-shape failure, which is
+    # still a real one.
+    _LAUNCHER_ABSENT = "the updated launcher is not on disk"
     _RESTORE_ATTEMPTS = 3
 
     def __init__(self) -> None:
@@ -3859,18 +4015,27 @@ class _WindowsLauncherUpdateTransaction:
         # unusable, and the backup beside it can repair either.
         if self._is_valid_pe(self.launcher):
             return
+        last_error: Optional[Tuple[Path, OSError]] = None
         for recovery in (self.backup, self.stale, self.legacy_backup, self.shim):
             if recovery is not None and self._is_valid_pe(recovery):
                 try:
                     self._atomic_copy(recovery, self.launcher)
                 except OSError as exc:
-                    typer.echo(
-                        f"Error: could not recover {self.launcher} from {recovery}: {exc}",
-                        err = True,
-                    )
-                    typer.echo(f"Manual recovery copy retained at: {recovery}", err = True)
-                    raise typer.Exit(1)
+                    # Try the next copy. The header check and the copy open the file
+                    # separately, so antivirus taking a candidate in between is a race
+                    # this loop can lose without the others being unusable, and giving
+                    # up on the first one turned a recoverable install into a failure.
+                    last_error = (recovery, exc)
+                    continue
                 return
+        if last_error is not None:
+            recovery, exc = last_error
+            typer.echo(
+                f"Error: could not recover {self.launcher} from {recovery}: {exc}",
+                err = True,
+            )
+            typer.echo(f"Manual recovery copy retained at: {recovery}", err = True)
+            raise typer.Exit(1)
 
     @staticmethod
     def _files_match(left: Path, right: Path) -> bool:
@@ -3965,6 +4130,15 @@ class _WindowsLauncherUpdateTransaction:
         candidate that fails --version must not stop the next one being tried,
         and a launcher already in place and working must not be replaced by a
         candidate that is merely PE-shaped.
+
+        Under Application Control that discrimination degrades to the PE-shape
+        check, because no candidate can be told apart by running it: every
+        --version attempt dies in CreateProcess. That is a real limitation and
+        not a hidden one -- a PE-shaped but corrupt copy can be left in place --
+        but it is also unavoidable, since the only way to tell a good stub from a
+        corrupt one is to start it. It is confined to the case where the launcher
+        was missing or truncated, since an intact one never reaches this loop:
+        _launcher_health_error asks the interpreter and reports healthy.
         """
         if self._launcher_health_error() is None:
             return True
@@ -3976,12 +4150,30 @@ class _WindowsLauncherUpdateTransaction:
         # one happened to be tried last.
         if candidates:
             self._restore_from(candidates[0])
-        return False
+        # No copy could be put back and started. A launcher that is simply gone,
+        # or one the policy denies, is still not a broken CLI, so ask the
+        # interpreter before giving up. Asked only here, after every candidate
+        # has been tried, so a launcher that could have been recovered still is.
+        return self._recovered_cli_health_error() is None
 
-    def _launcher_health_error(self) -> Optional[str]:
+    def _launcher_runs_error(self) -> Optional[str]:
+        """Whether THIS launcher file starts and answers --version.
+
+        Deliberately about the file, not about the CLI: it is the only check that
+        can catch a stub that is PE-shaped but corrupt, on every machine. Its
+        caller decides what a policy denial means.
+
+        The stub is probed first, and still is on a locked-down machine, which
+        costs one denied-launch event per update there. That is a log entry, not
+        a failure. Asking the interpreter instead would be quieter but blind: it
+        cannot see a corrupt launcher on ANY machine, including the overwhelming
+        majority that have no policy at all, which is the strictly worse trade.
+        """
         assert self.launcher is not None
+        if not self.launcher.exists():
+            return self._LAUNCHER_ABSENT
         if not self._is_valid_pe(self.launcher):
-            return "the updated launcher is missing or is not a non-empty PE file"
+            return "the updated launcher is not a non-empty PE file"
         try:
             result = subprocess.run(
                 [str(self.launcher), "--version"],
@@ -3993,9 +4185,85 @@ class _WindowsLauncherUpdateTransaction:
         except subprocess.TimeoutExpired:
             return f"the updated launcher timed out after {self._VERSION_TIMEOUT_SECONDS} seconds"
         except OSError as exc:
+            if _is_application_control_block(exc):
+                return self._POLICY_BLOCKED
             return f"the updated launcher could not run --version ({exc})"
         if result.returncode != 0:
             return f"the updated launcher returned {result.returncode} for --version"
+        return None
+
+    def _launcher_health_error(self) -> Optional[str]:
+        """Whether the update left a working CLI -- the question that matters.
+
+        Identical to _launcher_runs_error except when the launcher was denied by
+        an Application Control policy. That denial happens before Python starts,
+        so it says nothing about the update: the package can be perfectly
+        healthy. Ask the signed interpreter beside it instead, or every update on
+        such a machine reports failure and rolls a good install back (issue
+        #8490). A launcher that fails to start for any other reason is the
+        failure it always was.
+        """
+        error = self._launcher_runs_error()
+        if error is self._POLICY_BLOCKED:
+            return self._interpreter_health_error(error)
+        return error
+
+    def _recovered_cli_health_error(self) -> Optional[str]:
+        """_launcher_health_error, once recovering the launcher has been ruled out.
+
+        Absence is the difference. A missing launcher IS worth restoring, so
+        _launcher_health_error keeps reporting it and validate_launcher goes on
+        to put the previous one back. But quarantine deletes the unsigned stub
+        rather than denying it, and no copy survives being restored either, so
+        once every candidate has failed, absence says as little about the update
+        as a policy denial does: ask the interpreter instead of failing a good
+        update and rolling it back (issue #8490).
+        """
+        error = self._launcher_runs_error()
+        if error is self._POLICY_BLOCKED or error is self._LAUNCHER_ABSENT:
+            return self._interpreter_health_error(error)
+        return error
+
+    def _interpreter_health_error(self, reason: str) -> Optional[str]:
+        """Health of the managed CLI when the launcher itself cannot be started.
+
+        Answers the question validate_launcher actually has -- did the update
+        leave a working CLI? -- on a machine where --version on the launcher can
+        never succeed. Falls back to reporting the original block when there is
+        no interpreter to ask.
+
+        Isolated, alone among this module's managed invocations, because the
+        launch it is predicting is itself isolated: build_update_command in
+        studio/src-tauri/src/update.rs runs the desktop updater under
+        Isolation::Isolated and clears PYTHONHOME/PYTHONPATH. Inheriting them
+        here would let a foreign checkout on PYTHONPATH answer --version for a
+        managed package the update actually broke, and validate_launcher would
+        keep an update that the next desktop launch cannot start. -I implies -E,
+        so it clears the same two variables the Rust side removes by hand.
+        """
+        assert self.launcher is not None
+        python = self.launcher.parent / "python.exe"
+        if not python.is_file():
+            blocked = reason is self._POLICY_BLOCKED
+            state = "is blocked by an Application Control policy" if blocked else "is missing"
+            return (
+                f"the updated launcher {state} and there is no managed interpreter "
+                f"at {python} to ask instead"
+            )
+        try:
+            result = subprocess.run(
+                _managed_cli_argv(python, "--version", isolated = True),
+                check = False,
+                capture_output = True,
+                timeout = self._VERSION_TIMEOUT_SECONDS,
+                **_windows_hidden_subprocess_kwargs(),
+            )
+        except subprocess.TimeoutExpired:
+            return f"the managed Python CLI timed out after {self._VERSION_TIMEOUT_SECONDS} seconds"
+        except OSError as exc:
+            return f"the managed Python CLI could not run --version ({exc})"
+        if result.returncode != 0:
+            return f"the managed Python CLI returned {result.returncode} for --version"
         return None
 
     @staticmethod
@@ -4093,6 +4361,14 @@ class _WindowsLauncherUpdateTransaction:
                     typer.echo(f"Manual recovery copy retained at: {self.backup}", err = True)
                 raise typer.Exit(1)
         self._validated = True
+        # Only once the launcher is actually back. A quarantined or locked stub can
+        # be judged healthy through the interpreter while every attempt to restore
+        # a copy failed, and deleting the copies there would throw away the only
+        # material a later run could recover from. They are fixed names, so keeping
+        # them costs nothing and the next update that does put a launcher back
+        # clears them.
+        if not self._is_valid_pe(self.launcher):
+            return
         for orphan in (self.stale, self.backup, self.legacy_backup):
             if orphan is None:
                 continue

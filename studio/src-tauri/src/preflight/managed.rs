@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant, UNIX_EPOCH};
 use tokio::io::AsyncReadExt;
-use tokio::process::Command;
 
 // 3: the cached capability gained studio_install_ok / studio_install_reason.
 const MANAGED_CAPABILITY_CACHE_SCHEMA: u16 = 3;
@@ -323,8 +322,14 @@ fn write_cached_capability(fingerprint: &ManagedBinFingerprint, capability: &Des
 
 async fn run_cli_probe(bin: &Path, args: &[&str]) -> Result<bool, String> {
     let started = Instant::now();
-    let mut cmd = Command::new(bin);
-    cmd.args(args).stdout(Stdio::null()).stderr(Stdio::null());
+    let Ok(mut cmd) = crate::process::build_managed_cli_command_tokio(bin, args) else {
+        info!(
+            "Managed preflight probe {:?} has no managed interpreter to run",
+            args
+        );
+        return Ok(false);
+    };
+    cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
     // Reported, not folded into `false`: the CLI never ran, so calling it broken
     // would start a repair needing the same context. Re-checking afterwards is not
@@ -381,10 +386,14 @@ async fn run_cli_probe(bin: &Path, args: &[&str]) -> Result<bool, String> {
 
 async fn probe_cli_capability(bin: &Path) -> Result<Option<DesktopCapability>, String> {
     let started = Instant::now();
-    let mut cmd = Command::new(bin);
-    cmd.args(["studio", "desktop-capabilities", "--json"])
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
+    let Ok(mut cmd) = crate::process::build_managed_cli_command_tokio(
+        bin,
+        &["studio", "desktop-capabilities", "--json"],
+    ) else {
+        info!("Managed desktop-capabilities probe has no managed interpreter to run");
+        return Ok(None);
+    };
+    cmd.stdout(Stdio::piped()).stderr(Stdio::null());
 
     // As above: a context that cannot be built is not a probe result.
     if let Err(error) = crate::process::apply_managed_cli_context_tokio(&mut cmd) {
