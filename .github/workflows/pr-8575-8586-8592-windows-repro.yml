@@ -7,7 +7,6 @@ on:
     branches:
       - "fix/windows-hardening-stack"
     paths-ignore:
-      - ".github/workflows/pr-8575-8586-8592-windows-repro.yml"
       - ".github/workflows/windows-application-control-ci.yml"
   workflow_dispatch:
 
@@ -45,8 +44,14 @@ jobs:
       - name: "Install focused Python test dependencies"
         shell: pwsh
         run: |
-          python -m pip install -U pip pytest typer pyyaml pydantic click rich
-          python -m pip install --no-deps -e .
+          python -m venv .ci-venv
+          $ciPython = Join-Path $PWD ".ci-venv\Scripts\python.exe"
+          & $ciPython -m pip install -U pip pytest typer pyyaml pydantic click rich
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $ciPython -m pip install --no-deps -e .
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          (Join-Path $PWD ".ci-venv\Scripts") |
+            Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: "Run stacked Windows Python hardening tests"
         shell: pwsh
