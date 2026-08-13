@@ -1,0 +1,58 @@
+name: "PR 8707 Windows autostart verification"
+
+on:
+  push:
+    branches:
+      - "fix/pr-8707-autostart-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-autostart:
+    name: "Windows autostart unit and release checks"
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+        with:
+          toolchain: stable
+
+      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4
+        with:
+          workspaces: studio/src-tauri -> target
+          save-if: false
+
+      - name: "Build frontend required by Tauri"
+        working-directory: studio/frontend
+        shell: pwsh
+        run: |
+          npm ci --no-fund --no-audit
+          npm run build
+
+      - name: "Run focused autostart regression tests"
+        working-directory: studio/src-tauri
+        shell: pwsh
+        run: |
+          cargo test launch_at_login_preference -- --nocapture
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test only_a_deleted_entry_with_a_stored_yes_is_restored -- --nocapture
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test startup_approved_bytes_are_read_from_the_state_byte -- --nocapture
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cargo test a_re_enabled_entry_is_not_treated_as_deleted -- --nocapture
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - name: "Compile all Windows release paths"
+        working-directory: studio/src-tauri
+        shell: pwsh
+        run: cargo check --all-targets --release
