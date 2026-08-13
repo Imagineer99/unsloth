@@ -1,0 +1,115 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 8575 8586 8592 Virgin Windows Repro"
+
+on:
+  push:
+    branches:
+      - "fix/windows-hardening-stack"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-2022"
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: "Ensure Docker daemon"
+        shell: pwsh
+        run: |
+          ./.github/scripts/ensure-docker-daemon.ps1
+
+      - name: "Start virgin Windows Server Core container"
+        shell: pwsh
+        run: |
+          $image = 'mcr.microsoft.com/windows/servercore:ltsc2022'
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          docker version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not ((docker images --format '{{.Repository}}:{{.Tag}}') -contains $image)) {
+            Write-Host "::warning::$image not pre-cached; pulling"
+            docker pull $image
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          docker run -d --name virgin $image cmd /c "ping -t localhost >nul"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          docker exec virgin cmd /c "mkdir C:\ci"
+          docker cp "$env:GITHUB_WORKSPACE\." virgin:C:\ci
+          docker exec virgin cmd /c "mkdir C:\ci-out"
+
+      - name: "Assert the container is genuinely virgin"
+        shell: pwsh
+        run: |
+          docker exec virgin powershell.exe -NoLogo -NoProfile -NonInteractive `
+            -ExecutionPolicy Bypass -File C:\ci\.github\scripts\virgin-windows-probe.ps1 `
+            *>&1 | Tee-Object -FilePath logs/virginity.log
+          exit $LASTEXITCODE
+
+      - name: "Seed the container trusted root CA store"
+        shell: pwsh
+        run: |
+          for ($i = 1; $i -le 3; $i++) {
+            docker exec virgin cmd /c "certutil -generateSSTFromWU C:\roots.sst && certutil -addstore -f Root C:\roots.sst" `
+              *>&1 | Select-Object -Last 15
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "::warning::root CA seeding attempt $i failed; retrying"
+            Start-Sleep -Seconds 15
+          }
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: "Install stacked checkout into virgin Windows"
+        shell: pwsh
+        run: |
+          docker exec virgin powershell.exe -NoLogo -NoProfile -NonInteractive `
+            -ExecutionPolicy Bypass -File C:\ci\.github\scripts\virgin-windows-install.ps1 `
+            -Overlay "C:\ci" *>&1 | Tee-Object -FilePath logs/install-outer.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content logs/install-outer.log -Raw
+          if (-not ($log -match 'VIRGIN WINDOWS CONTAINER INSTALL PASSED')) {
+            Write-Host '::error::the in-container harness never printed its passing verdict'
+            exit 1
+          }
+
+      - name: "Run System32 quarantine and reinstall scenarios"
+        shell: pwsh
+        run: |
+          docker exec virgin powershell.exe -NoLogo -NoProfile -NonInteractive `
+            -ExecutionPolicy Bypass -File C:\ci\.github\scripts\pr-stack-virgin-postinstall.ps1 `
+            *>&1 | Tee-Object -FilePath logs/postinstall-outer.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $log = Get-Content logs/postinstall-outer.log -Raw
+          if (-not ($log -match 'VIRGIN WINDOWS STACK SCENARIOS PASSED')) {
+            Write-Host '::error::the stack scenario harness never printed its passing verdict'
+            exit 1
+          }
+
+      - name: "Recover container logs"
+        if: always()
+        shell: pwsh
+        run: |
+          docker cp virgin:C:\ci-out\install.log logs/install.log 2>&1 | Out-Null
+          docker cp virgin:C:\ci-out\reinstall.log logs/reinstall.log 2>&1 | Out-Null
+          exit 0
+
+      - name: "Tear down"
+        if: always()
+        shell: pwsh
+        run: |
+          docker rm -f virgin 2>&1 | Out-Null
+          exit 0
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        if: always()
+        with:
+          name: virgin-windows-stack
+          path: logs/
+          retention-days: 7
+          if-no-files-found: warn
+

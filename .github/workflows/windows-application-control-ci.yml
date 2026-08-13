@@ -58,6 +58,8 @@ on:
     paths-ignore:
       - '.github/workflows/pr-8575-8586-8592-windows-repro.yml'
       - '.github/workflows/windows-application-control-ci.yml'
+      - '.github/workflows/pr-8575-8586-8592-virgin-windows.yml'
+      - '.github/scripts/pr-stack-virgin-postinstall.ps1'
   workflow_dispatch:
 
 concurrency:
