@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: PR 8505 Update Version Guard A-B
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - fix/pr-8505-update-version-repro-ci
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-8505-update-version-ab-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BEFORE_SHA: 02ffa268ad91ce77a8ee5d2cead46e8dc46e5f4b
+  AFTER_SHA: 92d16a4096e5a9c05ceac2a17af7e8348f9a530f
+
+jobs:
+  linux-ab:
+    name: Linux ${{ matrix.variant }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: before
+            ref: 02ffa268ad91ce77a8ee5d2cead46e8dc46e5f4b
+            guard_expected: 'false'
+          - variant: after
+            ref: 92d16a4096e5a9c05ceac2a17af7e8348f9a530f
+            guard_expected: 'true'
+
+    steps:
+      - name: Check out exact A-B revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: unslothai/unsloth
+          ref: ${{ matrix.ref }}
+          persist-credentials: false
+
+      - name: Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcurl4-openssl-dev libssl-dev jq
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Install a real managed Studio environment
+        uses: ./.github/actions/install-unsloth-local
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+          hf-token: ''
+
+      - name: Reproduce a successful dependency pass that installed nothing
+        env:
+          GUARD_EXPECTED: ${{ matrix.guard_expected }}
+        run: |
+          set -euo pipefail
+          VENV="$HOME/.unsloth/studio/unsloth_studio"
+          PY="$VENV/bin/python"
+          MANIFEST="$VENV/unsloth_install_manifest.json"
+
+          test -x "$PY"
+          "$PY" -I -c "from importlib.metadata import version; print('installed-before=' + version('unsloth'))"
+          "$PY" -m pip uninstall -y unsloth
+          if "$PY" -I -c "from importlib.metadata import version; version('unsloth')" 2>/dev/null; then
+            echo "::error::failed to remove the target distribution"
+            exit 1
+          fi
+          test -f "$MANIFEST"
+
+          printf '%s\n' 'import sys' 'print("forced dependency no-op")' 'sys.exit(0)' > studio/install_python_stack.py
+
+          set +e
+          bash studio/setup.sh > setup-ab.log 2>&1
+          rc=$?
+          set -e
+          cat setup-ab.log
+
+          if [ "$GUARD_EXPECTED" = true ]; then
+            test "$rc" -ne 0 || { echo "::error::PR head accepted the no-op dependency pass"; exit 1; }
+            grep -Fq "update ran but unsloth is not installed" setup-ab.log || {
+              echo "::error::PR head failed for a reason other than the version guard"
+              exit 1
+            }
+            if [ -f "$MANIFEST" ]; then
+              "$PY" -I -c "import json,sys; p=json.load(open(sys.argv[1])); assert p.get('schema') == -1" "$MANIFEST" || {
+                echo "::error::stale success manifest survived the guarded failure"
+                exit 1
+              }
+            fi
+            echo "PASS: after state rejected the no-op update and cleared/inactivated its success manifest"
+          else
+            test "$rc" -eq 0 || { echo "::error::before state did not reproduce the false success"; exit 1; }
+            ! grep -Fq "update ran but unsloth is not installed" setup-ab.log
+            test -f "$MANIFEST" || { echo "::error::before state unexpectedly removed the success manifest"; exit 1; }
+            echo "PASS: before state reproduced exit 0 with unsloth missing and a success manifest present"
+          fi
+
+      - name: Upload Linux evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-8505-linux-${{ matrix.variant }}
+          path: |
+            logs/install.log
+            setup-ab.log
+          retention-days: 7
+
+  windows-ab:
+    name: Windows ${{ matrix.variant }}
+    runs-on: windows-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: before
+            ref: 02ffa268ad91ce77a8ee5d2cead46e8dc46e5f4b
+            guard_expected: 'false'
+          - variant: after
+            ref: 92d16a4096e5a9c05ceac2a17af7e8348f9a530f
+            guard_expected: 'true'
+    env:
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+
+    steps:
+      - name: Check out exact A-B revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: unslothai/unsloth
+          ref: ${{ matrix.ref }}
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Prepare Windows runner
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          npm install -g 'npm@^11' 2>&1 | Out-Host
+          foreach ($p in @(
+            "$env:USERPROFILE\.unsloth",
+            "$env:USERPROFILE\AppData\Local\uv",
+            "$env:GITHUB_WORKSPACE\studio\frontend\node_modules",
+            "$env:GITHUB_WORKSPACE\studio\frontend\dist"
+          )) {
+            try { Add-MpPreference -ExclusionPath $p -ErrorAction Stop } catch {}
+          }
+
+      - name: Install a real managed Studio environment
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          New-Item -ItemType Directory -Force -Path logs | Out-Null
+          $child = '$ErrorActionPreference = ''Stop''; $ProgressPreference = ''SilentlyContinue''; & ./install.ps1 --local --no-torch; exit $LASTEXITCODE'
+          pwsh -NoProfile -ExecutionPolicy Bypass -Command $child *>&1 | Tee-Object -FilePath logs/install.log
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited with code $LASTEXITCODE" }
+
+      - name: Reproduce a successful dependency pass that installed nothing
+        shell: pwsh
+        env:
+          GUARD_EXPECTED: ${{ matrix.guard_expected }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $venv = Join-Path $env:USERPROFILE '.unsloth\studio\unsloth_studio'
+          $py = Join-Path $venv 'Scripts\python.exe'
+          $manifest = Join-Path $venv 'unsloth_install_manifest.json'
+
+          if (-not (Test-Path -LiteralPath $py)) { throw "managed Python missing: $py" }
+          & $py -I -c "from importlib.metadata import version; print('installed-before=' + version('unsloth'))"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $py -m pip uninstall -y unsloth
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          & $py -I -c "from importlib.metadata import version; version('unsloth')" 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'failed to remove the target distribution' }
+          if (-not (Test-Path -LiteralPath $manifest)) { throw "success manifest missing before repro: $manifest" }
+
+          @('import sys', 'print("forced dependency no-op")', 'sys.exit(0)') |
+            Set-Content -LiteralPath studio/install_python_stack.py -Encoding utf8
+
+          $child = '$ErrorActionPreference = ''Continue''; $ProgressPreference = ''SilentlyContinue''; & ./studio/setup.ps1; exit $LASTEXITCODE'
+          pwsh -NoProfile -ExecutionPolicy Bypass -Command $child *>&1 | Tee-Object -FilePath setup-ab.log
+          $rc = $LASTEXITCODE
+
+          if ($env:GUARD_EXPECTED -eq 'true') {
+            if ($rc -eq 0) { throw 'PR head accepted the no-op dependency pass' }
+            if (-not (Select-String -LiteralPath setup-ab.log -SimpleMatch 'update ran but unsloth is not installed' -Quiet)) {
+              throw 'PR head failed for a reason other than the version guard'
+            }
+            if (Test-Path -LiteralPath $manifest) {
+              $state = Get-Content -Raw -LiteralPath $manifest | ConvertFrom-Json
+              if ($state.schema -ne -1) { throw 'stale success manifest survived the guarded failure' }
+            }
+            Write-Host 'PASS: after state rejected the no-op update and cleared/inactivated its success manifest'
+          } else {
+            if ($rc -ne 0) { throw "before state did not reproduce the false success (exit $rc)" }
+            if (Select-String -LiteralPath setup-ab.log -SimpleMatch 'update ran but unsloth is not installed' -Quiet) {
+              throw 'before state unexpectedly emitted the new guard'
+            }
+            if (-not (Test-Path -LiteralPath $manifest)) { throw 'before state unexpectedly removed the success manifest' }
+            Write-Host 'PASS: before state reproduced exit 0 with unsloth missing and a success manifest present'
+          }
+
+      - name: Upload Windows evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-8505-windows-${{ matrix.variant }}
+          path: |
+            logs/install.log
+            setup-ab.log
+          retention-days: 7
