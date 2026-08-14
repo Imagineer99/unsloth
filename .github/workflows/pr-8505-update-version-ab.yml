@@ -81,7 +81,11 @@ jobs:
           fi
           test -f "$MANIFEST"
 
-          printf '%s\n' 'import sys' 'print("forced dependency no-op")' 'sys.exit(0)' > studio/install_python_stack.py
+          printf '%s\n' \
+            'import json, pathlib, sys' \
+            'pathlib.Path(sys.prefix, "unsloth_install_manifest.json").write_text(json.dumps({"schema": 999, "repro": "forced dependency no-op"}), encoding="utf-8")' \
+            'print("forced dependency no-op")' \
+            'sys.exit(0)' > studio/install_python_stack.py
 
           set +e
           bash studio/setup.sh > setup-ab.log 2>&1
@@ -196,7 +200,12 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw 'failed to remove the target distribution' }
           if (-not (Test-Path -LiteralPath $manifest)) { throw "success manifest missing before repro: $manifest" }
 
-          @('import sys', 'print("forced dependency no-op")', 'sys.exit(0)') |
+          @(
+            'import json, pathlib, sys',
+            'pathlib.Path(sys.prefix, "unsloth_install_manifest.json").write_text(json.dumps({"schema": 999, "repro": "forced dependency no-op"}), encoding="utf-8")',
+            'print("forced dependency no-op")',
+            'sys.exit(0)'
+          ) |
             Set-Content -LiteralPath studio/install_python_stack.py -Encoding utf8
 
           $child = '$ErrorActionPreference = ''Continue''; $ProgressPreference = ''SilentlyContinue''; & ./studio/setup.ps1; exit $LASTEXITCODE'
@@ -221,6 +230,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $manifest)) { throw 'before state unexpectedly removed the success manifest' }
             Write-Host 'PASS: before state reproduced exit 0 with unsloth missing and a success manifest present'
           }
+          exit 0
 
       - name: Upload Windows evidence
         if: always()
