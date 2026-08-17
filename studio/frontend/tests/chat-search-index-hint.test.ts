@@ -16,7 +16,12 @@ const { store } = installLocalStorageFake();
 // The shared fake's addEventListener is a no-op, so the module-level listeners would register
 // into nothing. Swapped before the import below registers them. dispatchEvent routes by type,
 // since the storage listener re-raises the history event through it.
-type Listener = (event: { key?: string | null; type?: string }) => void;
+type Listener = (event: {
+  key?: string | null;
+  type?: string;
+  oldValue?: string | null;
+  newValue?: string | null;
+}) => void;
 const listeners = new Map<string, Set<Listener>>();
 Object.assign(globalThis.window as object, {
   addEventListener: (type: string, fn: Listener) => {
@@ -32,10 +37,20 @@ Object.assign(globalThis.window as object, {
     return true;
   },
 });
-const fire = (type: string, event: { key?: string | null } = {}) => {
+const fire = (
+  type: string,
+  event: {
+    key?: string | null;
+    oldValue?: string | null;
+    newValue?: string | null;
+  } = {},
+) => {
   for (const fn of listeners.get(type) ?? []) fn({ type, ...event });
 };
-const fireStorage = (key: string | null) => fire("storage", { key });
+const fireStorage = (
+  key: string | null,
+  values: { oldValue?: string | null; newValue?: string | null } = {},
+) => fire("storage", { key, ...values });
 
 const { chatSearchIndexHasRows, writeCachedIndex } = await import(
   "../src/features/chat/hooks/use-chat-search-index.ts"
@@ -241,6 +256,32 @@ test("a token refresh in another tab costs nothing", () => {
       "the cache survives a rotation",
     );
     assert.equal(sessionChanges, 0);
+  } finally {
+    win.removeEventListener("unsloth-chat-search-session-changed", onSession);
+  }
+});
+
+test("an upgraded session without a marker drops cached rows on cross-tab logout", () => {
+  store.clear();
+  setAuthSessionEpochForTest(0);
+  writeCachedIndex([row]);
+
+  let sessionChanges = 0;
+  const onSession = () => {
+    sessionChanges += 1;
+  };
+  const win = globalThis.window as Window;
+  win.addEventListener("unsloth-chat-search-session-changed", onSession);
+  try {
+    // An install upgraded from before AUTH_SESSION_MARK_KEY has no marker to remove, so the
+    // auth-token removal is the only cross-tab session boundary it can emit.
+    fireStorage(AUTH_TOKEN_KEY, { oldValue: "old-access-token", newValue: null });
+    assert.equal(
+      chatSearchIndexHasRows(),
+      null,
+      "the signed-out account's cached titles must not survive in another tab",
+    );
+    assert.equal(sessionChanges, 1, "an open dialog must retire the old account's build");
   } finally {
     win.removeEventListener("unsloth-chat-search-session-changed", onSession);
   }

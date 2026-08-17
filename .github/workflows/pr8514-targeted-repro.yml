@@ -1,0 +1,86 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Disposable review evidence for upstream PR 8514. Never merge this workflow.
+
+name: PR 8514 targeted A-B proof
+
+on:
+  push:
+    branches:
+      - 'fix/pr8514-targeted-repro-ci*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  old-install-regressions:
+    name: Old-install regressions (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        working-directory: studio/frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: studio/frontend/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci --ignore-scripts --no-fund --no-audit
+      - name: Verify old-install logout and quota handling
+        run: >-
+          node --experimental-strip-types --test
+          tests/auth-session-marker.test.ts
+          tests/chat-search-index-hint.test.ts
+
+  browser-ab:
+    name: Browser A-B (${{ matrix.label }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, browser: chromium, label: Linux Chromium }
+          - { os: ubuntu-latest, browser: firefox, label: Linux Firefox }
+          - { os: ubuntu-latest, browser: webkit, label: Linux WebKit }
+          - { os: windows-latest, browser: chrome, label: Windows Chrome }
+          - { os: windows-latest, browser: msedge, label: Windows Edge }
+          - { os: macos-latest, browser: webkit, label: macOS WebKit }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install Playwright
+        run: python -m pip install 'playwright==1.56.0'
+      - name: Install Linux browser
+        if: runner.os == 'Linux'
+        run: python -m playwright install --with-deps ${{ matrix.browser }}
+      - name: Install macOS browser
+        if: runner.os == 'macOS'
+        run: python -m playwright install ${{ matrix.browser }}
+      - name: Measure base and PR geometry
+        run: >-
+          python tests/studio/playwright_chat_search_dialog_stability.py
+          --browser ${{ matrix.browser }}
+          --output artifacts/pr8514-${{ matrix.browser }}
+      - name: Upload measurements and labelled screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pr8514-${{ matrix.os }}-${{ matrix.browser }}
+          path: artifacts/pr8514-${{ matrix.browser }}
+          if-no-files-found: warn
