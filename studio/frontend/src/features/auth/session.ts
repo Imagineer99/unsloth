@@ -35,6 +35,18 @@ function canUseStorage(): boolean {
   return typeof window !== "undefined";
 }
 
+function storeAuthSessionMark(): void {
+  try {
+    localStorage.setItem(
+      AUTH_SESSION_MARK_KEY,
+      `${Date.now()}.${Math.random()}`,
+    );
+  } catch {
+    // The marker only invalidates caches in other tabs. Credentials are already stored, so
+    // unavailable or full storage must not turn a successful authentication into an error.
+  }
+}
+
 export function hasAuthToken(): boolean {
   if (!canUseStorage()) return false;
   return Boolean(localStorage.getItem(AUTH_TOKEN_KEY));
@@ -68,20 +80,14 @@ export function storeAuthTokens(
   localStorage.setItem(AUTH_REFRESH_TOKEN_KEY, refreshToken);
   if (sessionStarted) {
     authSessionEpoch += 1;
-    localStorage.setItem(
-      AUTH_SESSION_MARK_KEY,
-      `${Date.now()}.${Math.random()}`,
-    );
+    storeAuthSessionMark();
     window.dispatchEvent(new Event(AUTH_SESSION_STORED_EVENT));
   } else if (!localStorage.getItem(AUTH_SESSION_MARK_KEY)) {
     // A session signed in before this key existed. Written on its next refresh so a later
     // sign-out has a key to remove, since removing an absent one raises no storage event and
     // would leave the other tabs on a signed-out account's titles. Not a new session, so no
     // epoch bump: the tokens here are a rotation.
-    localStorage.setItem(
-      AUTH_SESSION_MARK_KEY,
-      `${Date.now()}.${Math.random()}`,
-    );
+    storeAuthSessionMark();
   }
 }
 

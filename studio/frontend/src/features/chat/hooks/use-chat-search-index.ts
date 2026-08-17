@@ -4,6 +4,7 @@
 import {
   AUTH_SESSION_CLEARED_EVENT,
   AUTH_SESSION_MARK_KEY,
+  AUTH_TOKEN_KEY,
   getAuthSessionEpoch,
 } from "@/features/auth";
 import { useEffect, useRef, useState } from "react";
@@ -284,7 +285,10 @@ if (typeof window !== "undefined") {
     // An account switch elsewhere arrives as a storage write alone: the epoch and its events
     // are both this document's. The mark moves on a session boundary and not on an hourly
     // refresh, which must not cost a warm cache.
-    if (event.key === AUTH_SESSION_MARK_KEY) {
+    if (
+      event.key === AUTH_SESSION_MARK_KEY ||
+      (event.key === AUTH_TOKEN_KEY && event.newValue === null)
+    ) {
       writeCachedIndex(null);
       // Shared by every account on the origin, so it cannot answer for the new one.
       forgetChatSearchHasRows();
