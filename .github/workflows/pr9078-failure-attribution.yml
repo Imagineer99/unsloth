@@ -30,6 +30,15 @@ jobs:
         run: |
           python -m pip install --disable-pip-version-check pytest pytest-repeat
 
+      - name: "Fetch exact comparison commits"
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=1 https://github.com/unslothai/unsloth.git \
+            530799241698788a6c3625ea233024eba7de8281:refs/pr9078/base \
+            refs/pull/9078/head:refs/pr9078/head
+          test "$(git rev-parse refs/pr9078/base)" = 530799241698788a6c3625ea233024eba7de8281
+          test "$(git rev-parse refs/pr9078/head)" = 3ee3b4dba7e399953cbdf4b08a168115bdc35bff
+
       - name: "Prove launcher sources are identical"
         shell: bash
         run: |
