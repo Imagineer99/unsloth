@@ -1,0 +1,97 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 9084 XPU deterministic A B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-9084-xpu-ab-repro-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install focused test dependency"
+        shell: bash
+        run: |
+          python -m pip install pytest
+
+      - name: "Fetch pinned comparison history"
+        shell: bash
+        run: |
+          git fetch --no-tags --depth=20 origin fix/pr-9084-xpu-ab-repro-ci
+
+      - name: "Deterministic A B proof"
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE_SHA=530799241698788a6c3625ea233024eba7de8281
+          ORIGINAL_SHA=6ee74c412bef0d7a0485e8e6c51bb537b97ac91f
+          CURRENT_ROOT="$GITHUB_WORKSPACE"
+          
+          run_case() {
+            label="$1"
+            target="$2"
+            expected_routing_rc="$3"
+            expected_routing_summary="$4"
+            expected_staged_rc="$5"
+            expected_staged_summary="$6"
+            overlay=$(mktemp -d)
+            mkdir -p "$overlay/tests/sh" "$overlay/studio"
+            ln -s "$CURRENT_ROOT/tests/sh/test_get_torch_index_url.sh" "$overlay/tests/sh/test_get_torch_index_url.sh"
+            ln -s "$CURRENT_ROOT/tests/sh/test_staged_validation_enabled.sh" "$overlay/tests/sh/test_staged_validation_enabled.sh"
+            ln -s "$target/install.sh" "$overlay/install.sh"
+            ln -s "$target/studio/setup.sh" "$overlay/studio/setup.sh"
+            ln -s "$target/studio/install_llama_prebuilt.py" "$overlay/studio/install_llama_prebuilt.py"
+            set +e
+            routing_out=$(bash "$overlay/tests/sh/test_get_torch_index_url.sh" 2>&1)
+            routing_rc=$?
+            staged_out=$(bash "$overlay/tests/sh/test_staged_validation_enabled.sh" 2>&1)
+            staged_rc=$?
+            set -e
+            printf '%s\n' "$routing_out" | grep -F "$expected_routing_summary"
+            printf '%s\n' "$staged_out" | grep -F "$expected_staged_summary"
+            test "$routing_rc" -eq "$expected_routing_rc"
+            test "$staged_rc" -eq "$expected_staged_rc"
+            echo "AB_PROOF $label routing_rc=$routing_rc $expected_routing_summary staged_rc=$staged_rc $expected_staged_summary"
+            rm -rf -- "$overlay"
+          }
+          
+          git cat-file -e "$BASE_SHA^{commit}"
+          git cat-file -e "$ORIGINAL_SHA^{commit}"
+          git worktree add --detach "$RUNNER_TEMP/pr9084-base" "$BASE_SHA"
+          git worktree add --detach "$RUNNER_TEMP/pr9084-original" "$ORIGINAL_SHA"
+          run_case BASE "$RUNNER_TEMP/pr9084-base" 1 "Results: 69 passed, 1 failed" 1 "Results: 17 passed, 2 failed"
+          run_case ORIGINAL "$RUNNER_TEMP/pr9084-original" 1 "Results: 65 passed, 5 failed" 1 "Results: 17 passed, 2 failed"
+          run_case FIXED "$CURRENT_ROOT" 0 "Results: 70 passed, 0 failed" 0 "Results: 19 passed, 0 failed"
+          git worktree remove "$RUNNER_TEMP/pr9084-base"
+          git worktree remove "$RUNNER_TEMP/pr9084-original"
+
+      - name: "Focused positive regression suite"
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/sh/test_get_torch_index_url.sh
+          bash tests/sh/test_staged_validation_enabled.sh
+          bash tests/sh/test_setup_xpu_fastpath_escape.sh
+          bash tests/sh/test_xpu_bitsandbytes_reachable.sh
+          bash tests/sh/test_xpu_torch_spec_parity.sh
+          bash tests/sh/test_setup_xpu_posix_summary.sh
+          bash tests/sh/test_install_sh_xpu_flavor_probe.sh
+          python -m pytest -q tests/python/test_cross_platform_parity.py
+          echo 'POSITIVE_PROOF 332 targeted assertions passed'
+
