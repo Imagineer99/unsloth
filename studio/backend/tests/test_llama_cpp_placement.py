@@ -136,6 +136,129 @@ def _launch(backend, gguf, **load_kwargs):
     return captured
 
 
+def _install_qwen38_27b_metadata(backend):
+    """Metadata pinned from unsloth/Qwen3.8-27B-GGUF at 27af057ecb."""
+    backend._context_length = 262_144
+    backend._architecture = "qwen35"
+    backend._gguf_header_parsed = True
+    backend._n_layers = 65
+    backend._n_experts = None
+    backend._leading_dense_block_count = None
+    backend._n_kv_heads = 4
+    backend._n_kv_heads_by_layer = None
+    backend._n_heads = 24
+    backend._embedding_length = 5120
+    backend._pooling_type = None
+    backend._feed_forward_length = None
+    backend._vocab_size = 248_320
+    backend._kv_key_length = 256
+    backend._kv_value_length = 256
+    backend._sliding_window = None
+    backend._sliding_window_pattern = None
+    backend._full_attention_interval = 4
+    backend._kv_lora_rank = None
+    backend._key_length_mla = None
+    backend._kv_key_length_swa = None
+    backend._kv_value_length_swa = None
+    backend._ssm_inner_size = 6144
+    backend._ssm_state_size = 128
+    backend._ssm_conv_kernel = None
+    backend._kda_head_dim = None
+    backend._shared_kv_layers = None
+    backend._nextn_predict_layers = 1
+
+
+def _qwen38_27b_16gb_backend(tmp_path):
+    tmp_path.mkdir()
+    backend, gguf = _backend(
+        tmp_path,
+        vulkan = False,
+        memory = [(0, 16_384, 16_384)],
+    )
+    mmproj = tmp_path / "mmproj-F16.gguf"
+    mmproj.write_bytes(b"projector")
+
+    backend._read_gguf_metadata = lambda _path: _install_qwen38_27b_metadata(backend)
+    backend._can_estimate_kv = LlamaCppBackend._can_estimate_kv.__get__(backend)
+    backend._get_gguf_size_bytes = lambda _path: 14_252_845_984
+    backend._mmproj_vram_bytes = lambda _path: 930_837_632
+    backend._resolve_launch_mmproj_path = lambda **_kwargs: str(mmproj)
+    backend.probe_server_capabilities = lambda _binary = None: {
+        "supports_kv_unified": True,
+        "fit_target_flag": "--fit-target",
+    }
+    return backend, gguf, mmproj
+
+
+def test_qwen38_27b_16gb_auto_context_reproduces_4096_after_slot_reduction(tmp_path):
+    """Release v0.1.800 sizes ctx at four slots, then reduces slots too late."""
+    backend, gguf, mmproj = _qwen38_27b_16gb_backend(tmp_path / "reported-shape")
+
+    result = _launch(
+        backend,
+        gguf,
+        mmproj_path = str(mmproj),
+        is_vision = True,
+        n_ctx = 0,
+        n_parallel = 4,
+        speculative_type = "off",
+    )
+
+    cmd = result["cmd"]
+    assert cmd[cmd.index("-c") + 1] == "4096"
+    assert cmd[cmd.index("--parallel") + 1] == "1"
+    assert backend.context_length == 4096
+    assert backend.max_context_length == 4096
+    assert backend.effective_parallel_slots == 1
+    assert backend._requested_n_parallel == 4
+
+    # Control: starting the same production planner at the final one-slot shape
+    # finds additional usable context. The four-slot run above never refits after
+    # it reaches this shape, which distinguishes ordering from a true 4K model cap.
+    control, control_gguf, control_mmproj = _qwen38_27b_16gb_backend(tmp_path / "one-slot-control")
+    control_result = _launch(
+        control,
+        control_gguf,
+        mmproj_path = str(control_mmproj),
+        is_vision = True,
+        n_ctx = 0,
+        n_parallel = 1,
+        speculative_type = "off",
+    )
+    control_cmd = control_result["cmd"]
+    control_ctx = int(control_cmd[control_cmd.index("-c") + 1])
+    assert control_ctx > 4096
+    assert control.max_context_length > 4096
+
+    # The reporter's second observation is deterministic too: quantizing KV does
+    # not move the displayed cap while the four-slot fixed footprint itself still
+    # fails the fit. The late slot reduction again preserves the 4096 fallback.
+    quantized, quantized_gguf, quantized_mmproj = _qwen38_27b_16gb_backend(
+        tmp_path / "quantized-four-slot"
+    )
+    quantized_result = _launch(
+        quantized,
+        quantized_gguf,
+        mmproj_path = str(quantized_mmproj),
+        is_vision = True,
+        n_ctx = 0,
+        n_parallel = 4,
+        cache_type_kv = "q4_0",
+        speculative_type = "off",
+    )
+    quantized_cmd = quantized_result["cmd"]
+    quantized_ctx = int(quantized_cmd[quantized_cmd.index("-c") + 1])
+    assert quantized_ctx == 4096
+    assert quantized.max_context_length == 4096
+
+    print(
+        "REPRODUCED qwen38-27b 16GiB: "
+        f"four-slot-f16=4096->slots{backend.effective_parallel_slots}, "
+        f"four-slot-q4_0={quantized_ctx}->slots{quantized.effective_parallel_slots}, "
+        f"one-slot-control={control_ctx}"
+    )
+
+
 def test_vulkan_selection_uses_ordinals_and_owns_device_flags(tmp_path):
     backend, gguf = _backend(
         tmp_path,
