@@ -1,0 +1,32 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 8670 deterministic A/B - Windows"
+
+on:
+  push:
+    branches:
+      - "fix/pr-8670-backend-repair-ab-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Run deterministic Windows repair contract"
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File .github/repro/pr8670_windows_probe.ps1
+
