@@ -2233,6 +2233,7 @@ from models.inference import (
     AnthropicMessagesRequest,
     AnthropicMessagesResponse,
     AnthropicResponseTextBlock,
+    AnthropicResponseThinkingBlock,
     AnthropicResponseToolUseBlock,
     AnthropicUsage,
     CreateOpenAIContainerBody,
@@ -2937,6 +2938,88 @@ def _confirm_gate_needs_stream(payload) -> bool:
     # gate can only prompt while streaming. Without this a non-streaming auto request is
     # admitted, then blocks in wait_tool_decision on an approval the client never reads.
     return not all(is_always_safe_tool(t) and t != "web_search" for t in enabled)
+
+
+def _anthropic_reasoning_args(payload) -> dict:
+    """Reasoning kwargs for /v1/messages generators.
+
+    `/v1/messages` accepts Anthropic's `thinking` block plus the x-unsloth
+    reasoning fields; without this the request is parsed and silently dropped,
+    so the model can never be switched out of its load-time reasoning default.
+    """
+    enable_thinking = payload.resolved_enable_thinking()
+    reasoning_effort = payload.reasoning_effort
+    # Mirror the /v1/responses mapping: an effort-only request still drives
+    # enable_thinking-style templates, whose only dial is the boolean --
+    # "none" means off, any named level means on. This keeps generation and
+    # the think-markup parsing gate reading the same effective controls.
+    if enable_thinking is None and reasoning_effort is not None:
+        enable_thinking = reasoning_effort != "none"
+    return {
+        "enable_thinking": enable_thinking,
+        "reasoning_effort": reasoning_effort,
+        "preserve_thinking": payload.preserve_thinking,
+    }
+
+
+def _think_parsing_expected(llama_backend, payload) -> bool:
+    """Whether <think> markup in this reply can be genuine reasoning.
+
+    Literal ``<think>`` in prose (a user asking for an XML example) must stay
+    text when the model cannot think, so the typed-thinking splitter only runs
+    when reasoning markup is expected: an always-on reasoning model, or a
+    reasoning-capable template with thinking not switched off by the request.
+    Attribute defaults keep test doubles (which lack the introspection) on the
+    parsing path.
+    """
+    if getattr(llama_backend, "reasoning_always_on", False):
+        return True
+    if not getattr(llama_backend, "supports_reasoning", True):
+        return False
+    # Decide from the SAME effective template kwargs generation renders with,
+    # not the raw request flags: effort-dial templates (gpt-oss) map
+    # enable_thinking=False to a low-but-thinking effort, so the raw boolean
+    # would disable parsing while genuine markup still streams.
+    args = _anthropic_reasoning_args(payload)
+    resolved = (
+        _reasoning_template_kwargs(
+            llama_backend,
+            args["enable_thinking"],
+            args["reasoning_effort"],
+            args["preserve_thinking"],
+        )
+        or {}
+    )
+    if "enable_thinking" in resolved:
+        return bool(resolved["enable_thinking"])
+    if "reasoning_effort" in resolved:
+        # Effort-dial templates think at every level except "none".
+        return resolved["reasoning_effort"] != "none"
+    # No explicit kwargs: the template's own default decides whether it thinks.
+    return bool(getattr(llama_backend, "reasoning_default", True))
+
+
+def _anthropic_count_template_kwargs(llama_backend, payload):
+    """Resolved reasoning chat_template_kwargs for prompt-token counting."""
+    args = _anthropic_reasoning_args(payload)
+    return _reasoning_template_kwargs(
+        llama_backend, args["enable_thinking"], args["reasoning_effort"], args["preserve_thinking"]
+    )
+
+
+def _reasoning_template_kwargs(llama_backend, enable_thinking, reasoning_effort, preserve_thinking):
+    """chat_template_kwargs matching the loaded model's reasoning style.
+
+    The backend knows whether the template takes ``enable_thinking`` or
+    ``reasoning_effort`` and whether reasoning is always-on; fall back to the
+    plain flag when that introspection isn't available.
+    """
+    resolver = getattr(llama_backend, "_request_reasoning_kwargs", None)
+    if resolver is not None:
+        return resolver(enable_thinking, reasoning_effort, preserve_thinking)
+    if enable_thinking is None:
+        return None
+    return {"enable_thinking": bool(enable_thinking)}
 
 
 # Cancel registry. Proxies (e.g. Colab) can swallow client fetch aborts so
@@ -19712,6 +19795,7 @@ async def anthropic_count_tokens(
     openai_messages = anthropic_messages_to_openai(
         [m.model_dump() for m in payload.messages],
         payload.system,
+        preserve_thinking = bool(payload.preserve_thinking),
     )
     # Apply the same sanitization /messages does before generation, so the count
     # matches the prompt the real request would build (otherwise empty-assistant
@@ -19724,13 +19808,25 @@ async def anthropic_count_tokens(
     )
     openai_tools = anthropic_tools_to_openai(payload.tools or []) or None
 
+    # Render with the same reasoning controls generation will use: on switchable
+    # templates thinking / reasoning_effort / preserve_thinking change the
+    # rendered prompt, so counting the load-time default would under- or
+    # over-count the request the client is about to send.
+    _reasoning_args = _anthropic_reasoning_args(payload)
     try:
         count = await asyncio.to_thread(
-            llama_backend.count_chat_tokens,
-            openai_messages,
-            None,
-            openai_tools,
-            strict = True,
+            lambda: llama_backend.count_chat_tokens(
+                openai_messages,
+                None,
+                openai_tools,
+                strict = True,
+                chat_template_kwargs = _reasoning_template_kwargs(
+                    llama_backend,
+                    _reasoning_args["enable_thinking"],
+                    _reasoning_args["reasoning_effort"],
+                    _reasoning_args["preserve_thinking"],
+                ),
+            )
         )
     except Exception:
         raise HTTPException(
@@ -19901,6 +19997,7 @@ async def anthropic_messages(
     openai_messages = anthropic_messages_to_openai(
         [m.model_dump() for m in payload.messages],
         payload.system,
+        preserve_thinking = bool(payload.preserve_thinking),
     )
     # Strip synthetic provider-side builtin tool history (web_search,
     # web_fetch, code_execution, image_generation cards tagged with
@@ -20269,6 +20366,8 @@ async def anthropic_messages(
                     cancel_id = payload.cancel_id,
                     disable_parallel_tool_use = _disable_parallel,
                     auto_heal_tool_calls = payload.auto_heal_tool_calls,
+                    parse_think = _think_parsing_expected(llama_backend, payload),
+                    **_anthropic_reasoning_args(payload),
                 )
             )
         return await _admitted_anthropic(
@@ -20292,8 +20391,15 @@ async def anthropic_messages(
                 nudge_tool_calls = payload.nudge_tool_calls,
                 request = request,
                 cancel_event = cancel_event,
+                parse_think = _think_parsing_expected(llama_backend, payload),
+                **_anthropic_reasoning_args(payload),
             )
         )
+
+    # Shared provenance: the generator counts the leading <think> wraps it
+    # created from reasoning_content, so the emitters can tell genuine traces
+    # from a model answering with literal <think> markup.
+    _think_prov: dict = {"wrapped": 0}
 
     if server_tools:
         # Bypass Permissions suppresses confirm, so both flags together is fine.
@@ -20358,6 +20464,7 @@ async def anthropic_messages(
 
         def _run_tool_gen():
             return llama_backend.generate_chat_completion_with_tools(
+                reasoning_provenance = _think_prov,
                 messages = openai_messages,
                 tools = openai_tools,
                 temperature = temperature,
@@ -20385,6 +20492,7 @@ async def anthropic_messages(
                     monitor_id,
                     llama_backend.context_length,
                 ),
+                **_anthropic_reasoning_args(payload),
             )
 
         if payload.stream:
@@ -20399,6 +20507,9 @@ async def anthropic_messages(
                     openai_messages = openai_messages,
                     openai_tools = openai_tools,
                     disable_parallel_tool_use = _disable_parallel,
+                    parse_think = _think_parsing_expected(llama_backend, payload),
+                    think_provenance = _think_prov,
+                    count_template_kwargs = _anthropic_count_template_kwargs(llama_backend, payload),
                 )
             )
         return await _admitted_anthropic(
@@ -20408,12 +20519,15 @@ async def anthropic_messages(
                 model_name,
                 disable_parallel_tool_use = _disable_parallel,
                 openai_tools = openai_tools,
+                parse_think = _think_parsing_expected(llama_backend, payload),
+                think_provenance = _think_prov,
             )
         )
 
     # ── No-tool path ──────────────────────────────────────────
     def _run_plain_gen():
         return llama_backend.generate_chat_completion(
+            reasoning_provenance = _think_prov,
             messages = openai_messages,
             temperature = temperature,
             top_p = top_p,
@@ -20429,6 +20543,7 @@ async def anthropic_messages(
                 monitor_id,
                 llama_backend.context_length,
             ),
+            **_anthropic_reasoning_args(payload),
         )
 
     if payload.stream:
@@ -20441,6 +20556,9 @@ async def anthropic_messages(
                 model_name,
                 llama_backend = llama_backend,
                 openai_messages = openai_messages,
+                parse_think = _think_parsing_expected(llama_backend, payload),
+                think_provenance = _think_prov,
+                count_template_kwargs = _anthropic_count_template_kwargs(llama_backend, payload),
             )
         )
     return await _admitted_anthropic(
@@ -20448,6 +20566,8 @@ async def anthropic_messages(
             _run_plain_gen,
             message_id,
             model_name,
+            parse_think = _think_parsing_expected(llama_backend, payload),
+            think_provenance = _think_prov,
         )
     )
 
@@ -20462,6 +20582,9 @@ async def _anthropic_tool_stream(
     openai_messages = None,
     openai_tools = None,
     disable_parallel_tool_use = False,
+    parse_think = True,
+    think_provenance = None,
+    count_template_kwargs = None,
 ):
     """Streaming response for the tool-calling path."""
     _sentinel = object()
@@ -20477,7 +20600,12 @@ async def _anthropic_tool_stream(
     input_tokens = 0
     if llama_backend is not None and openai_messages is not None:
         input_tokens = await asyncio.to_thread(
-            llama_backend.count_chat_tokens, openai_messages, None, openai_tools
+            lambda: llama_backend.count_chat_tokens(
+                openai_messages,
+                None,
+                openai_tools,
+                chat_template_kwargs = count_template_kwargs,
+            )
         )
 
     async def _stream():
@@ -20488,7 +20616,9 @@ async def _anthropic_tool_stream(
         _tracker = _TrackedCancel(cancel_event, model = model_name, kind = "messages")
         _tracker.__enter__()
         try:
-            emitter = AnthropicStreamEmitter()
+            emitter = AnthropicStreamEmitter(
+                parse_think = parse_think, think_provenance = think_provenance
+            )
             for line in emitter.start(message_id, model_name, input_tokens = input_tokens):
                 yield line
 
@@ -20619,6 +20749,9 @@ async def _anthropic_plain_stream(
     model_name,
     llama_backend = None,
     openai_messages = None,
+    parse_think = True,
+    think_provenance = None,
+    count_template_kwargs = None,
 ):
     """Streaming response for the no-tool path."""
     _sentinel = object()
@@ -20627,7 +20760,11 @@ async def _anthropic_plain_stream(
     # makes blocking HTTP calls to llama-server, so run it off the event loop.
     input_tokens = 0
     if llama_backend is not None and openai_messages is not None:
-        input_tokens = await asyncio.to_thread(llama_backend.count_chat_tokens, openai_messages)
+        input_tokens = await asyncio.to_thread(
+            lambda: llama_backend.count_chat_tokens(
+                openai_messages, chat_template_kwargs = count_template_kwargs
+            )
+        )
 
     async def _stream():
         # Registered like the tool stream above: this default /v1/messages path decodes on
@@ -20635,7 +20772,9 @@ async def _anthropic_plain_stream(
         _tracker = _TrackedCancel(cancel_event, model = model_name, kind = "messages")
         _tracker.__enter__()
         try:
-            emitter = AnthropicStreamEmitter()
+            emitter = AnthropicStreamEmitter(
+                parse_think = parse_think, think_provenance = think_provenance
+            )
             for line in emitter.start(message_id, model_name, input_tokens = input_tokens):
                 yield line
 
@@ -20754,12 +20893,66 @@ def _anthropic_message_json_response(
     )
 
 
+def _split_think_segments(text: str, wrap: Optional[dict] = None) -> list:
+    """Ordered ``("thinking" | "text", segment)`` pairs from ``<think>`` markup.
+
+    The local generator folds reasoning_content into the visible text as a
+    single LEADING ``<think>...</think>`` prefix per synthesis turn -- that is
+    the only provenance genuine reasoning ever has. Only that leading block is
+    parsed; any later ``<think>`` is the model quoting the tag (e.g. an XML
+    example) and stays literal text. An unclosed leading ``<think>`` runs to
+    the end of the string (a length-truncated thought has no closing tag).
+    """
+    stripped = text.lstrip()
+    if not stripped.startswith("<think>"):
+        return [("text", text)] if text else []
+    lead_ws = text[: len(text) - len(stripped)]
+    rest = stripped[len("<think>") :]
+    if wrap is not None:
+        # Provenance-backed span: the generator recorded the exact reasoning
+        # length, so a literal "</think>" INSIDE the trace never ends it early.
+        n = int(wrap.get("len", 0))
+        thinking, after = rest[:n], rest[n:]
+        if after.startswith("</think>"):
+            after = after[len("</think>") :]
+    else:
+        close = rest.find("</think>")
+        if close == -1:
+            thinking, after = rest, ""
+        else:
+            thinking, after = rest[:close], rest[close + len("</think>") :]
+    segments: list = []
+    if lead_ws:
+        segments.append(("text", lead_ws))
+    if thinking:
+        segments.append(("thinking", thinking))
+    if after:
+        segments.append(("text", after))
+    return segments
+
+
+def _think_markup_to_blocks(text: str, wrap: Optional[dict] = None) -> list:
+    """Expand one text run into ordered thinking / text response blocks."""
+    blocks: list = []
+    for kind, seg in _split_think_segments(text, wrap):
+        if kind == "thinking":
+            if seg.strip():
+                blocks.append(AnthropicResponseThinkingBlock(thinking = seg))
+        elif seg.strip():
+            # Whitespace only decides emptiness; the delivered text stays
+            # verbatim so formatting-sensitive replies match the streamed path.
+            blocks.append(AnthropicResponseTextBlock(text = seg))
+    return blocks
+
+
 async def _anthropic_tool_non_streaming(
     run_gen,
     message_id,
     model_name,
     disable_parallel_tool_use = False,
     openai_tools = None,
+    parse_think = True,
+    think_provenance = None,
 ):
     """Non-streaming response for the tool-calling path.
 
@@ -20831,6 +21024,29 @@ async def _anthropic_tool_non_streaming(
             if _fr is not None:
                 captured_finish_reason = _fr
 
+    # Split <think> markup out of the accumulated text into typed thinking
+    # blocks, preserving position relative to tool_use blocks. With provenance,
+    # only as many leading blocks as the generator actually wrapped from
+    # reasoning_content are parsed; a literal leading tag stays text.
+    if parse_think:
+        _wrap_budget = None if think_provenance is None else int(think_provenance.get("wrapped", 0))
+        _wrap_entries = (think_provenance or {}).get("wraps") or []
+        _wrap_i = 0
+        _expanded: list = []
+        for block in content_blocks:
+            leading_think = isinstance(
+                block, AnthropicResponseTextBlock
+            ) and block.text.lstrip().startswith("<think>")
+            if leading_think and (_wrap_budget is None or _wrap_budget > 0):
+                _wrap = _wrap_entries[_wrap_i] if _wrap_i < len(_wrap_entries) else None
+                _wrap_i += 1
+                _expanded.extend(_think_markup_to_blocks(block.text, _wrap))
+                if _wrap_budget is not None:
+                    _wrap_budget -= 1
+            else:
+                _expanded.append(block)
+        content_blocks = _expanded
+
     # disable_parallel_tool_use: cap the response to at most one tool_use
     # block. Keep the first tool_use and drop any later ones.
     if disable_parallel_tool_use:
@@ -20857,7 +21073,13 @@ async def _anthropic_tool_non_streaming(
     )
 
 
-async def _anthropic_plain_non_streaming(run_gen, message_id, model_name):
+async def _anthropic_plain_non_streaming(
+    run_gen,
+    message_id,
+    model_name,
+    parse_think = True,
+    think_provenance = None,
+):
     """Non-streaming response for the no-tool path."""
     text_parts = []
     usage = {}
@@ -20880,9 +21102,17 @@ async def _anthropic_plain_non_streaming(run_gen, message_id, model_name):
             text_parts.append(new)
 
     full_text = "".join(text_parts)
-    content_blocks = []
-    if full_text:
-        content_blocks.append(AnthropicResponseTextBlock(text = full_text))
+    # With provenance, only parse the leading <think> the generator actually
+    # wrapped from reasoning_content; a literal leading tag stays text.
+    _wrapped = think_provenance is None or think_provenance.get("wrapped", 0) > 0
+    _wrap_entries = (think_provenance or {}).get("wraps") or []
+    content_blocks: list = []
+    if full_text and parse_think and _wrapped:
+        content_blocks = _think_markup_to_blocks(
+            full_text, _wrap_entries[0] if _wrap_entries else None
+        )
+    elif full_text:
+        content_blocks = [AnthropicResponseTextBlock(text = full_text)]
 
     stop_reason = openai_finish_to_anthropic_stop(captured_finish_reason, had_tool_calls = False)
 
@@ -21154,6 +21384,10 @@ async def _anthropic_passthrough_stream(
     cancel_id = None,
     disable_parallel_tool_use = False,
     auto_heal_tool_calls = None,
+    enable_thinking = None,
+    reasoning_effort = None,
+    preserve_thinking = None,
+    parse_think = True,
 ):
     """Streaming client-side pass-through: forward tools to llama-server and
     translate its stream to Anthropic SSE without executing anything."""
@@ -21171,6 +21405,9 @@ async def _anthropic_passthrough_stream(
         repetition_penalty = repetition_penalty,
         presence_penalty = presence_penalty,
         tool_choice = tool_choice,
+        chat_template_kwargs = _reasoning_template_kwargs(
+            llama_backend, enable_thinking, reasoning_effort, preserve_thinking
+        ),
         backend_ctx = llama_backend.context_length,
         stream_options = {"include_usage": True},
         markup = getattr(llama_backend, "markup_profile", None),
@@ -21179,9 +21416,18 @@ async def _anthropic_passthrough_stream(
     # Prompt-token count for message_start.usage.input_tokens. count_chat_tokens
     # makes blocking HTTP calls to llama-server, so run it off the event loop.
     # Pass the tools through so tool-schema tokens are counted (otherwise the
-    # streaming input_tokens undercounts vs the non-stream / count_tokens paths).
+    # streaming input_tokens undercounts vs the non-stream / count_tokens paths),
+    # and the same reasoning kwargs generation renders with, so the count
+    # describes the actual prompt on switchable reasoning templates.
     input_tokens = await asyncio.to_thread(
-        llama_backend.count_chat_tokens, openai_messages, None, openai_tools
+        lambda: llama_backend.count_chat_tokens(
+            openai_messages,
+            None,
+            openai_tools,
+            chat_template_kwargs = _reasoning_template_kwargs(
+                llama_backend, enable_thinking, reasoning_effort, preserve_thinking
+            ),
+        )
     )
 
     # cancel_id mirrors the OpenAI passthrough so a per-run cancel POST
@@ -21203,7 +21449,7 @@ async def _anthropic_passthrough_stream(
         # registered until restart, 409-ing every swap. Ahead of the first yield, so
         # the opening lines are covered as well.
         _tracker.__enter__()
-        emitter = AnthropicPassthroughEmitter()
+        emitter = AnthropicPassthroughEmitter(reasoning_as_thinking = parse_think)
         # Promote text-form tool calls (declared client tools only) into tool_use blocks;
         # verbatim when healing is off or no tools. tool_choice is already OpenAI-shaped.
         # Sanitized catalog, not the caller's: a tool dropped for unsafe markup never reached
@@ -21392,6 +21638,10 @@ async def _anthropic_passthrough_non_streaming(
     nudge_tool_calls = None,
     request: Optional[Request] = None,
     cancel_event = None,
+    enable_thinking = None,
+    reasoning_effort = None,
+    preserve_thinking = None,
+    parse_think = True,
 ):
     """Non-streaming client-side pass-through.
 
@@ -21414,6 +21664,9 @@ async def _anthropic_passthrough_non_streaming(
         repetition_penalty = repetition_penalty,
         presence_penalty = presence_penalty,
         tool_choice = tool_choice,
+        chat_template_kwargs = _reasoning_template_kwargs(
+            llama_backend, enable_thinking, reasoning_effort, preserve_thinking
+        ),
         backend_ctx = llama_backend.context_length,
         markup = getattr(llama_backend, "markup_profile", None),
     )
@@ -21514,6 +21767,20 @@ async def _anthropic_passthrough_non_streaming(
 
         content_blocks = []
         tool_calls = []
+        # Reasoning first: llama-server splits <think> into reasoning_content on any
+        # turn whose format it can parse, and Anthropic orders thinking ahead of the
+        # answer. Reading only `content` drops the trace and the model looks like it
+        # never thought.
+        reasoning = message.get("reasoning_content") or ""
+        if reasoning.strip():
+            if parse_think:
+                content_blocks.append(AnthropicResponseThinkingBlock(thinking = reasoning))
+            else:
+                # Thinking effectively off: the parser shunted a literal
+                # example into reasoning_content; reconstruct it as text.
+                content_blocks.append(
+                    AnthropicResponseTextBlock(text = f"<think>{reasoning}</think>")
+                )
         if healed_events:
             emitted_tool_uses = 0
             for kind, value in healed_events:

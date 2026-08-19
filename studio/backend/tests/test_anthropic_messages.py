@@ -68,9 +68,24 @@ def _emitter_client_text(events: list[str]) -> str:
     return text
 
 
-def test_anthropic_emitter_closes_reasoning_only_think_block():
+def _emitter_client_thinking(events):
+    thinking = ""
+    for line in events:
+        for raw in line.split("\n"):
+            raw = raw.strip()
+            if not raw.startswith("data: "):
+                continue
+            data = json.loads(raw[len("data: ") :])
+            delta = data.get("delta", {})
+            if delta.get("type") == "thinking_delta":
+                thinking += delta.get("thinking", "")
+    return thinking
+
+
+def test_anthropic_emitter_reasoning_only_becomes_thinking_block():
     # Anthropic asks the GGUF generator not to promote reasoning into a duplicate
-    # visible fallback, so its final cumulative snapshot only balances the block.
+    # visible fallback; the balanced <think> markup becomes one typed thinking
+    # block with no literal tags leaking to the client.
     emitter = AnthropicStreamEmitter()
     events = emitter.start("msg_1", "m")
     events += emitter.feed({"type": "content", "text": "<think>The capital"})
@@ -80,19 +95,210 @@ def test_anthropic_emitter_closes_reasoning_only_think_block():
     )
     events += emitter.finish()
 
-    assert _emitter_client_text(events) == "<think>The capital of France is Paris.</think>"
+    assert _emitter_client_thinking(events) == "The capital of France is Paris."
+    assert _emitter_client_text(events) == ""
+    thinking_start = next(e for e in events if '"type": "thinking"' in e)
+    # signature is part of the Anthropic thinking-block shape; strict stream
+    # decoders reject the block start without it.
+    assert '"signature": ""' in thinking_start
 
 
-def test_anthropic_emitter_does_not_double_close_balanced_think():
-    # A reasoning-then-answer reply already closes its own </think>; the balancer
-    # must not append a second one.
+def test_anthropic_emitter_splits_think_from_answer():
+    # A reasoning-then-answer reply: the trace streams as a thinking block, the
+    # answer as a separate text block, tags consumed by the splitter.
     emitter = AnthropicStreamEmitter()
     events = emitter.start("msg_1", "m")
     events += emitter.feed({"type": "content", "text": "<think>Thinking."})
     events += emitter.feed({"type": "content", "text": "<think>Thinking.</think>Answer."})
     events += emitter.finish()
 
-    assert _emitter_client_text(events) == "<think>Thinking.</think>Answer."
+    assert _emitter_client_thinking(events) == "Thinking."
+    assert _emitter_client_text(events) == "Answer."
+
+
+def test_anthropic_emitter_parse_think_off_keeps_literal_tags():
+    # A non-reasoning model quoting <think> markup (e.g. an XML example) must
+    # deliver it verbatim as text, not have it consumed into a thinking block.
+    emitter = AnthropicStreamEmitter(parse_think = False)
+    events = emitter.start("msg_1", "m")
+    events += emitter.feed({"type": "content", "text": "Use <think>like this</think> tags."})
+    events += emitter.finish()
+
+    assert _emitter_client_thinking(events) == ""
+    assert _emitter_client_text(events) == "Use <think>like this</think> tags."
+
+
+def test_think_parsing_expected_gates_on_capability_and_request():
+    from routes.inference import _think_parsing_expected
+
+    class _Backend:
+        def __init__(
+            self,
+            supports = True,
+            always_on = False,
+            default = True,
+        ):
+            self.supports_reasoning = supports
+            self.reasoning_always_on = always_on
+            self.reasoning_default = default
+
+    # Non-reasoning model never parses; always-on always does.
+    assert _think_parsing_expected(_Backend(supports = False), _basic_payload()) is False
+    assert (
+        _think_parsing_expected(_Backend(supports = False, always_on = True), _basic_payload()) is True
+    )
+    # Request-level off wins on a switchable model.
+    assert _think_parsing_expected(_Backend(), _basic_payload(enable_thinking = False)) is False
+    assert _think_parsing_expected(_Backend(), _basic_payload(reasoning_effort = "none")) is False
+    # Unspecified follows the template default; explicit on parses.
+    assert _think_parsing_expected(_Backend(default = False), _basic_payload()) is False
+    assert _think_parsing_expected(_Backend(), _basic_payload()) is True
+    assert _think_parsing_expected(_Backend(), _basic_payload(enable_thinking = True)) is True
+
+    # Effort-dial templates (gpt-oss) map enable_thinking=False to a
+    # low-but-thinking effort; the gate must follow the RESOLVED kwargs and
+    # keep parsing on, disabling only for a genuine "none".
+    class _EffortBackend(_Backend):
+        def _request_reasoning_kwargs(self, enable_thinking, reasoning_effort, preserve_thinking):
+            if reasoning_effort == "none":
+                return {"reasoning_effort": "none"}
+            return {"reasoning_effort": "low" if enable_thinking is False else "high"}
+
+    assert _think_parsing_expected(_EffortBackend(), _basic_payload(enable_thinking = False)) is True
+    assert (
+        _think_parsing_expected(_EffortBackend(), _basic_payload(reasoning_effort = "none")) is False
+    )
+
+
+def test_anthropic_reasoning_args_maps_effort_only_to_enable_thinking():
+    # Effort-only requests must drive enable_thinking-style templates the same
+    # way /v1/responses does: "none" is off, a named level is on. Generation
+    # and the parsing gate read these same args, so they cannot disagree.
+    from routes.inference import _anthropic_reasoning_args
+
+    assert (
+        _anthropic_reasoning_args(_basic_payload(reasoning_effort = "none"))["enable_thinking"]
+        is False
+    )
+    assert (
+        _anthropic_reasoning_args(_basic_payload(reasoning_effort = "high"))["enable_thinking"]
+        is True
+    )
+    assert _anthropic_reasoning_args(_basic_payload())["enable_thinking"] is None
+    # An explicit boolean always wins over the effort mapping.
+    assert (
+        _anthropic_reasoning_args(_basic_payload(enable_thinking = True, reasoning_effort = "none"))[
+            "enable_thinking"
+        ]
+        is True
+    )
+
+
+def test_replayed_thinking_preserved_only_when_requested():
+    from core.inference.anthropic_compat import anthropic_messages_to_openai
+
+    messages = [
+        {"role": "user", "content": "hi"},
+        {
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "thinking": "prior trace", "signature": ""},
+                {"type": "text", "text": "the answer"},
+            ],
+        },
+    ]
+    dropped = anthropic_messages_to_openai(messages)
+    assert "reasoning_content" not in dropped[-1]
+    kept = anthropic_messages_to_openai(messages, preserve_thinking = True)
+    assert kept[-1]["reasoning_content"] == "prior trace"
+    assert kept[-1]["content"] == "the answer"
+
+
+def test_anthropic_emitter_only_leading_think_is_reasoning():
+    # Genuine reasoning is only ever a single leading <think> block; a model
+    # quoting the tag mid-answer (an XML example) keeps it as literal text,
+    # even with parsing enabled.
+    emitter = AnthropicStreamEmitter()
+    events = emitter.start("msg_1", "m")
+    events += emitter.feed({"type": "content", "text": "<think>why</think>Use "})
+    events += emitter.feed(
+        {"type": "content", "text": "<think>why</think>Use <think>like this</think> tags."}
+    )
+    events += emitter.finish()
+
+    assert _emitter_client_thinking(events) == "why"
+    assert _emitter_client_text(events) == "Use <think>like this</think> tags."
+
+
+def test_anthropic_emitter_no_leading_think_keeps_all_tags_literal():
+    emitter = AnthropicStreamEmitter()
+    events = emitter.start("msg_1", "m")
+    events += emitter.feed({"type": "content", "text": "Wrap it in <think>"})
+    events += emitter.feed({"type": "content", "text": "Wrap it in <think>...</think> please."})
+    events += emitter.finish()
+
+    assert _emitter_client_thinking(events) == ""
+    assert _emitter_client_text(events) == "Wrap it in <think>...</think> please."
+
+
+def test_split_think_segments_only_parses_leading_block():
+    from routes.inference import _split_think_segments
+    assert _split_think_segments("<think>why</think>Use <think>x</think> tags.") == [
+        ("thinking", "why"),
+        ("text", "Use <think>x</think> tags."),
+    ]
+    assert _split_think_segments("Use <think>x</think> tags.") == [
+        ("text", "Use <think>x</think> tags.")
+    ]
+
+
+def test_anthropic_emitter_keeps_embedded_close_tag_in_trace():
+    # Genuine reasoning ABOUT the </think> syntax contains the literal tag; the
+    # generator-recorded length keeps the whole trace in the thinking block and
+    # the real closing marker never leaks into the answer.
+    trace = "the tag </think> ends a block"
+    prov = {"wrapped": 1, "wraps": [{"len": 0}]}
+    emitter = AnthropicStreamEmitter(think_provenance = prov)
+    events = emitter.start("msg_1", "m")
+    prov["wraps"][0]["len"] = len("the tag </think>")
+    events += emitter.feed({"type": "content", "text": "<think>the tag </think>"})
+    prov["wraps"][0]["len"] = len(trace)
+    events += emitter.feed({"type": "content", "text": f"<think>{trace}"})
+    events += emitter.feed({"type": "content", "text": f"<think>{trace}</think>Answer."})
+    events += emitter.finish()
+
+    assert _emitter_client_thinking(events) == trace
+    assert _emitter_client_text(events) == "Answer."
+
+
+def test_split_think_segments_wrap_length_beats_embedded_tag():
+    from routes.inference import _split_think_segments
+
+    trace = "quote </think> inside"
+    text = f"<think>{trace}</think>Visible."
+    assert _split_think_segments(text, {"len": len(trace)}) == [
+        ("thinking", trace),
+        ("text", "Visible."),
+    ]
+    # Without provenance the first marker still closes (heuristic fallback).
+    assert _split_think_segments(text) == [
+        ("thinking", "quote "),
+        ("text", " inside</think>Visible."),
+    ]
+
+
+def test_anthropic_emitter_holds_back_partial_think_tag():
+    # A tag split across deltas must not leak fragments into the wrong block.
+    emitter = AnthropicStreamEmitter()
+    events = emitter.start("msg_1", "m")
+    events += emitter.feed({"type": "content", "text": "<th"})
+    events += emitter.feed({"type": "content", "text": "<think>Deep"})
+    events += emitter.feed({"type": "content", "text": "<think>Deep</th"})
+    events += emitter.feed({"type": "content", "text": "<think>Deep</think>Out"})
+    events += emitter.finish()
+
+    assert _emitter_client_thinking(events) == "Deep"
+    assert _emitter_client_text(events) == "Out"
 
 
 def test_streamed_anthropic_tool_use_records_api_monitor_reply(monkeypatch):
@@ -708,20 +914,22 @@ class TestBuildAnthropicSSEEvent:
 
 
 class TestAnthropicStreamEmitter:
-    def test_start_emits_message_start_and_content_block_start(self):
+    def test_start_emits_message_start_only(self):
+        # Content blocks open lazily on first output, so a turn that begins
+        # with thinking gets a thinking block first, not an empty text block.
         e = AnthropicStreamEmitter()
         events = e.start("msg_123", "test-model")
-        assert len(events) == 2
+        assert len(events) == 1
         assert "message_start" in events[0]
-        assert "content_block_start" in events[1]
-        assert '"type": "text"' in events[1]
 
-    def test_content_delta_emits_text_delta(self):
+    def test_content_delta_opens_text_block_and_emits_delta(self):
         e = AnthropicStreamEmitter()
         e.start("msg_1", "m")
         events = e.feed({"type": "content", "text": "Hello"})
-        assert len(events) == 1
-        parsed = json.loads(events[0].split("data: ")[1])
+        assert len(events) == 2
+        assert "content_block_start" in events[0]
+        assert '"type": "text"' in events[0]
+        parsed = json.loads(events[1].split("data: ")[1])
         assert parsed["delta"]["type"] == "text_delta"
         assert parsed["delta"]["text"] == "Hello"
 
@@ -826,19 +1034,18 @@ class TestAnthropicStreamEmitter:
                 "result": "done",
             }
         )
-        # content_block_stop (tool) + tool_result + content_block_start (new text)
-        assert len(events) == 3
+        # content_block_stop (tool) + tool_result; the next text opens its own block.
+        assert len(events) == 2
         assert "content_block_stop" in events[0]
         assert "tool_result" in events[1]
         parsed = json.loads(events[1].split("data: ")[1])
         assert parsed["content"] == "done"
         assert parsed["tool_use_id"] == tool_use_id
-        assert "content_block_start" in events[2]
-        assert '"type": "text"' in events[2]
 
     def test_finish_emits_stop_events(self):
         e = AnthropicStreamEmitter()
         e.start("msg_1", "m")
+        e.feed({"type": "content", "text": "Hi"})
         events = e.finish("end_turn")
         # content_block_stop + message_delta + message_stop
         assert len(events) == 3
@@ -846,6 +1053,14 @@ class TestAnthropicStreamEmitter:
         assert "message_delta" in events[1]
         assert "end_turn" in events[1]
         assert "message_stop" in events[2]
+
+    def test_finish_without_content_skips_block_stop(self):
+        e = AnthropicStreamEmitter()
+        e.start("msg_1", "m")
+        events = e.finish("end_turn")
+        assert len(events) == 2
+        assert "message_delta" in events[0]
+        assert "message_stop" in events[1]
 
     def test_metadata_captured_in_finish_usage(self):
         e = AnthropicStreamEmitter()
@@ -876,14 +1091,15 @@ class TestAnthropicStreamEmitter:
         )
         end_events = e.finish("end_turn")
 
-        assert len(start_events) == 2
-        assert len(content_events) == 1
+        assert len(start_events) == 1
+        assert len(content_events) == 2
         assert meta_events == []
         assert len(end_events) == 3
 
     def test_block_index_increments(self):
         e = AnthropicStreamEmitter()
         e.start("msg_1", "m")
+        e.feed({"type": "content", "text": "Before"})
         assert e.block_index == 0
         e.feed(
             {
@@ -902,6 +1118,7 @@ class TestAnthropicStreamEmitter:
                 "result": "ok",
             }
         )
+        e.feed({"type": "content", "text": "After"})
         assert e.block_index == 2
 
     def test_text_after_tool_resets_prev_text(self):
@@ -924,9 +1141,11 @@ class TestAnthropicStreamEmitter:
                 "result": "ok",
             }
         )
-        # After tool_end, prev_text should be reset
+        # After tool_end, prev_text should be reset; the content opens a fresh
+        # text block and diffs against an empty baseline.
         events = e.feed({"type": "content", "text": "After tool"})
-        parsed = json.loads(events[0].split("data: ")[1])
+        assert "content_block_start" in events[0]
+        parsed = json.loads(events[1].split("data: ")[1])
         assert parsed["delta"]["text"] == "After tool"
 
 
@@ -1353,6 +1572,267 @@ class TestAnthropicPassthroughStreamAdapter:
         assert message_delta["usage"]["input_tokens"] == 2
         assert message_delta["usage"]["output_tokens"] == 4
 
+    @pytest.mark.parametrize(
+        "reasoning_kwargs, expected",
+        [
+            ({}, None),
+            ({"enable_thinking": True}, {"enable_thinking": True}),
+            ({"enable_thinking": False}, {"enable_thinking": False}),
+            (
+                {"enable_thinking": True, "reasoning_effort": "high"},
+                {"enable_thinking": True, "reasoning_effort": "high"},
+            ),
+        ],
+    )
+    def test_stream_forwards_reasoning_to_llama_server(
+        self, monkeypatch, reasoning_kwargs, expected
+    ):
+        """Without this the reasoning request is dropped and the model stays in
+        its load-time default -- thinking can never be switched on."""
+        import routes.inference as inf_mod
+
+        captured = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            captured["body"] = json.loads(request.content.decode())
+            content = 'data: {"choices": [{"delta": {"content": "hi"}}]}\n\ndata: [DONE]\n\n'
+            return httpx.Response(
+                200,
+                content = content.encode(),
+                headers = {"content-type": "text/event-stream"},
+            )
+
+        transport = httpx.MockTransport(handler)
+        real_async_client = httpx.AsyncClient
+
+        def _client(*args, **kwargs):
+            return real_async_client(transport = transport, timeout = kwargs.get("timeout", 600))
+
+        monkeypatch.setattr(inf_mod.httpx, "AsyncClient", _client)
+        # Echo the request kwargs back the way the real backend does, so the
+        # test covers the route wiring rather than the backend's style logic.
+        backend = SimpleNamespace(
+            base_url = "http://llama.test",
+            context_length = 4096,
+            count_chat_tokens = lambda *args, **kwargs: 2,
+            _request_reasoning_kwargs = lambda et, re_, pt: (
+                {
+                    k: v
+                    for k, v in (
+                        ("enable_thinking", et),
+                        ("reasoning_effort", re_),
+                        ("preserve_thinking", pt),
+                    )
+                    if v is not None
+                }
+                or None
+            ),
+        )
+
+        async def run():
+            response = await _anthropic_passthrough_stream(
+                self._Request(),
+                threading.Event(),
+                backend,
+                [{"role": "user", "content": "hi"}],
+                [{"type": "function", "function": {"name": "lookup", "parameters": {}}}],
+                0.7,
+                0.95,
+                20,
+                16,
+                "msg_1",
+                "test-model",
+                **reasoning_kwargs,
+            )
+            return await self._collect(response)
+
+        asyncio.run(run())
+        assert captured["body"].get("chat_template_kwargs") == expected
+
+
+class TestReasoningContentReachesTheClient:
+    """llama-server puts the thinking trace in `reasoning_content`, not `content`.
+    Reading only `content` drops it and the model looks like it never thought --
+    which is what every Claude Code turn hit, since tool turns always split."""
+
+    def test_stream_emits_thinking_block(self):
+        from core.inference.anthropic_compat import AnthropicPassthroughEmitter
+
+        emitter = AnthropicPassthroughEmitter()
+        emitter.start("msg_1", "test-model")
+        out = emitter.feed_chunk({"choices": [{"delta": {"reasoning_content": "step one"}}]})
+        out += emitter.feed_chunk({"choices": [{"delta": {"content": "the answer"}}]})
+        blob = "".join(out)
+
+        assert '"type": "thinking"' in blob
+        assert "thinking_delta" in blob
+        assert "step one" in blob
+        # Thinking must open before the text block, the order Anthropic defines.
+        assert blob.index("thinking_delta") < blob.index("text_delta")
+
+    def test_stream_thinking_only_still_emits(self):
+        """A reasoning-only reply must not come back as an empty message."""
+        from core.inference.anthropic_compat import AnthropicPassthroughEmitter
+
+        emitter = AnthropicPassthroughEmitter()
+        emitter.start("msg_1", "test-model")
+        blob = "".join(emitter.feed_chunk({"choices": [{"delta": {"reasoning_content": "only"}}]}))
+        assert "thinking_delta" in blob and "only" in blob
+
+    def test_stream_reasoning_reconstructed_as_text_when_thinking_off(self):
+        """Thinking effectively off: llama-server may still shunt a literal
+        <think> example into reasoning_content; the client asked for those
+        bytes, so they come back as text with the tags restored."""
+        from core.inference.anthropic_compat import AnthropicPassthroughEmitter
+
+        emitter = AnthropicPassthroughEmitter(reasoning_as_thinking = False)
+        emitter.start("msg_1", "test-model")
+        out = emitter.feed_chunk({"choices": [{"delta": {"reasoning_content": "like this"}}]})
+        out += emitter.feed_chunk({"choices": [{"delta": {"content": " is the syntax"}}]})
+        out += emitter.finish()
+        blob = "".join(out)
+
+        assert "thinking_delta" not in blob
+        text = "".join(
+            json.loads(stripped[len("data: ") :])["delta"].get("text", "")
+            for line in out
+            for stripped in (part.strip() for part in line.split("\n"))
+            if stripped.startswith("data: ") and '"text_delta"' in stripped
+        )
+        assert text == "<think>like this</think> is the syntax"
+
+    def test_stream_reconstruction_closes_before_same_chunk_content(self):
+        """One chunk can carry the final reasoning fragment AND content; the
+        closing tag must land between them, not after."""
+        from core.inference.anthropic_compat import AnthropicPassthroughEmitter
+
+        emitter = AnthropicPassthroughEmitter(reasoning_as_thinking = False)
+        emitter.start("msg_1", "test-model")
+        out = emitter.feed_chunk({"choices": [{"delta": {"reasoning_content": "like this"}}]})
+        out += emitter.feed_chunk(
+            {"choices": [{"delta": {"reasoning_content": " too", "content": "Answer"}}]}
+        )
+        out += emitter.finish()
+
+        text = "".join(
+            json.loads(stripped[len("data: ") :])["delta"].get("text", "")
+            for line in out
+            for stripped in (part.strip() for part in line.split("\n"))
+            if stripped.startswith("data: ") and '"text_delta"' in stripped
+        )
+        assert text == "<think>like this too</think>Answer"
+
+    def test_non_streaming_builds_thinking_block(self):
+        from models.inference import (
+            AnthropicMessagesResponse,
+            AnthropicResponseTextBlock,
+            AnthropicResponseThinkingBlock,
+        )
+
+        resp = AnthropicMessagesResponse(
+            model = "m",
+            content = [
+                AnthropicResponseThinkingBlock(thinking = "because 2+2"),
+                AnthropicResponseTextBlock(text = "4"),
+            ],
+        )
+        dumped = resp.model_dump()
+        assert [b["type"] for b in dumped["content"]] == ["thinking", "text"]
+        assert dumped["content"][0]["thinking"] == "because 2+2"
+        # signature is part of Anthropic's shape; empty is fine, missing is not.
+        assert "signature" in dumped["content"][0]
+
+
+class TestAnthropicReasoningArgs:
+    """`/v1/messages` must accept Anthropic's `thinking` block and the
+    x-unsloth reasoning fields instead of silently swallowing them."""
+
+    @staticmethod
+    def _payload(**kwargs):
+        from models.inference import AnthropicMessagesRequest
+        return AnthropicMessagesRequest(
+            model = "m",
+            max_tokens = 16,
+            messages = [{"role": "user", "content": "hi"}],
+            **kwargs,
+        )
+
+    @pytest.mark.parametrize(
+        "kwargs, expected",
+        [
+            ({}, None),
+            ({"thinking": {"type": "enabled", "budget_tokens": 600}}, True),
+            ({"thinking": {"type": "disabled"}}, False),
+            # Anthropic's adaptive tiers: unknown types must mean "think", never 400.
+            ({"thinking": {"type": "adaptive"}}, True),
+            ({"thinking": {"type": "auto"}}, True),
+            ({"enable_thinking": True}, True),
+            ({"enable_thinking": False}, False),
+            # x-unsloth field wins, mirroring enable_tools precedence.
+            ({"thinking": {"type": "disabled"}, "enable_thinking": True}, True),
+        ],
+    )
+    def test_resolved_enable_thinking(self, kwargs, expected):
+        assert self._payload(**kwargs).resolved_enable_thinking() is expected
+
+    def test_reasoning_args_reach_the_generators(self):
+        from routes.inference import _anthropic_reasoning_args
+        payload = self._payload(
+            thinking = {"type": "enabled"},
+            reasoning_effort = "high",
+            preserve_thinking = True,
+        )
+        assert _anthropic_reasoning_args(payload) == {
+            "enable_thinking": True,
+            "reasoning_effort": "high",
+            "preserve_thinking": True,
+        }
+
+    @pytest.mark.parametrize("thinking_type", ["adaptive", "auto", "high", "future_tier"])
+    def test_unknown_thinking_type_never_400s(self, thinking_type):
+        """A strict Literal here regressed real Claude Code traffic to a 400:
+        `thinking.type: Input should be 'enabled' or 'disabled'`."""
+        payload = self._payload(thinking = {"type": thinking_type})
+        assert payload.resolved_enable_thinking() is True
+
+    def test_budget_tokens_accepted_not_rejected(self):
+        """Claude Code always sends budget_tokens; llama-server has no budget,
+        so it must be ignored rather than 400'd."""
+        payload = self._payload(thinking = {"type": "enabled", "budget_tokens": 4096})
+        assert payload.thinking.budget_tokens == 4096
+        assert payload.resolved_enable_thinking() is True
+
+    def test_replayed_thinking_blocks_are_accepted(self):
+        """Anthropic's tool-use protocol makes clients replay thinking blocks
+        with tool results. Rejecting them 422s turn 2 of every thinking session."""
+        from core.inference.anthropic_compat import anthropic_messages_to_openai
+        from models.inference import AnthropicMessagesRequest
+
+        payload = AnthropicMessagesRequest(
+            model = "m",
+            max_tokens = 16,
+            messages = [
+                {"role": "user", "content": "hi"},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "thinking", "thinking": "let me check", "signature": ""},
+                        {"type": "redacted_thinking", "data": "opaque"},
+                        {"type": "tool_use", "id": "toolu_1", "name": "ls", "input": {}},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [{"type": "tool_result", "tool_use_id": "toolu_1", "content": "ok"}],
+                },
+            ],
+        )
+        converted = anthropic_messages_to_openai([m.model_dump() for m in payload.messages])
+        assistant = next(m for m in converted if m["role"] == "assistant")
+        # Thinking is dropped from the prompt; the tool call survives.
+        assert "thinking" not in json.dumps(assistant)
+        assert assistant["tool_calls"][0]["function"]["name"] == "ls"
+
 
 # =====================================================================
 # Vision guard + PNG normalization (/v1/messages)
@@ -1616,11 +2096,19 @@ class TestAnthropicMessagesToolRouting:
 
         def _gen_plain(**kwargs):
             assert kwargs["promote_reasoning_only"] is False
+            # Mirror the real generator: record that the leading <think> was
+            # wrapped from reasoning_content, not literal model text.
+            prov = kwargs.get("reasoning_provenance")
+            if prov is not None:
+                prov["wrapped"] = prov.get("wrapped", 0) + 1
             yield f"<think>{reasoning}"
             yield f"<think>{reasoning}</think>"
 
         def _gen_tools(**kwargs):
             assert kwargs["promote_reasoning_only"] is False
+            prov = kwargs.get("reasoning_provenance")
+            if prov is not None:
+                prov["wrapped"] = prov.get("wrapped", 0) + 1
             yield {"type": "content", "text": f"<think>{reasoning}"}
             yield {"type": "content", "text": f"<think>{reasoning}</think>"}
 
@@ -1643,9 +2131,35 @@ class TestAnthropicMessagesToolRouting:
         if stream:
             body = self._sse_blob(self._consume_response(response))
             assert body.count(reasoning) == 1
+            assert "<think>" not in body  # markup split into a typed thinking block
         else:
             body = json.loads(response.body)
-            assert body["content"][0]["text"] == f"<think>{reasoning}</think>"
+            assert body["content"][0]["type"] == "thinking"
+            assert body["content"][0]["thinking"] == reasoning
+
+    @pytest.mark.parametrize("stream", [False, True])
+    def test_literal_leading_think_without_provenance_stays_text(self, monkeypatch, stream):
+        # The model answered with literal <think> markup (user asked for it) and
+        # produced no genuine reasoning: the generator recorded no wrap, so the
+        # markup must come back as text, not be consumed into a thinking block.
+        literal = "<think>like this</think>"
+
+        def _gen_plain(**kwargs):
+            assert kwargs.get("reasoning_provenance") is not None
+            yield literal
+
+        _mock_backend(monkeypatch, generate_chat_completion = _gen_plain)
+        payload = _basic_payload(stream = stream)
+
+        response = _drive(anthropic_messages(payload, request = self._Request(), current_subject = "t"))
+        if stream:
+            body = self._sse_blob(self._consume_response(response))
+            assert '"thinking_delta"' not in body
+            assert literal in body
+        else:
+            body = json.loads(response.body)
+            assert body["content"][0]["type"] == "text"
+            assert body["content"][0]["text"] == literal
 
     def test_tool_use_non_streaming_records_api_monitor_reply(self, monkeypatch):
         import routes.inference as inf_mod
@@ -2224,8 +2738,8 @@ def test_resumed_session_thinking_and_null_content_do_not_400():
             {"role": "assistant", "content": None},  # tool-only turn serialized as null
         ],
     )
-    # Known blocks still parse as their typed models; only the unknown one is loose.
-    assert type(req.messages[1].content[0]).__name__ == "AnthropicUnknownBlock"
+    # Known blocks parse as their typed models; replayed thinking is typed too.
+    assert type(req.messages[1].content[0]).__name__ == "AnthropicThinkingBlock"
     assert type(req.messages[1].content[1]).__name__ == "AnthropicTextBlock"
     assert req.messages[2].content == ""  # null coerced
 
@@ -2241,6 +2755,36 @@ def test_resumed_session_thinking_and_null_content_do_not_400():
             max_tokens = 16,
             messages = [{"role": "assistant", "content": [{"type": "tool_use", "name": "f"}]}],
         )
+
+
+def test_user_thinking_block_rejected_not_silently_dropped():
+    # Thinking blocks are typed for assistant replay only; the converter drops
+    # them from user content, so accepting one there would lose the user turn.
+    from pydantic import ValidationError
+    for btype in ("thinking", "redacted_thinking"):
+        with pytest.raises(ValidationError):
+            AnthropicMessagesRequest(
+                model = "x",
+                max_tokens = 16,
+                messages = [{"role": "user", "content": [{"type": btype}]}],
+            )
+
+
+def test_think_markup_split_preserves_text_verbatim():
+    from routes.inference import _think_markup_to_blocks
+
+    # Reasoning-free output passes through untouched, whitespace included.
+    [block] = _think_markup_to_blocks("  indented\n  lines\n")
+    assert block.text == "  indented\n  lines\n"
+
+    # With markup, the trace and the answer keep their own bytes.
+    thinking, text = _think_markup_to_blocks("<think>why</think>\n\n  answer\n")
+    assert thinking.thinking == "why"
+    assert text.text == "\n\n  answer\n"
+
+    # Whitespace-only segments are dropped rather than emitted as empty blocks.
+    [only_thinking] = _think_markup_to_blocks("<think>why</think>\n\n")
+    assert only_thinking.thinking == "why"
 
 
 def test_user_null_content_rejected():
