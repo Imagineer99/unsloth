@@ -51,7 +51,7 @@ jobs:
           git checkout --detach "${BEFORE}"
           cp "${RUNNER_TEMP}/test_system_poll_no_cuda_context.py" "${TEST}"
           set +e
-          python -m pytest -q \
+          python -m pytest -q --noconftest \
             "${TEST}::test_context_free_rocm_smi_translates_hip_ordinals" \
             "${TEST}::test_context_free_rocm_smi_declines_without_an_id_mapping" \
             "${TEST}::test_context_free_rocm_smi_declines_stacked_visibility_masks" \
@@ -85,7 +85,7 @@ jobs:
           git reset --hard
           git checkout --detach "${AFTER}"
           cp "${RUNNER_TEMP}/test_system_poll_no_cuda_context.py" "${TEST}"
-          python -m pytest -q \
+          python -m pytest -q --noconftest \
             "${TEST}::test_context_free_rocm_smi_translates_hip_ordinals" \
             "${TEST}::test_context_free_rocm_smi_declines_without_an_id_mapping" \
             "${TEST}::test_context_free_rocm_smi_declines_stacked_visibility_masks" \
