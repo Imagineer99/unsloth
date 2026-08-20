@@ -41,3 +41,109 @@ def test_fast_vision_model_wraps_explicit_targets_when_layer_filters_are_used():
 
     assert "target_modules = get_peft_regex(" in source
     assert "target_modules = list(target_modules)" in source
+
+
+def test_embedding_redirect_respects_disabled_language_layers():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    targets = ["q_proj", "embed_tokens", "lm_head"]
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        targets,
+        None,
+        allow_redirect = False,
+    )
+
+    assert adjusted is targets
+    assert modules_to_save is None
+    assert moved == ()
+    assert direct_target is False
+
+
+def test_embedding_redirect_moves_embeddings_when_lora_targets_remain():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        ["q_proj", "embed_tokens", "lm_head"],
+        ["embed_tokens"],
+    )
+
+    assert adjusted == ["q_proj"]
+    assert modules_to_save == ["embed_tokens", "lm_head"]
+    assert moved == ("embed_tokens", "lm_head")
+    assert direct_target is False
+
+
+def test_embedding_redirect_keeps_legacy_lm_head_only_target_valid():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        ["lm_head"],
+        None,
+        preserve_lm_head_target = True,
+    )
+
+    assert adjusted == ["lm_head"]
+    assert modules_to_save is None
+    assert moved == ()
+    assert direct_target is True
+
+
+def test_embedding_redirect_keeps_a_lora_target_with_both_embeddings():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        ["embed_tokens", "lm_head"],
+        None,
+        preserve_lm_head_target = True,
+    )
+
+    assert adjusted == ["lm_head"]
+    assert modules_to_save == ["embed_tokens"]
+    assert moved == ("embed_tokens",)
+    assert direct_target is True
+
+
+def test_embedding_redirect_keeps_embed_tokens_when_it_is_the_only_target():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        ["embed_tokens"],
+        None,
+        preserve_embedding_target = True,
+    )
+
+    assert adjusted == ["embed_tokens"]
+    assert modules_to_save is None
+    assert moved == ()
+    assert direct_target is True
+
+
+def test_embedding_redirect_keeps_lm_head_lora_for_fast_inference():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        ["q_proj", "lm_head"],
+        None,
+        preserve_lm_head_target = True,
+        redirect_lm_head = False,
+    )
+
+    assert adjusted == ["q_proj", "lm_head"]
+    assert modules_to_save is None
+    assert moved == ()
+    assert direct_target is False
+
+
+def test_embedding_redirect_deduplicates_preserved_target():
+    from unsloth.models._utils import _redirect_embedding_targets
+
+    adjusted, modules_to_save, moved, direct_target = _redirect_embedding_targets(
+        ["lm_head", "lm_head"],
+        None,
+        preserve_lm_head_target = True,
+    )
+
+    assert adjusted == ["lm_head"]
+    assert modules_to_save is None
+    assert moved == ()
+    assert direct_target is True
