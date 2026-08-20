@@ -1,0 +1,108 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 9362 deterministic VRAM A/B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-9362-vram-ab-repro-ci-20260820"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.13"
+
+      - name: "Install the minimal test dependency"
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check pytest==8.4.1
+
+      - name: "Pin the identical regression suite"
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE=5ed0807e35612e23615b65e04ccd9f06f9748bd8
+          AFTER=c5f08b284f383fc9dc9580ebab675659e5506fca
+          git cat-file -e "${BEFORE}^{commit}"
+          git cat-file -e "${AFTER}^{commit}"
+          git show "${AFTER}:studio/backend/tests/test_system_poll_no_cuda_context.py" > "${RUNNER_TEMP}/test_system_poll_no_cuda_context.py"
+          printf 'before=%s\nafter=%s\n' "${BEFORE}" "${AFTER}"
+
+      - name: "BEFORE must fail all nine targeted assertions"
+        shell: bash
+        run: |
+          set -euo pipefail
+          BEFORE=5ed0807e35612e23615b65e04ccd9f06f9748bd8
+          TEST=studio/backend/tests/test_system_poll_no_cuda_context.py
+          git checkout --detach "${BEFORE}"
+          cp "${RUNNER_TEMP}/test_system_poll_no_cuda_context.py" "${TEST}"
+          set +e
+          python -m pytest -q \
+            "${TEST}::test_context_free_rocm_smi_translates_hip_ordinals" \
+            "${TEST}::test_context_free_rocm_smi_declines_without_an_id_mapping" \
+            "${TEST}::test_context_free_rocm_smi_declines_stacked_visibility_masks" \
+            "${TEST}::test_context_free_rocm_smi_declines_gpu_device_ordinal" \
+            "${TEST}::test_context_free_rocm_smi_declines_inventory_count_mismatch" \
+            "${TEST}::test_context_free_nvidia_smi_resolves_a_uuid_mask" \
+            "${TEST}::test_nvidia_uuid_mask_keeps_public_indices_relative" \
+            "${TEST}::test_context_free_nvidia_smi_declines_whole_gpu_metrics_for_mig" \
+            "${TEST}::test_context_free_rocm_smi_declines_whole_gpu_metrics_for_a_partition" \
+            --junitxml="${RUNNER_TEMP}/before.xml" | tee "${RUNNER_TEMP}/before.log"
+          status=${PIPESTATUS[0]}
+          set -e
+          BEFORE_STATUS=${status} BEFORE_XML="${RUNNER_TEMP}/before.xml" python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          root = ET.parse(os.environ["BEFORE_XML"]).getroot()
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          assert suite is not None
+          counts = {key: int(suite.attrib.get(key, 0)) for key in ("tests", "failures", "errors", "skipped")}
+          print("BEFORE_COUNTS", counts, "exit", os.environ["BEFORE_STATUS"])
+          assert int(os.environ["BEFORE_STATUS"]) == 1, "negative leg must be assertion failures"
+          assert counts == {"tests": 9, "failures": 9, "errors": 0, "skipped": 0}, counts
+          PY
+
+      - name: "AFTER must pass the identical nine assertions"
+        shell: bash
+        run: |
+          set -euo pipefail
+          AFTER=c5f08b284f383fc9dc9580ebab675659e5506fca
+          TEST=studio/backend/tests/test_system_poll_no_cuda_context.py
+          git reset --hard
+          git checkout --detach "${AFTER}"
+          cp "${RUNNER_TEMP}/test_system_poll_no_cuda_context.py" "${TEST}"
+          python -m pytest -q \
+            "${TEST}::test_context_free_rocm_smi_translates_hip_ordinals" \
+            "${TEST}::test_context_free_rocm_smi_declines_without_an_id_mapping" \
+            "${TEST}::test_context_free_rocm_smi_declines_stacked_visibility_masks" \
+            "${TEST}::test_context_free_rocm_smi_declines_gpu_device_ordinal" \
+            "${TEST}::test_context_free_rocm_smi_declines_inventory_count_mismatch" \
+            "${TEST}::test_context_free_nvidia_smi_resolves_a_uuid_mask" \
+            "${TEST}::test_nvidia_uuid_mask_keeps_public_indices_relative" \
+            "${TEST}::test_context_free_nvidia_smi_declines_whole_gpu_metrics_for_mig" \
+            "${TEST}::test_context_free_rocm_smi_declines_whole_gpu_metrics_for_a_partition" \
+            --junitxml="${RUNNER_TEMP}/after.xml"
+          AFTER_XML="${RUNNER_TEMP}/after.xml" python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          root = ET.parse(os.environ["AFTER_XML"]).getroot()
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          assert suite is not None
+          counts = {key: int(suite.attrib.get(key, 0)) for key in ("tests", "failures", "errors", "skipped")}
+          print("AFTER_COUNTS", counts)
+          assert counts == {"tests": 9, "failures": 0, "errors": 0, "skipped": 0}, counts
+          PY
