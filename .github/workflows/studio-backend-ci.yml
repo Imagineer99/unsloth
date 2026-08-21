@@ -23,6 +23,8 @@
 
 name: Backend CI
 
+# Disposable baseline trigger for PR #9270 A/B staging; no workflow semantics changed.
+
 on:
   pull_request:
     paths:
@@ -500,4 +502,3 @@ jobs:
           dir: ${{ steps.pip-cache.outputs.dir }}
           key: ${{ steps.pip-cache.outputs.key }}
           cache-hit: ${{ steps.pip-cache.outputs.cache-hit }}
-
