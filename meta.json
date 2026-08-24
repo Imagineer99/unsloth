@@ -1,0 +1,20 @@
+{
+  "before_capture_base": "6abc0c71e175f4fb267ac59a6f16cee72e1ab5b7",
+  "current_merge_base": "0998656891170ce53abef1f1f4383d88e2d5a7ae",
+  "head": "afaf2b3f3a712c576e5f08515039dc458aa08119",
+  "frontend_url": "http://127.0.0.1:5173",
+  "backend_url": "http://127.0.0.1:8888",
+  "browser": "Chromium via Playwright",
+  "viewport": {
+    "width": 1280,
+    "height": 900
+  },
+  "fixture": "valid ChatML JSONL with 2 rows",
+  "before_assertion": "exact duplicate Array2DExtensionType error is visible",
+  "after_assertions": [
+    "check-format response status is 200",
+    "duplicate Array2DExtensionType error is absent",
+    "Ready for training is visible",
+    "both fixture rows are visible"
+  ]
+}
