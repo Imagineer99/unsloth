@@ -1,0 +1,195 @@
+{
+  "expect": "Only complete legacy built-in Default snapshots for Qwen3.5/3.6/3.8 migrate to minP=0 and presencePenalty=1.5; fresh, generic-Qwen3, explicit, customized, and unrelated-model behavior remains correct.",
+  "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+  "after_commit": "15432c65d5ef5c6bbf6c412a47e727317381bfcf",
+  "ports": {
+    "before": 5240,
+    "after": 5241,
+    "backend": 8888
+  },
+  "process_identity": {
+    "before": {
+      "pid": 1378,
+      "cwd": "/home/samle/dev/unsloth_main/.uidiff/qwen-default-migration/before/studio/frontend"
+    },
+    "after": {
+      "pid": 1379,
+      "cwd": "/home/samle/dev/unsloth_main/fix-qwen38-default-memory-migration/studio/frontend"
+    },
+    "backend": {
+      "pid": 1490,
+      "command": "python3 .../matrix_backend.py --scenario qwen38_fresh --port 8888"
+    }
+  },
+  "rows": [
+    {
+      "scenario": "qwen38_fresh",
+      "label": "Qwen3.8 \u00b7 fresh settings",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "none",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": null,
+      "normal_put_count_before": 2,
+      "normal_put_count_after": 2,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen38_legacy",
+      "label": "Qwen3.8 \u00b7 legacy Default",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": {
+        "inferenceParams": {
+          "minP": 0,
+          "presencePenalty": 1.5
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          }
+        }
+      },
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 1,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen36_legacy",
+      "label": "Qwen3.6 \u00b7 legacy Default",
+      "model": "unsloth/Qwen3.6-27B-MTP-GGUF",
+      "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": {
+        "inferenceParams": {
+          "minP": 0,
+          "presencePenalty": 1.5
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          }
+        }
+      },
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 1,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen35_legacy",
+      "label": "Qwen3.5 \u00b7 legacy Default",
+      "model": "unsloth/Qwen3.5-27B-GGUF",
+      "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": {
+        "inferenceParams": {
+          "minP": 0,
+          "presencePenalty": 1.5
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          }
+        }
+      },
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 1,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen3_legacy_like",
+      "label": "Generic Qwen3 \u00b7 legacy-like",
+      "model": "unsloth/Qwen3-30B-A3B-GGUF",
+      "purpose": "Generic Qwen3 is outside the presence-penalty migration scope.",
+      "backend_status": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 0",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "migration_put": null,
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 0,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen38_partial_override",
+      "label": "Qwen3.8 \u00b7 explicit presence=0",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "A partial explicit presence_penalty=0 override is preserved.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T \u2014 \u00b7 P \u2014 \u00b7 min \u2014 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence Off",
+      "migration_put": null,
+      "normal_put_count_before": 2,
+      "normal_put_count_after": 2,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen38_customized_snapshot",
+      "label": "Qwen3.8 \u00b7 customized snapshot",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "A customized full snapshot does not match the migration fingerprint.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.65 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.65 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.65 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "migration_put": null,
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 0,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "llama_fresh",
+      "label": "Llama 3.2 \u00b7 fresh settings",
+      "model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+      "purpose": "An unrelated non-Qwen model continues to use its backend defaults.",
+      "backend_status": "T 1.5 \u00b7 P 0.95 \u00b7 min 0.1 \u00b7 presence 0",
+      "initial_saved": "none",
+      "before_ui": "T 1.5 \u00b7 P 0.95 \u00b7 min 0.1 \u00b7 presence Off",
+      "after_ui": "T 1.5 \u00b7 P 0.95 \u00b7 min 0.1 \u00b7 presence Off",
+      "migration_put": null,
+      "normal_put_count_before": 1,
+      "normal_put_count_after": 1,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    }
+  ],
+  "all_passed": true,
+  "playwright_captures": 16,
+  "automated_verification": [
+    "39 targeted frontend tests passed",
+    "full frontend TypeScript typecheck passed",
+    "16 Playwright captures validated against same-server backend facts"
+  ],
+  "limitations": "Model weights were mocked because the behavior under test is settings hydration. Backend status values came from the repository resolver outputs; no token generation was tested."
+}
