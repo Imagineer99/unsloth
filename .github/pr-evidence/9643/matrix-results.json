@@ -1,7 +1,7 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
+  "after_commit": "be88035a18cd86b174a10dfc4f44e2fb2343bc90",
   "ports": {
     "before": 5240,
     "after": 5241,
@@ -260,7 +260,7 @@
       "purpose": "Restoring the final modified field queues migration after the parameter edit.",
       "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
       "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0.4",
-      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
       "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
       "migration_put": {
         "inferenceParams": {
