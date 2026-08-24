@@ -1,7 +1,7 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "be88035a18cd86b174a10dfc4f44e2fb2343bc90",
+  "after_commit": "6afe8846278ac84b57b475b54f061fd304f302af",
   "ports": {
     "before": 5240,
     "after": 5241,
@@ -40,7 +40,7 @@
       "scenario": "qwen38_legacy",
       "label": "Qwen3.8 \u00b7 legacy Default",
       "model": "unsloth/Qwen3.8-27B-GGUF",
-      "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
+      "purpose": "The old sampling snapshot is upgraded while its model-specific token budget is preserved.",
       "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
       "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
       "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
@@ -53,9 +53,9 @@
           }
         }
       },
-      "guard_proof": "",
-      "normal_put_count_before": 0,
-      "normal_put_count_after": 1,
+      "guard_proof": "sampling migrated while model maxTokens 32768 remained unchanged",
+      "normal_put_count_before": 1,
+      "normal_put_count_after": 2,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -413,10 +413,10 @@
   "all_passed": true,
   "playwright_captures": 36,
   "automated_verification": [
-    "29 focused migration tests passed",
-    "85 broader targeted frontend tests passed",
+    "32 focused migration tests passed",
+    "93 broader targeted frontend tests passed",
     "91 backend storage and route tests passed",
-    "4,865 full frontend tests passed",
+    "4,869 full frontend tests passed",
     "full frontend production build and TypeScript typecheck passed",
     "36 Playwright captures validated against same-server backend facts"
   ],

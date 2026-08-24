@@ -2,12 +2,12 @@
 
 Expectation: Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.
 
-BEFORE `785a68dc4d` · AFTER `be88035a18` · 36 Playwright captures · zero browser errors/warnings
+BEFORE `785a68dc4d` · AFTER `6afe884627` · 36 Playwright captures · zero browser errors/warnings
 
 | Scenario | Backend status | Initial saved state | BEFORE UI | AFTER UI | Targeted per-model migration write | Guard proof | Result |
 |---|---|---|---|---|---|---|---|
 | Qwen3.8 · fresh settings | T 0.7 · P 0.8 · min 0 · presence 1.5 | none | T 0.6 · P 0.95 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0 · presence 1.5 | no | — | PASS |
-| Qwen3.8 · legacy Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | — | PASS |
+| Qwen3.8 · legacy Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | sampling migrated while model maxTokens 32768 remained unchanged | PASS |
 | Qwen3.8 · legacy · thinking off | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.7 · P 0.8 · min 0 · presence 1.5 | yes | — | PASS |
 | Qwen3.6 · legacy Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | — | PASS |
 | Qwen3.6 9B · default thinking off | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.7 · P 0.8 · min 0 · presence 1.5 | yes | — | PASS |
