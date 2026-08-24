@@ -1,7 +1,7 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "338fb86f177227287420d042ace19bcb323688a5",
+  "after_commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
   "ports": {
     "before": 5240,
     "after": 5241,
@@ -55,7 +55,7 @@
       },
       "guard_proof": "",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 2,
+      "normal_put_count_after": 1,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -81,7 +81,7 @@
       },
       "guard_proof": "",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 2,
+      "normal_put_count_after": 1,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -105,7 +105,7 @@
       },
       "guard_proof": "",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 2,
+      "normal_put_count_after": 1,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -122,6 +122,8 @@
       "migration_put": {
         "inferenceParamsByModel": {
           "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.7,
+            "topP": 0.8,
             "minP": 0,
             "presencePenalty": 1.5
           }
@@ -129,7 +131,7 @@
       },
       "guard_proof": "",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 2,
+      "normal_put_count_after": 1,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -153,7 +155,7 @@
       },
       "guard_proof": "",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 2,
+      "normal_put_count_after": 1,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -194,7 +196,31 @@
       },
       "guard_proof": "previous global min 0.01 \u00b7 presence 0 remained unchanged",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 2,
+      "normal_put_count_after": 1,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen38_multiple_saved",
+      "label": "Qwen3.8 \u00b7 dormant Qwen3.6 row",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "Only the active Qwen row migrates; a dormant 9B row keeps its unknown mode.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": {
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          }
+        }
+      },
+      "guard_proof": "dormant Qwen3.6 9B row remained legacy and untouched",
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 1,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -228,6 +254,34 @@
       "verdict": "PASS"
     },
     {
+      "scenario": "qwen38_modified_return",
+      "label": "Qwen3.8 \u00b7 final edit \u2192 Default",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "Restoring the final modified field queues migration after the parameter edit.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0.4",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": {
+        "inferenceParams": {
+          "minP": 0,
+          "presencePenalty": 1.5
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          }
+        }
+      },
+      "guard_proof": "final restoring edit landed before retry and migration",
+      "normal_put_count_before": 1,
+      "normal_put_count_after": 2,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
       "scenario": "qwen38_stale_read",
       "label": "Qwen3.8 \u00b7 newer tab edit",
       "model": "unsloth/Qwen3.8-27B-GGUF",
@@ -239,7 +293,33 @@
       "migration_put": null,
       "guard_proof": "confirming GET kept server presence 0.4; no migration PUT",
       "normal_put_count_before": 0,
-      "normal_put_count_after": 1,
+      "normal_put_count_after": 0,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
+    },
+    {
+      "scenario": "qwen38_mode_flip",
+      "label": "Qwen3.8 \u00b7 newer tab mode flip",
+      "model": "unsloth/Qwen3.8-27B-GGUF",
+      "purpose": "The confirming GET's newer thinking-off mode selects temperature=0.7 and topP=0.8.",
+      "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
+      "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
+      "migration_put": {
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "minP": 0,
+            "presencePenalty": 1.5
+          }
+        }
+      },
+      "guard_proof": "confirming GET selected thinking-off T 0.7 \u00b7 P 0.8",
+      "normal_put_count_before": 0,
+      "normal_put_count_after": 2,
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
@@ -311,15 +391,33 @@
       "browser_errors": 0,
       "browser_warnings": 0,
       "verdict": "PASS"
+    },
+    {
+      "scenario": "llama_with_dormant_qwen",
+      "label": "Llama 3.2 \u00b7 dormant Qwen row",
+      "model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+      "purpose": "Opening a non-Qwen model never rewrites a dormant legacy Qwen row.",
+      "backend_status": "T 1.5 \u00b7 P 0.95 \u00b7 min 0.1 \u00b7 presence 0",
+      "initial_saved": "none",
+      "before_ui": "T 1.5 \u00b7 P 0.95 \u00b7 min 0.1 \u00b7 presence Off",
+      "after_ui": "T 1.5 \u00b7 P 0.95 \u00b7 min 0.1 \u00b7 presence Off",
+      "migration_put": null,
+      "guard_proof": "non-Qwen load left dormant Qwen3.8 row untouched",
+      "normal_put_count_before": 1,
+      "normal_put_count_after": 1,
+      "browser_errors": 0,
+      "browser_warnings": 0,
+      "verdict": "PASS"
     }
   ],
   "all_passed": true,
-  "playwright_captures": 28,
+  "playwright_captures": 36,
   "automated_verification": [
-    "19 targeted frontend tests passed",
-    "4,850 full frontend tests passed",
+    "20 focused migration tests passed",
+    "25 broader targeted frontend tests passed",
+    "4,856 full frontend tests passed",
     "full frontend TypeScript typecheck passed",
-    "28 Playwright captures validated against same-server backend facts"
+    "36 Playwright captures validated against same-server backend facts"
   ],
   "limitations": "Model weights were mocked because the behavior under test is settings hydration. Backend status values came from the repository resolver outputs; no token generation was tested."
 }
