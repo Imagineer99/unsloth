@@ -2,7 +2,7 @@
 
 Expectation: Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.
 
-BEFORE `785a68dc4d` · AFTER `3d5593126d` · 36 Playwright captures · zero browser errors/warnings
+BEFORE `785a68dc4d` · AFTER `3f441e32f4` · 36 Playwright captures · zero browser errors/warnings
 
 | Scenario | Backend status | Initial saved state | BEFORE UI | AFTER UI | Targeted per-model migration write | Guard proof | Result |
 |---|---|---|---|---|---|---|---|
@@ -16,9 +16,9 @@ BEFORE `785a68dc4d` · AFTER `3d5593126d` · 36 Playwright captures · zero brow
 | Qwen3.8 · previous-model global | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | previous global min 0.01 · presence 0 remained unchanged | PASS |
 | Qwen3.8 · dormant Qwen3.6 row | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | dormant Qwen3.6 9B row remained legacy and untouched | PASS |
 | Qwen3.8 · custom → Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | selecting built-in Default retried and persisted migration | PASS |
-| Qwen3.8 · final edit → Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0.4 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | final restoring edit landed before retry and migration | PASS |
+| Qwen3.8 · final edit → Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0.4 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | final restoring edit landed before retry and migration | PASS |
 | Qwen3.8 · newer tab edit | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | no | post-read presence 0.4 edit rejected the atomic migration write | PASS |
-| Qwen3.8 · newer tab mode flip | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | confirming GET selected thinking-off T 0.7 · P 0.8 | PASS |
+| Qwen3.8 · loaded mode wins | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | loaded thinking mode selected T 0.6 · P 0.95 despite stale persisted mode | PASS |
 | Generic Qwen3 · legacy-like | T 0.6 · P 0.95 · min 0 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0.01 · presence Off | no | — | PASS |
 | Qwen3.8 · explicit presence=0 | T 0.7 · P 0.8 · min 0 · presence 1.5 | T — · P — · min — · presence 0 | T 0.6 · P 0.95 · min 0 · presence Off | T 0.6 · P 0.95 · min 0 · presence Off | no | — | PASS |
 | Qwen3.8 · customized snapshot | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.65 · P 0.95 · min 0.01 · presence 0 | T 0.65 · P 0.95 · min 0.01 · presence Off | T 0.65 · P 0.95 · min 0.01 · presence Off | no | — | PASS |

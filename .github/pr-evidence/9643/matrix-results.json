@@ -1,7 +1,7 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "3d5593126d5ac45fc546edb43623c161af8fc722",
+  "after_commit": "3f441e32f44f4a6adc8ad82a3280b05c3b17da3b",
   "ports": {
     "before": 5240,
     "after": 5241,
@@ -260,7 +260,7 @@
       "purpose": "Restoring the final modified field queues migration after the parameter edit.",
       "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
       "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0.4",
-      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
       "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
       "migration_put": {
         "inferenceParams": {
@@ -300,9 +300,9 @@
     },
     {
       "scenario": "qwen38_mode_flip",
-      "label": "Qwen3.8 \u00b7 newer tab mode flip",
+      "label": "Qwen3.8 \u00b7 loaded mode wins",
       "model": "unsloth/Qwen3.8-27B-GGUF",
-      "purpose": "The confirming GET's newer thinking-off mode selects temperature=0.7 and topP=0.8.",
+      "purpose": "A persisted mode change cannot override the thinking mode established by the loaded model.",
       "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
       "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
       "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
@@ -310,14 +310,12 @@
       "migration_put": {
         "inferenceParamsByModel": {
           "unsloth/Qwen3.8-27B-GGUF": {
-            "temperature": 0.7,
-            "topP": 0.8,
             "minP": 0,
             "presencePenalty": 1.5
           }
         }
       },
-      "guard_proof": "confirming GET selected thinking-off T 0.7 \u00b7 P 0.8",
+      "guard_proof": "loaded thinking mode selected T 0.6 \u00b7 P 0.95 despite stale persisted mode",
       "normal_put_count_before": 0,
       "normal_put_count_after": 1,
       "browser_errors": 0,
