@@ -1,7 +1,7 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "6afe8846278ac84b57b475b54f061fd304f302af",
+  "after_commit": "5fdc092f6a448d013eb8254a3076f211819c427f",
   "ports": {
     "before": 5240,
     "after": 5241,
@@ -413,10 +413,10 @@
   "all_passed": true,
   "playwright_captures": 36,
   "automated_verification": [
-    "32 focused migration tests passed",
-    "93 broader targeted frontend tests passed",
-    "91 backend storage and route tests passed",
-    "4,869 full frontend tests passed",
+    "34 focused migration tests passed",
+    "95 broader targeted frontend tests passed",
+    "92 backend storage and route tests passed",
+    "4,871 full frontend tests passed",
     "full frontend production build and TypeScript typecheck passed",
     "36 Playwright captures validated against same-server backend facts"
   ],

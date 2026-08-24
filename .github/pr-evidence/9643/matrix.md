@@ -2,7 +2,7 @@
 
 Expectation: Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.
 
-BEFORE `785a68dc4d` · AFTER `6afe884627` · 36 Playwright captures · zero browser errors/warnings
+BEFORE `785a68dc4d` · AFTER `5fdc092f6a` · 36 Playwright captures · zero browser errors/warnings
 
 | Scenario | Backend status | Initial saved state | BEFORE UI | AFTER UI | Targeted per-model migration write | Guard proof | Result |
 |---|---|---|---|---|---|---|---|
