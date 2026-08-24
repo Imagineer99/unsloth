@@ -1,11 +1,11 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+  "after_commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
   "ports": {
     "before": 5240,
     "after": 5241,
-    "backend": 8888
+    "backend": 18889
   },
   "process_identity": {
     "before": {
@@ -15,7 +15,7 @@
       "cwd": "/home/samle/dev/unsloth_main/fix-qwen38-default-memory-migration/studio/frontend"
     },
     "backend": {
-      "command": "python3 .../matrix_backend.py --scenario qwen38_fresh --port 8888"
+      "command": "python3 .../matrix_backend.py --scenario qwen38_fresh --port 18889"
     }
   },
   "rows": [
@@ -260,7 +260,7 @@
       "purpose": "Restoring the final modified field queues migration after the parameter edit.",
       "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
       "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0.4",
-      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
+      "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
       "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
       "migration_put": {
         "inferenceParams": {
@@ -285,13 +285,13 @@
       "scenario": "qwen38_stale_read",
       "label": "Qwen3.8 \u00b7 newer tab edit",
       "model": "unsloth/Qwen3.8-27B-GGUF",
-      "purpose": "A confirming GET observes and preserves another tab's newer presence=0.4 edit.",
+      "purpose": "A newer presence=0.4 edit landing after the confirming GET defeats the atomic migration write.",
       "backend_status": "T 0.7 \u00b7 P 0.8 \u00b7 min 0 \u00b7 presence 1.5",
       "initial_saved": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence 0",
       "before_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0.01 \u00b7 presence Off",
       "after_ui": "T 0.6 \u00b7 P 0.95 \u00b7 min 0 \u00b7 presence 1.5",
       "migration_put": null,
-      "guard_proof": "confirming GET kept server presence 0.4; no migration PUT",
+      "guard_proof": "post-read presence 0.4 edit rejected the atomic migration write",
       "normal_put_count_before": 0,
       "normal_put_count_after": 0,
       "browser_errors": 0,
@@ -413,10 +413,11 @@
   "all_passed": true,
   "playwright_captures": 36,
   "automated_verification": [
-    "20 focused migration tests passed",
-    "25 broader targeted frontend tests passed",
-    "4,856 full frontend tests passed",
-    "full frontend TypeScript typecheck passed",
+    "29 focused migration tests passed",
+    "85 broader targeted frontend tests passed",
+    "91 backend storage and route tests passed",
+    "4,865 full frontend tests passed",
+    "full frontend production build and TypeScript typecheck passed",
     "36 Playwright captures validated against same-server backend facts"
   ],
   "limitations": "Model weights were mocked because the behavior under test is settings hydration. Backend status values came from the repository resolver outputs; no token generation was tested."

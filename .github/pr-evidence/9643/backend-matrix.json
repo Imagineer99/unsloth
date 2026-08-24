@@ -67,12 +67,13 @@
             "topP": 0.95
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_fresh",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -136,7 +137,8 @@
             "topP": 0.95
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_legacy",
@@ -231,12 +233,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_legacy",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -335,6 +338,44 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -432,12 +473,13 @@
         },
         "reasoningEnabled": false
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_legacy_nonthinking",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Thinking-off migration also repairs temperature=0.7 and topP=0.8.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -540,6 +582,47 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default",
+            "reasoningEnabled": false
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.7,
+                "topP": 0.8,
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -635,12 +718,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen36_legacy",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
       "status": {
         "active_model": "unsloth/Qwen3.6-27B-MTP-GGUF",
@@ -739,6 +823,44 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.6-27B-MTP-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.6-27B-MTP-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -834,12 +956,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen36_9b_legacy",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "A <=9B Qwen3.6 defaults to non-thinking and receives its complete table.",
       "status": {
         "active_model": "unsloth/Qwen3.6-9B-GGUF",
@@ -940,6 +1063,46 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.6-9B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.6-9B-GGUF": {
+                "temperature": 0.7,
+                "topP": 0.8,
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -1035,12 +1198,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen35_legacy",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
       "status": {
         "active_model": "unsloth/Qwen3.5-27B-GGUF",
@@ -1139,6 +1303,44 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.5-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.5-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -1218,12 +1420,13 @@
             "maxTokens": 65536
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_global_only",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Installations predating per-model memory migrate their owned global snapshot.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -1297,7 +1500,8 @@
             "maxTokens": 65536
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_previous_global",
@@ -1392,12 +1596,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_previous_global",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "The Qwen row migrates without treating a common-looking global fallback as owned.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -1495,6 +1700,44 @@
               "presencePenalty": 1.5
             }
           }
+        }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
         }
       ]
     },
@@ -1615,12 +1858,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_multiple_saved",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Only the active Qwen row migrates; a dormant 9B row keeps its unknown mode.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -1742,6 +1986,56 @@
               "presencePenalty": 1.5
             }
           }
+        }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              },
+              "unsloth/Qwen3.6-9B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
         }
       ]
     },
@@ -1877,12 +2171,13 @@
           "activePreset": "Default",
           "activePresetSource": "builtin-default"
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_custom_return",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Returning from a custom preset retries the guarded migration.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2023,6 +2318,65 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "customPresets": [
+              {
+                "name": "Creative",
+                "params": {
+                  "temperature": 0.6,
+                  "topP": 0.95,
+                  "topK": 20,
+                  "minP": 0.01,
+                  "repetitionPenalty": 1,
+                  "presencePenalty": 0,
+                  "maxTokens": 8192,
+                  "systemPrompt": "",
+                  "systemVariables": "",
+                  "fastMode": false
+                }
+              }
+            ],
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParams": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -2140,12 +2494,13 @@
           },
           "activePresetSource": "builtin-default"
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_modified_return",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Restoring the final modified field queues migration after the parameter edit.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2269,13 +2624,60 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParams": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
       "scenario": "qwen38_stale_read",
       "side": "before",
       "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-      "purpose": "A confirming GET observes and preserves another tab's newer presence=0.4 edit.",
+      "purpose": "A newer presence=0.4 edit landing after the confirming GET defeats the atomic migration write.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
         "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
@@ -2364,13 +2766,14 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_stale_read",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
-      "purpose": "A confirming GET observes and preserves another tab's newer presence=0.4 edit.",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
+      "purpose": "A newer presence=0.4 edit landing after the confirming GET defeats the atomic migration write.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
         "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
@@ -2459,7 +2862,45 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default"
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": false
+        }
+      ]
     },
     {
       "scenario": "qwen38_mode_flip",
@@ -2556,12 +2997,13 @@
         },
         "reasoningEnabled": false
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_mode_flip",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "The confirming GET's newer thinking-off mode selects temperature=0.7 and topP=0.8.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2674,6 +3116,86 @@
             }
           }
         }
+      ],
+      "conditional_writes": [
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default",
+            "reasoningEnabled": false
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.7,
+                "topP": 0.8,
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        },
+        {
+          "expected": {
+            "inferenceParams": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "minP": 0.01,
+              "presencePenalty": 0,
+              "maxTokens": 8192
+            },
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.6,
+                "topP": 0.95,
+                "topK": 20,
+                "minP": 0.01,
+                "repetitionPenalty": 1,
+                "presencePenalty": 0,
+                "maxTokens": 8192,
+                "systemPrompt": "",
+                "systemVariables": "",
+                "fastMode": false
+              }
+            },
+            "activePreset": "Default",
+            "activePresetSource": "builtin-default",
+            "reasoningEnabled": false
+          },
+          "patch": {
+            "inferenceParamsByModel": {
+              "unsloth/Qwen3.8-27B-GGUF": {
+                "temperature": 0.7,
+                "topP": 0.8,
+                "minP": 0,
+                "presencePenalty": 1.5
+              }
+            }
+          },
+          "applied": true
+        }
       ]
     },
     {
@@ -2769,12 +3291,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen3_legacy_like",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "Generic Qwen3 is outside the presence-penalty migration scope.",
       "status": {
         "active_model": "unsloth/Qwen3-30B-A3B-GGUF",
@@ -2864,7 +3387,8 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_partial_override",
@@ -2950,12 +3474,13 @@
             "topP": 0.95
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_partial_override",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "A partial explicit presence_penalty=0 override is preserved.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -3036,7 +3561,8 @@
             "topP": 0.95
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_customized_snapshot",
@@ -3141,12 +3667,13 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "qwen38_customized_snapshot",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "A customized full snapshot does not match the migration fingerprint.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -3246,7 +3773,8 @@
           }
         }
       },
-      "puts": []
+      "puts": [],
+      "conditional_writes": []
     },
     {
       "scenario": "llama_fresh",
@@ -3303,12 +3831,13 @@
             "maxTokens": 65536
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "llama_fresh",
       "side": "after",
-      "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+      "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
       "purpose": "An unrelated non-Qwen model continues to use its backend defaults.",
       "status": {
         "active_model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
@@ -3360,7 +3889,8 @@
             "maxTokens": 65536
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     },
     {
       "scenario": "llama_with_dormant_qwen",
@@ -3450,13 +3980,14 @@
             "maxTokens": 65536
           }
         }
-      ]
+      ],
+      "conditional_writes": []
     }
   ],
   "current": {
     "scenario": "llama_with_dormant_qwen",
     "side": "after",
-    "commit": "6e045feace129fdc79bec65e4f4dd89c63049171",
+    "commit": "c7f230563b2a7eefaf6b04e8850b97af68814ec8",
     "purpose": "Opening a non-Qwen model never rewrites a dormant legacy Qwen row.",
     "status": {
       "active_model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
@@ -3541,6 +4072,7 @@
           "maxTokens": 65536
         }
       }
-    ]
+    ],
+    "conditional_writes": []
   }
 }

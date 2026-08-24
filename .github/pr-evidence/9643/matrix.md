@@ -2,9 +2,9 @@
 
 Expectation: Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.
 
-BEFORE `785a68dc4d` · AFTER `6e045feace` · 36 Playwright captures · zero browser errors/warnings
+BEFORE `785a68dc4d` · AFTER `c7f230563b` · 36 Playwright captures · zero browser errors/warnings
 
-| Scenario | Backend status | Initial saved state | BEFORE UI | AFTER UI | Targeted per-model migration PUT | Guard proof | Result |
+| Scenario | Backend status | Initial saved state | BEFORE UI | AFTER UI | Targeted per-model migration write | Guard proof | Result |
 |---|---|---|---|---|---|---|---|
 | Qwen3.8 · fresh settings | T 0.7 · P 0.8 · min 0 · presence 1.5 | none | T 0.6 · P 0.95 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0 · presence 1.5 | no | — | PASS |
 | Qwen3.8 · legacy Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | — | PASS |
@@ -16,8 +16,8 @@ BEFORE `785a68dc4d` · AFTER `6e045feace` · 36 Playwright captures · zero brow
 | Qwen3.8 · previous-model global | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | previous global min 0.01 · presence 0 remained unchanged | PASS |
 | Qwen3.8 · dormant Qwen3.6 row | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | dormant Qwen3.6 9B row remained legacy and untouched | PASS |
 | Qwen3.8 · custom → Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | selecting built-in Default retried and persisted migration | PASS |
-| Qwen3.8 · final edit → Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0.4 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | final restoring edit landed before retry and migration | PASS |
-| Qwen3.8 · newer tab edit | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | no | confirming GET kept server presence 0.4; no migration PUT | PASS |
+| Qwen3.8 · final edit → Default | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0.4 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | final restoring edit landed before retry and migration | PASS |
+| Qwen3.8 · newer tab edit | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | no | post-read presence 0.4 edit rejected the atomic migration write | PASS |
 | Qwen3.8 · newer tab mode flip | T 0.7 · P 0.8 · min 0 · presence 1.5 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0 · presence 1.5 | yes | confirming GET selected thinking-off T 0.7 · P 0.8 | PASS |
 | Generic Qwen3 · legacy-like | T 0.6 · P 0.95 · min 0 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence 0 | T 0.6 · P 0.95 · min 0.01 · presence Off | T 0.6 · P 0.95 · min 0.01 · presence Off | no | — | PASS |
 | Qwen3.8 · explicit presence=0 | T 0.7 · P 0.8 · min 0 · presence 1.5 | T — · P — · min — · presence 0 | T 0.6 · P 0.95 · min 0 · presence Off | T 0.6 · P 0.95 · min 0 · presence Off | no | — | PASS |
@@ -28,9 +28,9 @@ BEFORE `785a68dc4d` · AFTER `6e045feace` · 36 Playwright captures · zero brow
 Notes:
 
 - Backend status is read from the same mock server that served each photographed UI.
-- `Targeted per-model migration PUT` means a fingerprint-guarded per-model patch containing `minP=0` and `presencePenalty=1.5`.
+- `Targeted per-model migration write` means a fingerprint-guarded conditional patch containing `minP=0` and `presencePenalty=1.5`.
 - The global-only migration payload is byte-for-byte indistinguishable from normal runtime persistence in browser traffic; the durable browser outcome is shown here and the focused unit test isolates that migration branch.
-- In the newer-tab race, the current tab has already changed its local view before the confirming GET. The proof is the server retaining the newer `presencePenalty=0.4` and receiving no migration PUT.
-- In the newer-tab mode-flip case, the migration PUT follows the confirming read's thinking-off `temperature=0.7`/`topP=0.8`; the photographed controls later reflect the already-running tab's thinking-on runtime status.
+- In the newer-tab race, another writer changes the server after the confirming GET. The compare-and-set is rejected and the server retains the newer `presencePenalty=0.4`.
+- In the newer-tab mode-flip case, the migration write follows the confirming read's thinking-off `temperature=0.7`/`topP=0.8`; the photographed controls later reflect the already-running tab's thinking-on runtime status.
 - Other PUTs are normal global settings persistence and are preserved in `backend-matrix.json`.
 - Limitation: Model weights were mocked because the behavior under test is settings hydration. Backend status values came from the repository resolver outputs; no token generation was tested.
