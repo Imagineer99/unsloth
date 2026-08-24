@@ -1,7 +1,7 @@
 {
   "expect": "Complete legacy built-in Default snapshots migrate to the active reasoning table without overwriting explicit, newer-tab, previous-model, generic-Qwen3, customized, or unrelated-model settings.",
   "before_commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
-  "after_commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+  "after_commit": "01227f3d799983204920c1274963aeb5af32cebd",
   "ports": {
     "before": 5240,
     "after": 5241,

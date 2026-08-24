@@ -72,7 +72,7 @@
     {
       "scenario": "qwen38_fresh",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -236,7 +236,7 @@
     {
       "scenario": "qwen38_legacy",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -437,7 +437,7 @@
     {
       "scenario": "qwen38_legacy_nonthinking",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Thinking-off migration also repairs temperature=0.7 and topP=0.8.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -640,7 +640,7 @@
     {
       "scenario": "qwen36_legacy",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
       "status": {
         "active_model": "unsloth/Qwen3.6-27B-MTP-GGUF",
@@ -839,7 +839,7 @@
     {
       "scenario": "qwen36_9b_legacy",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "A <=9B Qwen3.6 defaults to non-thinking and receives its complete table.",
       "status": {
         "active_model": "unsloth/Qwen3.6-9B-GGUF",
@@ -1040,7 +1040,7 @@
     {
       "scenario": "qwen35_legacy",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
       "status": {
         "active_model": "unsloth/Qwen3.5-27B-GGUF",
@@ -1223,7 +1223,7 @@
     {
       "scenario": "qwen38_global_only",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Installations predating per-model memory migrate their owned global snapshot.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -1397,7 +1397,7 @@
     {
       "scenario": "qwen38_previous_global",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "The Qwen row migrates without treating a common-looking global fallback as owned.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -1620,7 +1620,7 @@
     {
       "scenario": "qwen38_multiple_saved",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Only the active Qwen row migrates; a dormant 9B row keeps its unknown mode.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -1882,7 +1882,7 @@
     {
       "scenario": "qwen38_custom_return",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Returning from a custom preset retries the guarded migration.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2145,7 +2145,7 @@
     {
       "scenario": "qwen38_modified_return",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Restoring the final modified field queues migration after the parameter edit.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2369,7 +2369,7 @@
     {
       "scenario": "qwen38_stale_read",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "A confirming GET observes and preserves another tab's newer presence=0.4 edit.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2561,7 +2561,7 @@
     {
       "scenario": "qwen38_mode_flip",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "The confirming GET's newer thinking-off mode selects temperature=0.7 and topP=0.8.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -2774,7 +2774,7 @@
     {
       "scenario": "qwen3_legacy_like",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "Generic Qwen3 is outside the presence-penalty migration scope.",
       "status": {
         "active_model": "unsloth/Qwen3-30B-A3B-GGUF",
@@ -2955,7 +2955,7 @@
     {
       "scenario": "qwen38_partial_override",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "A partial explicit presence_penalty=0 override is preserved.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -3146,7 +3146,7 @@
     {
       "scenario": "qwen38_customized_snapshot",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "A customized full snapshot does not match the migration fingerprint.",
       "status": {
         "active_model": "unsloth/Qwen3.8-27B-GGUF",
@@ -3308,7 +3308,7 @@
     {
       "scenario": "llama_fresh",
       "side": "after",
-      "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+      "commit": "01227f3d799983204920c1274963aeb5af32cebd",
       "purpose": "An unrelated non-Qwen model continues to use its backend defaults.",
       "status": {
         "active_model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
@@ -3456,7 +3456,7 @@
   "current": {
     "scenario": "llama_with_dormant_qwen",
     "side": "after",
-    "commit": "2096ceb7d08ed6a63337cfd744e07a8e2318afc0",
+    "commit": "01227f3d799983204920c1274963aeb5af32cebd",
     "purpose": "Opening a non-Qwen model never rewrites a dormant legacy Qwen row.",
     "status": {
       "active_model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
