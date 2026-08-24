@@ -1,0 +1,39 @@
+name: PR 9102 keyless tool-policy race repro
+
+on:
+  push:
+    branches:
+      - fix/pr-9102-keyless-race-repro-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Revoked key cannot retain tools
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install focused test dependencies
+        run: >-
+          python -m pip install
+          fastapi==0.141.1
+          huggingface-hub==1.28.0
+          pyjwt==2.13.0
+          pytest==9.0.2
+          python-multipart==0.0.22
+          structlog==26.1.0
+
+      - name: Assert revoked-key fallback disables server tools
+        working-directory: studio/backend
+        run: pytest -q -s tests/test_pr9102_keyless_tool_race_repro.py
