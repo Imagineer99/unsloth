@@ -1,7 +1,7 @@
 {
   "before_capture_base": "6abc0c71e175f4fb267ac59a6f16cee72e1ab5b7",
   "current_merge_base": "0998656891170ce53abef1f1f4383d88e2d5a7ae",
-  "head": "afaf2b3f3a712c576e5f08515039dc458aa08119",
+  "head": "fa686c0f89eea42e42a718f2de4509d9beea5273",
   "frontend_url": "http://127.0.0.1:5173",
   "backend_url": "http://127.0.0.1:8888",
   "browser": "Chromium via Playwright",
