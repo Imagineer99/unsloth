@@ -1,0 +1,31 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 9149 Generic BERT Pooling A/B"
+
+on:
+  push:
+    branches:
+      - "pr-9149-pooling-ab-repro-ci*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Run real GGUF fail-closed probe"
+        shell: bash
+        run: |
+          python .github/scripts/pr9149_pooling_ab.py
