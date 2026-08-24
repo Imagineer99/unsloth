@@ -1,0 +1,5812 @@
+{
+  "completed": [
+    {
+      "scenario": "qwen38_fresh",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {},
+      "current_settings": {
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_fresh",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {},
+      "current_settings": {
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_legacy_nonthinking",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Thinking-off migration also repairs temperature=0.7 and topP=0.8.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_legacy_nonthinking",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Thinking-off migration also repairs temperature=0.7 and topP=0.8.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "temperature": 0.7,
+              "topP": 0.8,
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen36_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-27B-MTP-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen36_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-27B-MTP-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.6-27B-MTP-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen36_9b_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "A <=9B Qwen3.6 defaults to non-thinking and receives its complete table.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-9B-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-9B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-9B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen36_9b_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "A <=9B Qwen3.6 defaults to non-thinking and receives its complete table.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-9B-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-9B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-9B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.7,
+          "topP": 0.8,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.6-9B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen35_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.5-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.5-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.5-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen35_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.5-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.5-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.5-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.5-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_global_only",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Installations predating per-model memory migrate their owned global snapshot.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.7,
+          "topP": 0.8,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_global_only",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Installations predating per-model memory migrate their owned global snapshot.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.7,
+          "topP": 0.8,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_previous_global",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "The Qwen row migrates without treating a common-looking global fallback as owned.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_previous_global",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "The Qwen row migrates without treating a common-looking global fallback as owned.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": [
+        {
+          "activePreset": "Default",
+          "activePresetSource": "builtin-default"
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": [
+        {
+          "activePreset": "Default",
+          "activePresetSource": "builtin-default"
+        },
+        {
+          "inferenceParams": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          },
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_fresh",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {},
+      "current_settings": {
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_fresh",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Fresh install follows the Qwen3.8 thinking table without a migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {},
+      "current_settings": {
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "The exact old built-in Default snapshot is upgraded and persisted.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_legacy_nonthinking",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Thinking-off migration also repairs temperature=0.7 and topP=0.8.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_legacy_nonthinking",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Thinking-off migration also repairs temperature=0.7 and topP=0.8.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "reasoningEnabled": false
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "temperature": 0.7,
+              "topP": 0.8,
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen36_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-27B-MTP-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen36_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Qwen3.6 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-27B-MTP-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-27B-MTP-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.6-27B-MTP-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen36_9b_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "A <=9B Qwen3.6 defaults to non-thinking and receives its complete table.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-9B-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-9B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-9B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen36_9b_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "A <=9B Qwen3.6 defaults to non-thinking and receives its complete table.",
+      "status": {
+        "active_model": "unsloth/Qwen3.6-9B-GGUF",
+        "model_identifier": "unsloth/Qwen3.6-9B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.6-9B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.7,
+          "topP": 0.8,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.6-9B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.6-9B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen35_legacy",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.5-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.5-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.5-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen35_legacy",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Qwen3.5 receives the same guarded legacy-default repair.",
+      "status": {
+        "active_model": "unsloth/Qwen3.5-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.5-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.5-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.5-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.5-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_global_only",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Installations predating per-model memory migrate their owned global snapshot.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.7,
+          "topP": 0.8,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_global_only",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Installations predating per-model memory migrate their owned global snapshot.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": false,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "reasoningEnabled": false,
+        "rememberParamsPerModel": true,
+        "inferenceParams": {
+          "temperature": 0.7,
+          "topP": 0.8,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.7,
+            "topP": 0.8,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_previous_global",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "The Qwen row migrates without treating a common-looking global fallback as owned.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_previous_global",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "The Qwen row migrates without treating a common-looking global fallback as owned.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": [
+        {
+          "activePreset": "Default",
+          "activePresetSource": "builtin-default"
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_custom_return",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Returning from a custom preset retries the guarded migration.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Creative",
+        "activePresetSource": "custom",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0,
+            "repetitionPenalty": 1,
+            "presencePenalty": 1.5,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        },
+        "customPresets": [
+          {
+            "name": "Creative",
+            "params": {
+              "temperature": 0.6,
+              "topP": 0.95,
+              "topK": 20,
+              "minP": 0.01,
+              "repetitionPenalty": 1,
+              "presencePenalty": 0,
+              "maxTokens": 8192,
+              "systemPrompt": "",
+              "systemVariables": "",
+              "fastMode": false
+            }
+          }
+        ]
+      },
+      "puts": [
+        {
+          "activePreset": "Default",
+          "activePresetSource": "builtin-default"
+        },
+        {
+          "inferenceParams": {
+            "minP": 0,
+            "presencePenalty": 1.5
+          },
+          "inferenceParamsByModel": {
+            "unsloth/Qwen3.8-27B-GGUF": {
+              "minP": 0,
+              "presencePenalty": 1.5
+            }
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_stale_read",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "A confirming GET observes and preserves another tab's newer presence=0.4 edit.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_stale_read",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "A confirming GET observes and preserves another tab's newer presence=0.4 edit.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "presencePenalty": 1.5,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0.4,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "presencePenalty": 1.5,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen3_legacy_like",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "Generic Qwen3 is outside the presence-penalty migration scope.",
+      "status": {
+        "active_model": "unsloth/Qwen3-30B-A3B-GGUF",
+        "model_identifier": "unsloth/Qwen3-30B-A3B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3-30B-A3B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 0,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3-30B-A3B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3-30B-A3B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen3_legacy_like",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "Generic Qwen3 is outside the presence-penalty migration scope.",
+      "status": {
+        "active_model": "unsloth/Qwen3-30B-A3B-GGUF",
+        "model_identifier": "unsloth/Qwen3-30B-A3B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3-30B-A3B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.6,
+          "top_p": 0.95,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 0,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3-30B-A3B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0.01,
+          "presencePenalty": 0,
+          "maxTokens": 8192
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3-30B-A3B-GGUF": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_partial_override",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "A partial explicit presence_penalty=0 override is preserved.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "inferenceParams": {
+          "presencePenalty": 0
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "presencePenalty": 0
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "inferenceParams": {
+          "presencePenalty": 0,
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "presencePenalty": 0
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "maxTokens": 65536
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_partial_override",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "A partial explicit presence_penalty=0 override is preserved.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "inferenceParams": {
+          "presencePenalty": 0
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "presencePenalty": 0
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "inferenceParams": {
+          "presencePenalty": 0,
+          "temperature": 0.6,
+          "topP": 0.95,
+          "minP": 0,
+          "maxTokens": 65536
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "presencePenalty": 0
+          }
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95,
+            "minP": 0,
+            "maxTokens": 65536
+          }
+        },
+        {
+          "inferenceParams": {
+            "temperature": 0.6,
+            "topP": 0.95
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "qwen38_customized_snapshot",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "A customized full snapshot does not match the migration fingerprint.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.65,
+          "topP": 0.95,
+          "topK": 20,
+          "minP": 0.01,
+          "repetitionPenalty": 1,
+          "presencePenalty": 0,
+          "maxTokens": 8192,
+          "systemPrompt": "",
+          "systemVariables": "",
+          "fastMode": false
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.65,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.65,
+          "topP": 0.95,
+          "topK": 20,
+          "minP": 0.01,
+          "repetitionPenalty": 1,
+          "presencePenalty": 0,
+          "maxTokens": 8192,
+          "systemPrompt": "",
+          "systemVariables": "",
+          "fastMode": false
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.65,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "qwen38_customized_snapshot",
+      "side": "after",
+      "commit": "338fb86f177227287420d042ace19bcb323688a5",
+      "purpose": "A customized full snapshot does not match the migration fingerprint.",
+      "status": {
+        "active_model": "unsloth/Qwen3.8-27B-GGUF",
+        "model_identifier": "unsloth/Qwen3.8-27B-GGUF",
+        "loaded": [
+          "unsloth/Qwen3.8-27B-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": true,
+        "reasoning_default": true,
+        "reasoning_style": "enable_thinking_effort",
+        "reasoning_effort_levels": [
+          "low",
+          "medium",
+          "xhigh"
+        ],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": true,
+        "preserve_thinking_default": true,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 0.7,
+          "top_p": 0.8,
+          "top_k": 20,
+          "min_p": 0,
+          "presence_penalty": 1.5,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.65,
+          "topP": 0.95,
+          "topK": 20,
+          "minP": 0.01,
+          "repetitionPenalty": 1,
+          "presencePenalty": 0,
+          "maxTokens": 8192,
+          "systemPrompt": "",
+          "systemVariables": "",
+          "fastMode": false
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.65,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "current_settings": {
+        "activePreset": "Default",
+        "activePresetSource": "builtin-default",
+        "rememberParamsPerModel": null,
+        "inferenceParams": {
+          "temperature": 0.65,
+          "topP": 0.95,
+          "topK": 20,
+          "minP": 0.01,
+          "repetitionPenalty": 1,
+          "presencePenalty": 0,
+          "maxTokens": 8192,
+          "systemPrompt": "",
+          "systemVariables": "",
+          "fastMode": false
+        },
+        "inferenceParamsByModel": {
+          "unsloth/Qwen3.8-27B-GGUF": {
+            "temperature": 0.65,
+            "topP": 0.95,
+            "topK": 20,
+            "minP": 0.01,
+            "repetitionPenalty": 1,
+            "presencePenalty": 0,
+            "maxTokens": 8192,
+            "systemPrompt": "",
+            "systemVariables": "",
+            "fastMode": false
+          }
+        }
+      },
+      "puts": []
+    },
+    {
+      "scenario": "llama_fresh",
+      "side": "before",
+      "commit": "785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f",
+      "purpose": "An unrelated non-Qwen model continues to use its backend defaults.",
+      "status": {
+        "active_model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+        "model_identifier": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+        "loaded": [
+          "unsloth/Llama-3.2-3B-Instruct-GGUF"
+        ],
+        "is_gguf": true,
+        "is_mlx": false,
+        "is_vision": false,
+        "is_audio": false,
+        "is_diffusion": false,
+        "gguf_variant": "UD-Q4_K_XL",
+        "context_length": 65536,
+        "max_context_length": 65536,
+        "native_context_length": 262144,
+        "supports_reasoning": false,
+        "reasoning_default": false,
+        "reasoning_style": null,
+        "reasoning_effort_levels": [],
+        "reasoning_always_on": false,
+        "supports_preserve_thinking": false,
+        "preserve_thinking_default": false,
+        "supports_tools": true,
+        "inference": {
+          "temperature": 1.5,
+          "top_p": 0.95,
+          "top_k": -1,
+          "min_p": 0.1,
+          "presence_penalty": 0,
+          "trust_remote_code": false
+        }
+      },
+      "initial_settings": {},
+      "current_settings": {
+        "inferenceParams": {
+          "temperature": 1.5,
+          "topK": -1,
+          "minP": 0.1,
+          "maxTokens": 65536
+        }
+      },
+      "puts": [
+        {
+          "inferenceParams": {
+            "temperature": 1.5,
+            "topK": -1,
+            "minP": 0.1,
+            "maxTokens": 65536
+          }
+        }
+      ]
+    }
+  ],
+  "current": {
+    "scenario": "llama_fresh",
+    "side": "after",
+    "commit": "338fb86f177227287420d042ace19bcb323688a5",
+    "purpose": "An unrelated non-Qwen model continues to use its backend defaults.",
+    "status": {
+      "active_model": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+      "model_identifier": "unsloth/Llama-3.2-3B-Instruct-GGUF",
+      "loaded": [
+        "unsloth/Llama-3.2-3B-Instruct-GGUF"
+      ],
+      "is_gguf": true,
+      "is_mlx": false,
+      "is_vision": false,
+      "is_audio": false,
+      "is_diffusion": false,
+      "gguf_variant": "UD-Q4_K_XL",
+      "context_length": 65536,
+      "max_context_length": 65536,
+      "native_context_length": 262144,
+      "supports_reasoning": false,
+      "reasoning_default": false,
+      "reasoning_style": null,
+      "reasoning_effort_levels": [],
+      "reasoning_always_on": false,
+      "supports_preserve_thinking": false,
+      "preserve_thinking_default": false,
+      "supports_tools": true,
+      "inference": {
+        "temperature": 1.5,
+        "top_p": 0.95,
+        "top_k": -1,
+        "min_p": 0.1,
+        "presence_penalty": 0,
+        "trust_remote_code": false
+      }
+    },
+    "initial_settings": {},
+    "current_settings": {
+      "inferenceParams": {
+        "temperature": 1.5,
+        "topK": -1,
+        "minP": 0.1,
+        "maxTokens": 65536
+      }
+    },
+    "puts": [
+      {
+        "inferenceParams": {
+          "temperature": 1.5,
+          "topK": -1,
+          "minP": 0.1,
+          "maxTokens": 65536
+        }
+      }
+    ]
+  }
+}
