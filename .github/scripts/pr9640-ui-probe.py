@@ -305,10 +305,16 @@ async def pick_connected_model(sp, model_id: str, side: Path) -> dict:
     await menu.wait_for(state="visible", timeout=15_000)
     await sp.screenshot(side / "picker-open.png", full_page=False)
 
-    connected = menu.get_by_text("Connected", exact=True).last
+    connected = menu.get_by_role("tab", name="Connected", exact=True)
     await connected.wait_for(state="visible", timeout=15_000)
     await connected.click()
-    option = menu.locator("[data-model-picker-option]").filter(has_text=model_id).first
+    await connected.wait_for(state="visible", timeout=15_000)
+    assert await connected.get_attribute("aria-selected") == "true"
+    await sp.screenshot(side / "picker-connected.png", full_page=False)
+
+    # Connected provider rows intentionally do not carry the
+    # data-model-picker-option attribute used by Hub/On Device rows.
+    option = menu.get_by_role("button", name=model_id, exact=True)
     await option.wait_for(state="visible", timeout=15_000)
     option_text = (await option.inner_text()).strip()
     assert model_id in option_text, option_text
