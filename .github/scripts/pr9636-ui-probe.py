@@ -22,7 +22,7 @@ from pathlib import Path
 
 import httpx
 from PIL import Image
-from studio_test_kit.auth import ProviderSeed, login, seed_init_script
+from studio_test_kit.auth import login, seed_init_script
 from studio_test_kit.lifecycle import StudioInstall, launch_studio, stop_studio
 from studio_test_kit.ui import open_chat, pick_model, send_prompt, wait_for_stream, wait_for_text
 
@@ -114,15 +114,22 @@ async def auth_script(base_url: str, password: str) -> str:
             body = response.json()
         auth.access_token = body["access_token"]
         auth.refresh_token = body.get("refresh_token", "")
-    provider = ProviderSeed(
-        provider_type="openai",
-        name="PR 9636 Local",
-        base_url="http://127.0.0.1:9/v1",
-        models=[MODEL],
-        api_key="ci-placeholder-key",
-        id="pr9636-local",
-    )
-    return seed_init_script(auth, [provider])
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            f"{base_url}/api/providers/",
+            headers={"Authorization": f"Bearer {auth.access_token}"},
+            json={
+                "provider_type": "openai",
+                "display_name": "PR 9636 Local",
+                "models": [MODEL],
+                "available_models": [MODEL],
+            },
+        )
+        response.raise_for_status()
+    # Current Studio synchronizes connections from the backend after boot, so a
+    # localStorage-only provider is deliberately pruned. Persisting the fixture
+    # through the public provider API makes the repro follow the production path.
+    return seed_init_script(auth, [])
 
 
 def sse_body(flat_result: str) -> str:
