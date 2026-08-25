@@ -349,7 +349,7 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
                     );
                     return providers.some(item => item.id === providerId);
                 }""",
-                saved_provider["id"],
+                arg=saved_provider["id"],
                 timeout=30_000,
             )
             await sp.screenshot(side / "chat-open.png", full_page=False)
