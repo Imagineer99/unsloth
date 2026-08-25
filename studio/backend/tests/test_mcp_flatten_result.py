@@ -324,6 +324,16 @@ def test_blob_resource_without_mime_uses_uri_extension():
     assert _flatten_result(_result(_blob_resource(mime = None, uri = "file:///out/report.pdf"))) == ""
 
 
+def test_blob_resource_without_mime_ignores_uri_query_and_fragment():
+    for uri in (
+        "https://example.test/out/gen.png?download=1",
+        "https://example.test/out/gen.png#preview",
+    ):
+        flat = _flatten_result(_result(_blob_resource(mime = None, uri = uri)))
+        payload = flat.split("\n" + MCP_IMAGES_SENTINEL, 1)[1]
+        assert json.loads(payload) == [{"data": PNG_B64, "mimeType": "image/png"}]
+
+
 def test_non_image_application_types_stay_ignored():
     for mime in ("application/pdf", "application/octet-stream", "application/json"):
         assert _flatten_result(_result(_blob_resource(mime = mime))) == "", mime

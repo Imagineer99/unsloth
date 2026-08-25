@@ -18,6 +18,7 @@ import time
 import uuid
 from functools import wraps
 from typing import Any, Optional
+from urllib.parse import urlsplit, urlunsplit
 from weakref import WeakKeyDictionary
 
 from loggers import get_logger
@@ -1059,6 +1060,18 @@ def _image_mime(mime: Any) -> Optional[str]:
     return inferred if inferred and inferred.startswith("image/") else None
 
 
+def _uri_mime(uri: Any) -> Optional[str]:
+    if not uri:
+        return None
+    value = str(uri)
+    try:
+        parsed = urlsplit(value)
+        value = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    except ValueError:
+        pass
+    return mimetypes.guess_type(value, strict = False)[0]
+
+
 def _block_image(block: Any) -> Optional[tuple[str, str]]:
     # embedded resources keep binary data on resource.blob
     data = getattr(block, "data", None)
@@ -1070,8 +1083,7 @@ def _block_image(block: Any) -> Optional[tuple[str, str]]:
         data = getattr(resource, "blob", None)
         mime = getattr(resource, "mimeType", None)
         if not mime:
-            uri = getattr(resource, "uri", None)
-            mime = mimetypes.guess_type(str(uri), strict = False)[0] if uri else None
+            mime = _uri_mime(getattr(resource, "uri", None))
     mime = _image_mime(mime)
     if data and mime:
         return str(data), mime
