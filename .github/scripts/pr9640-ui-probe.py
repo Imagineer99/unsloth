@@ -24,7 +24,7 @@ from pathlib import Path
 
 import httpx
 
-from studio_test_kit.auth import ProviderSeed, login, seed_init_script
+from studio_test_kit.auth import login, seed_init_script
 from studio_test_kit.compose import hstack_images
 from studio_test_kit.ui import open_chat, send_prompt, wait_for_text
 
@@ -240,7 +240,7 @@ class FakeProvider:
         self.thread.join(timeout=5)
 
 
-async def auth_seed(base_url: str, password: str, provider: ProviderSeed) -> str:
+async def auth_seed(base_url: str, password: str, provider_base_url: str) -> tuple[str, dict]:
     auth = await login(base_url, "unsloth", password)
     if auth.must_change_password:
         new_password = "UnslothStudioCI2026!"
@@ -254,9 +254,23 @@ async def auth_seed(base_url: str, password: str, provider: ProviderSeed) -> str
             body = response.json()
         auth.access_token = body["access_token"]
         auth.refresh_token = body.get("refresh_token", "")
-    return seed_init_script(
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.post(
+            f"{base_url}/api/providers/",
+            headers={"Authorization": f"Bearer {auth.access_token}"},
+            json={
+                "provider_type": "vllm",
+                "display_name": "PR 9640 deterministic vLLM",
+                "base_url": provider_base_url,
+                "models": [MODEL],
+                "available_models": [MODEL],
+            },
+        )
+        response.raise_for_status()
+        saved_provider = response.json()
+    init = seed_init_script(
         auth,
-        [provider],
+        [],
         extra_local_storage={
             "unsloth_chat_tools_enabled": "true",
             "unsloth_chat_code_tools_enabled": "true",
@@ -264,6 +278,7 @@ async def auth_seed(base_url: str, password: str, provider: ProviderSeed) -> str
             "unsloth_chat_permission_mode": "off",
         },
     )
+    return init, saved_provider
 
 
 def tool_result_from_second_request(requests: list[dict]) -> str:
@@ -319,15 +334,7 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
             if password is None:
                 time.sleep(0.5)
         assert password, f"bootstrap password not found for {label}"
-        provider = ProviderSeed(
-            provider_type="vllm",
-            name="PR 9640 deterministic vLLM",
-            base_url=fake.base_url,
-            models=[MODEL],
-            api_key="ci-placeholder-key",
-            id=f"pr9640-{label}",
-        )
-        init = await auth_seed(base_url, password, provider)
+        init, saved_provider = await auth_seed(base_url, password, fake.base_url)
         async with open_chat(
             base_url,
             init_scripts=[init],
@@ -335,6 +342,16 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
             viewport=(1440, 1000),
             headless=True,
         ) as sp:
+            await sp.page.wait_for_function(
+                """providerId => {
+                    const providers = JSON.parse(
+                        localStorage.getItem('unsloth_chat_external_providers') || '[]'
+                    );
+                    return providers.some(item => item.id === providerId);
+                }""",
+                saved_provider["id"],
+                timeout=30_000,
+            )
             await sp.screenshot(side / "chat-open.png", full_page=False)
             provider_state = await sp.page.evaluate(
                 """() => ({
@@ -346,7 +363,8 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
                 })"""
             )
             assert any(
-                item.get("id") == f"pr9640-{label}"
+                item.get("id") == saved_provider["id"]
+                and item.get("baseUrl") == fake.base_url
                 for item in provider_state.get("providers", [])
             ), provider_state
             picker_facts = await pick_connected_model(sp, MODEL, side)
@@ -384,6 +402,7 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
             "recovery_visible": True,
             "browser": browser,
             "provider_state": provider_state,
+            "saved_provider_id": saved_provider["id"],
             "picker": picker_facts,
         }
         (side / "facts.json").write_text(json.dumps(facts, indent=2, sort_keys=True), encoding="utf-8")
