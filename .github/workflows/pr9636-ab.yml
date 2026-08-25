@@ -17,6 +17,8 @@ jobs:
     name: "${{ matrix.os }} / Python ${{ matrix.python }} / FastMCP ${{ matrix.fastmcp }}"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
+    env:
+      PR9636_PRODUCT_SHA: ${{ github.ref_name == 'fix/pr-9636-mcp-repro-base' && '785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f' || github.ref_name == 'fix/pr-9636-mcp-repro-head' && '91cbdb6a0cb1d14ca11c5c9be3f3942518687f14' || github.sha }}
     strategy:
       fail-fast: false
       matrix:

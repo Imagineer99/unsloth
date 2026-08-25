@@ -237,7 +237,8 @@ async def main() -> None:
     artifact_dir = Path(os.environ["STUDIO_ARTIFACT_DIR"]).resolve()
     artifact_dir.mkdir(parents=True, exist_ok=True)
     branch = os.environ.get("GITHUB_REF_NAME", "")
-    commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    checkout_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    commit = os.environ.get("PR9636_PRODUCT_SHA", checkout_commit)
     browser_name = os.environ.get("STUDIO_BROWSER", "chromium")
     before = branch.endswith("-base")
     label = f"{'BEFORE' if before else 'AFTER'} · {commit[:10]} · {browser_name}"
@@ -273,6 +274,7 @@ async def main() -> None:
     facts = {
         "branch": branch,
         "commit": commit,
+        "checkout_commit": checkout_commit,
         "label": label,
         "browser": browser_name,
         "studio_home": str(home),
