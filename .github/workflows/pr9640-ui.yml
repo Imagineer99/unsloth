@@ -61,15 +61,7 @@ jobs:
             python -m playwright install "${{ matrix.browser }}"
           fi
 
-      - name: Install Studio from this branch (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path $env:UNSLOTH_STUDIO_HOME | Out-Null
-          & ./install.ps1 --local --no-torch
-
       - name: Install Studio from this branch (Unix)
-        if: runner.os != 'Windows'
         shell: bash
         run: |
           mkdir -p "$UNSLOTH_STUDIO_HOME"

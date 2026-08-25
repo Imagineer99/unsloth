@@ -5,6 +5,9 @@ on:
   push:
     branches:
       - fix/pr-9640-ab-ui-20260825
+    paths:
+      - .github/workflows/pr9640-ab.yml
+      - .github/scripts/pr9640_ab_probe.py
   workflow_dispatch:
 
 permissions:
