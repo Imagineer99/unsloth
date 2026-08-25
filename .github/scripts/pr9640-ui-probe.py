@@ -26,7 +26,7 @@ import httpx
 
 from studio_test_kit.auth import ProviderSeed, login, seed_init_script
 from studio_test_kit.compose import hstack_images
-from studio_test_kit.ui import open_chat, pick_model, send_prompt, wait_for_text
+from studio_test_kit.ui import open_chat, send_prompt, wait_for_text
 
 
 BASE_SHA = "b9792a5b14bd4bbf292d1a3b5404fb7654b50615"
@@ -274,6 +274,34 @@ def tool_result_from_second_request(requests: list[dict]) -> str:
     return "\n".join(str(item.get("content", "")) for item in tool_messages)
 
 
+async def pick_connected_model(sp, model_id: str, side: Path) -> dict:
+    """Drive the model picker used by both pinned refs.
+
+    The reusable kit predates the current header-level selector and still
+    scopes the trigger under ``form:has(textarea)``.  Assert the actual picker
+    and connected tab so a selector miss cannot masquerade as product output.
+    """
+    page = sp.page
+    trigger = page.locator(".unsloth-model-selector-trigger").first
+    await trigger.wait_for(state="visible", timeout=30_000)
+    trigger_text = (await trigger.inner_text()).strip()
+    await trigger.click()
+    menu = page.locator(".unsloth-model-selector-menu").last
+    await menu.wait_for(state="visible", timeout=15_000)
+    await sp.screenshot(side / "picker-open.png", full_page=False)
+
+    connected = menu.get_by_text("Connected", exact=True).last
+    await connected.wait_for(state="visible", timeout=15_000)
+    await connected.click()
+    option = menu.locator("[data-model-picker-option]").filter(has_text=model_id).first
+    await option.wait_for(state="visible", timeout=15_000)
+    option_text = (await option.inner_text()).strip()
+    assert model_id in option_text, option_text
+    await option.click()
+    await page.get_by_text(model_id, exact=True).first.wait_for(state="visible", timeout=15_000)
+    return {"trigger_before": trigger_text, "selected_option": option_text}
+
+
 async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[Path, dict]:
     side = ARTIFACTS / label
     side.mkdir(parents=True, exist_ok=True)
@@ -307,7 +335,21 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
             viewport=(1440, 1000),
             headless=True,
         ) as sp:
-            await pick_model(sp, MODEL)
+            await sp.screenshot(side / "chat-open.png", full_page=False)
+            provider_state = await sp.page.evaluate(
+                """() => ({
+                    providers: JSON.parse(localStorage.getItem('unsloth_chat_external_providers') || '[]'),
+                    connectionsEnabled: localStorage.getItem('unsloth_chat_connections_enabled'),
+                    toolsEnabled: localStorage.getItem('unsloth_chat_tools_enabled'),
+                    codeEnabled: localStorage.getItem('unsloth_chat_code_tools_enabled'),
+                    permissionMode: localStorage.getItem('unsloth_chat_permission_mode'),
+                })"""
+            )
+            assert any(
+                item.get("id") == f"pr9640-{label}"
+                for item in provider_state.get("providers", [])
+            ), provider_state
+            picker_facts = await pick_connected_model(sp, MODEL, side)
             await send_prompt(sp, "Run Python now. Use the Python tool exactly once.")
             await wait_for_text(sp, RECOVERY, timeout_ms=90_000)
             trigger = sp.page.locator('[data-slot="tool-fallback-trigger"]').filter(has_text="Python").last
@@ -341,6 +383,8 @@ async def capture_side(label: str, sha: str, home: Path, browser: str) -> tuple[
             "tool_result_sent_to_model": provider_result,
             "recovery_visible": True,
             "browser": browser,
+            "provider_state": provider_state,
+            "picker": picker_facts,
         }
         (side / "facts.json").write_text(json.dumps(facts, indent=2, sort_keys=True), encoding="utf-8")
         return shot, facts
