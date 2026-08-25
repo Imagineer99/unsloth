@@ -210,6 +210,13 @@ async def run_scene(
             await studio_page.screenshot(artifact_dir / "diagnostic-error.png")
             raise
 
+        tool_triggers = page.locator('[data-slot="tool-fallback-trigger"]')
+        for index in range(await tool_triggers.count()):
+            trigger = tool_triggers.nth(index)
+            if await trigger.get_attribute("data-state") == "closed":
+                await trigger.click()
+        await page.wait_for_timeout(500)
+
         images = page.locator('img[alt^="Tool result"]')
         image_count = await images.count()
         dimensions = []
