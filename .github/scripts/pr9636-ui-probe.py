@@ -189,11 +189,19 @@ async def run_scene(
             )
 
         await page.route("**/v1/chat/completions", intercept)
-        await pick_model(studio_page, MODEL, timeout_ms=30_000)
-        await send_prompt(studio_page, "Render the MCP embedded resource.")
-        await wait_for_stream(studio_page, timeout_ms=60_000)
-        await wait_for_text(studio_page, "MCP embedded-resource repro complete.", timeout_ms=30_000)
-        await page.wait_for_timeout(1500)
+        try:
+            await pick_model(studio_page, MODEL, timeout_ms=30_000)
+            await send_prompt(studio_page, "Render the MCP embedded resource.")
+            await wait_for_stream(studio_page, timeout_ms=60_000)
+            await wait_for_text(
+                studio_page,
+                "MCP embedded-resource repro complete.",
+                timeout_ms=30_000,
+            )
+            await page.wait_for_timeout(1500)
+        except Exception:
+            await studio_page.screenshot(artifact_dir / "diagnostic-error.png")
+            raise
 
         images = page.locator('img[alt^="Tool result"]')
         image_count = await images.count()
