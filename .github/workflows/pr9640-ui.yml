@@ -20,7 +20,9 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest"]
-        browser: ["chromium"]
+        # Chromium covers the engine used by Chrome and Edge; Firefox covers
+        # Gecko; WebKit is the portable Safari-engine proxy available in CI.
+        browser: ["chromium", "firefox", "webkit"]
     env:
       UNSLOTH_STUDIO_HOME: ${{ github.workspace }}/.studio-live/home
       STUDIO_ARTIFACT_DIR: ${{ github.workspace }}/.studio-live/artifacts/${{ matrix.os }}-${{ matrix.browser }}
