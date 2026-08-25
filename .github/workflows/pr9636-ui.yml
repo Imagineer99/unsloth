@@ -32,6 +32,7 @@ jobs:
           - os: macos-latest
             browser: webkit
     env:
+      PR9636_PRODUCT_SHA: ${{ github.ref_name == 'fix/pr-9636-mcp-repro-base' && '785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f' || '91cbdb6a0cb1d14ca11c5c9be3f3942518687f14' }}
       UNSLOTH_STUDIO_HOME: ${{ github.workspace }}/.studio-live/home
       STUDIO_ARTIFACT_DIR: ${{ github.workspace }}/.studio-live/artifacts/${{ matrix.os }}-${{ matrix.browser }}
       STUDIO_BROWSER: ${{ matrix.browser }}

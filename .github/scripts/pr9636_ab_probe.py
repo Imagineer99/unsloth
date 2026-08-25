@@ -166,9 +166,12 @@ def main() -> int:
     if branch.endswith("-uri-fixed") and not uri_ok:
         failures.append("URI-fixed branch did not handle query/fragment MIME inference")
 
+    checkout_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip()
+    product_commit = os.environ.get("PR9636_PRODUCT_SHA", checkout_commit)
     report = {
         "branch": branch,
-        "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip(),
+        "checkout_commit": checkout_commit,
+        "product_commit": product_commit,
         "platform": platform.platform(),
         "python": sys.version.split()[0],
         "fastmcp": importlib.metadata.version("fastmcp"),
