@@ -193,12 +193,28 @@ async def pick_model(sp: StudioPage, model_id: str, timeout_ms: int = 15000) -> 
     """
     page = sp.page
     trigger = page.locator(
+        '[data-tour="chat-model-selector"], '
         'form:has(textarea) [data-testid="model-picker-trigger"], '
         'form:has(textarea) button:has-text("Model")'
     ).first
     await trigger.click(timeout=timeout_ms)
     pattern = re.compile(rf"^\s*{re.escape(model_id)}\s*$")
+    picker = page.locator(
+        '[data-tour="chat-model-selector-popover"], '
+        '.unsloth-model-selector-menu'
+    ).first
+    try:
+        await picker.wait_for(state="visible", timeout=min(timeout_ms, 5000))
+    except Exception:
+        pass
     option = page.get_by_role("option", name=pattern).first
+    if await option.count() == 0:
+        connected = page.get_by_role(
+            "tab", name=re.compile(r"^\s*Connected\s*$")
+        ).first
+        if await connected.count() > 0:
+            await connected.click(timeout=timeout_ms)
+        option = picker.get_by_role("button", name=pattern).first
     await option.click(timeout=timeout_ms)
 
 
