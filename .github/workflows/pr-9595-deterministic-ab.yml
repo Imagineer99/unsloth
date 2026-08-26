@@ -1,0 +1,167 @@
+name: PR 9595 deterministic A/B
+
+on:
+  push:
+    branches:
+      - fix/pr-9595-deterministic-ab-ci
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-9595-deterministic-ab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sampling-ab:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+        python: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install pinned uv
+        run: python -m pip install uv==0.11.32
+
+      - name: Materialize exact A/B refs and current-main integration
+        shell: bash
+        env:
+          MERGE_BASE: 785a68dc4d193cc0a7f4706dcfe7b14a5e433e2f
+          PR_HEAD: 870cf61305bec2d07f08e6aabb06145784f18f4b
+          CURRENT_MAIN: ca62b6b94420e5d770f62359d4d7aee637c72767
+        run: |
+          set -euo pipefail
+          git fetch --no-tags https://github.com/unslothai/unsloth.git \
+            refs/pull/9595/head:refs/remotes/pr-9595/head
+          test "$(git rev-parse refs/remotes/pr-9595/head)" = "$PR_HEAD"
+          test "$(git rev-parse "$MERGE_BASE")" = "$MERGE_BASE"
+          test "$(git rev-parse "$CURRENT_MAIN")" = "$CURRENT_MAIN"
+
+          git worktree add --detach "$RUNNER_TEMP/pr9595-merge-base" "$MERGE_BASE"
+          git worktree add --detach "$RUNNER_TEMP/pr9595-pr-head" "$PR_HEAD"
+          git worktree add --detach "$RUNNER_TEMP/pr9595-current-main" "$CURRENT_MAIN"
+          git worktree add --detach "$RUNNER_TEMP/pr9595-integrated" "$CURRENT_MAIN"
+
+          if git -C "$RUNNER_TEMP/pr9595-integrated" merge --no-commit --no-ff "$PR_HEAD"; then
+            echo "Expected the pinned current-main/PR-head overlap to conflict" >&2
+            exit 1
+          fi
+          test "$(git -C "$RUNNER_TEMP/pr9595-integrated" diff --name-only --diff-filter=U)" = \
+            "studio/backend/utils/inference/inference_config.py"
+          python .github/scripts/pr9595_resolve_integration.py \
+            "$RUNNER_TEMP/pr9595-integrated"
+          git -C "$RUNNER_TEMP/pr9595-integrated" add \
+            studio/backend/utils/inference/inference_config.py
+          test -z "$(git -C "$RUNNER_TEMP/pr9595-integrated" diff --name-only --diff-filter=U)"
+          git -C "$RUNNER_TEMP/pr9595-integrated" diff --check
+          git -C "$RUNNER_TEMP/pr9595-integrated" diff --cached --check
+
+      - name: Create one shared dependency environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/pr9595-venv" --python python
+          if [ -x "$RUNNER_TEMP/pr9595-venv/Scripts/python.exe" ]; then
+            VENV_PY="$RUNNER_TEMP/pr9595-venv/Scripts/python.exe"
+          else
+            VENV_PY="$RUNNER_TEMP/pr9595-venv/bin/python"
+          fi
+          uv pip install --python "$VENV_PY" \
+            -r "$RUNNER_TEMP/pr9595-pr-head/studio/backend/requirements/studio.txt" \
+            python-multipart aiofiles sqlalchemy cryptography psutil pyyaml jinja2 \
+            mammoth unpdf requests typer 'numpy<3' pytest pytest-asyncio httpx
+          "$VENV_PY" -VV
+          uv --version
+
+      - name: Prove old behavior before and fixed behavior after
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pr9595-artifacts"
+          if [ -x "$RUNNER_TEMP/pr9595-venv/Scripts/python.exe" ]; then
+            VENV_PY="$RUNNER_TEMP/pr9595-venv/Scripts/python.exe"
+          else
+            VENV_PY="$RUNNER_TEMP/pr9595-venv/bin/python"
+          fi
+
+          run_old() {
+            label="$1"
+            backend="$2"
+            set +e
+            "$VENV_PY" .github/scripts/pr9595_probe.py \
+              --backend "$backend" \
+              --json-out "$RUNNER_TEMP/pr9595-artifacts/$label.json" \
+              2>&1 | tee "$RUNNER_TEMP/pr9595-artifacts/$label.log"
+            probe_status=${PIPESTATUS[0]}
+            set -e
+            test "$probe_status" -eq 1
+            grep -qF "SUMMARY passed=2 failed=16" \
+              "$RUNNER_TEMP/pr9595-artifacts/$label.log"
+          }
+
+          run_fixed() {
+            label="$1"
+            backend="$2"
+            "$VENV_PY" .github/scripts/pr9595_probe.py \
+              --backend "$backend" \
+              --json-out "$RUNNER_TEMP/pr9595-artifacts/$label.json" \
+              2>&1 | tee "$RUNNER_TEMP/pr9595-artifacts/$label.log"
+            grep -qF "SUMMARY passed=18 failed=0" \
+              "$RUNNER_TEMP/pr9595-artifacts/$label.log"
+          }
+
+          run_old merge-base "$RUNNER_TEMP/pr9595-merge-base/studio/backend"
+          run_old current-main "$RUNNER_TEMP/pr9595-current-main/studio/backend"
+          run_fixed pr-head "$RUNNER_TEMP/pr9595-pr-head/studio/backend"
+          run_fixed integrated "$RUNNER_TEMP/pr9595-integrated/studio/backend"
+
+      - name: Run expanded changed-path suite on Python 3.12
+        if: matrix.python == '3.12'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -x "$RUNNER_TEMP/pr9595-venv/Scripts/python.exe" ]; then
+            VENV_PY="$RUNNER_TEMP/pr9595-venv/Scripts/python.exe"
+          else
+            VENV_PY="$RUNNER_TEMP/pr9595-venv/bin/python"
+          fi
+          files=(
+            studio/backend/tests/test_sampling_resolution.py
+            studio/backend/tests/test_thinking_parameter.py
+            studio/backend/tests/test_anthropic_messages.py
+            studio/backend/tests/test_openai_auto_switch.py
+            studio/backend/tests/test_openai_tool_passthrough.py
+            studio/backend/tests/test_responses_tool_passthrough.py
+          )
+          (
+            cd "$RUNNER_TEMP/pr9595-pr-head"
+            "$VENV_PY" -m pytest -q "${files[@]}" \
+              2>&1 | tee "$RUNNER_TEMP/pr9595-artifacts/pr-head-pytest.log"
+          )
+          (
+            cd "$RUNNER_TEMP/pr9595-integrated"
+            "$VENV_PY" -m pytest -q "${files[@]}" \
+              2>&1 | tee "$RUNNER_TEMP/pr9595-artifacts/integrated-pytest.log"
+          )
+
+      - name: Upload A/B evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr-9595-ab-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/pr9595-artifacts
+          if-no-files-found: error
