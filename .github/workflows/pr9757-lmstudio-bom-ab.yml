@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: PR 9757 LM Studio BOM A-B
+
+on:
+  push:
+    branches:
+      - fix/pr-9757-lmstudio-bom-ab-ci-20260826
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bom-ab:
+    name: ${{ matrix.os }} / ${{ matrix.arm }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        arm: [base, head]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Reproduce base or verify head
+        env:
+          ARM: ${{ matrix.arm }}
+          BASE_SHA: 55213845e3eec6fd628f0f99fce4cc3074d9ff5f
+          HEAD_SHA: c2e874a85b8c55712c40de961be6f32f5a17016d
+        run: python scripts/pr9757_lmstudio_bom_ab.py
