@@ -12,10 +12,6 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: pr-9595-deterministic-ab-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   sampling-ab:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
