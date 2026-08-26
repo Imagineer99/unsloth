@@ -2474,6 +2474,71 @@ def test_tensor_mode_emits_the_requested_quantized_kv(tmp_path, kv_type):
     assert backend.cache_type_kv == kv_type
 
 
+def test_tensor_mode_prices_q8_with_required_flash_attention(tmp_path):
+    """TP can only launch with flash attention, so its context cap must price that shape."""
+    backend, gguf = _backend(
+        tmp_path,
+        vulkan = False,
+        memory = [(0, 32_768, 32_768), (1, 8_192, 8_192)],
+    )
+    backend._tensor_split_aborts = lambda *args, **kwargs: False
+    backend._get_gguf_size_bytes = lambda _path: 25_299_061_664
+
+    def install_qwen38_metadata(_path):
+        # unsloth/Qwen3.8-27B-GGUF config + GGUF dimensions used by the estimator.
+        backend._context_length = 262_144
+        backend._architecture = "qwen35"
+        backend._n_layers = 65
+        backend._n_kv_heads = 4
+        backend._n_heads = 24
+        backend._embedding_length = 5120
+        backend._vocab_size = 248_320
+        backend._kv_key_length = 256
+        backend._kv_value_length = 256
+        backend._full_attention_interval = 4
+        backend._ssm_inner_size = 6144
+        backend._ssm_state_size = 128
+        backend._ssm_group_count = 16
+        backend._ssm_conv_kernel = 4
+        backend._nextn_predict_layers = 1
+
+    backend._read_gguf_metadata = install_qwen38_metadata
+    backend._can_estimate_kv = LlamaCppBackend._can_estimate_kv.__get__(backend)
+    planned = {}
+    real_plan = backend._plan_tensor_parallel
+
+    def capture_plan(*args, **kwargs):
+        observed = real_plan(*args, **kwargs)
+        fa_on = real_plan(*args, **{**kwargs, "flash_attn": True})
+        fa_off = real_plan(*args, **{**kwargs, "flash_attn": False})
+        planned.update(kwargs = kwargs, observed = observed, fa_on = fa_on, fa_off = fa_off)
+        return observed
+
+    with patch.object(backend, "_plan_tensor_parallel", side_effect = capture_plan):
+        captured = _launch(
+            backend,
+            gguf,
+            tensor_parallel = True,
+            cache_type_kv = "q8_0",
+            n_ctx = 262_144,
+            n_parallel = 1,
+            speculative_type = "off",
+        )
+
+    cmd = captured["cmd"]
+    assert cmd[cmd.index("--split-mode") + 1] == "tensor"
+    assert cmd[cmd.index("--flash-attn") + 1] == "on"
+    assert planned["fa_on"][0] > planned["fa_off"][0]
+    print(
+        "TP_Q8_CONTEXT_AB "
+        f"planner_flash_attn={planned['kwargs']['flash_attn']} "
+        f"observed={planned['observed'][0]} "
+        f"fa_on={planned['fa_on'][0]} fa_off={planned['fa_off'][0]}"
+    )
+    assert planned["kwargs"]["flash_attn"] is True
+    assert backend.max_context_length == planned["fa_on"][1]
+
+
 def test_an_unknown_kv_type_is_still_refused_in_tensor_mode(tmp_path):
     """_valid_cache_types drops a type llama.cpp's kv_cache_type_from_str does not
     know, emitting no flag rather than aborting the child. Tensor mode does not

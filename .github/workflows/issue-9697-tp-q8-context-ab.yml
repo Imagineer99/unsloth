@@ -1,0 +1,37 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "Issue 9697 TP Q8 Context A/B"
+
+on:
+  push:
+    branches:
+      - "fix/issue-9697-tp-kv-repro-ci-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-24.04"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12.11"
+
+      - name: "Install focused test dependencies"
+        shell: bash
+        run: |
+          python -m pip install pytest==9.1.1 huggingface-hub==1.28.0
+
+      - name: "Run TP Q8 context A/B assertion"
+        shell: bash
+        run: |
+          python -m pytest -q -s studio/backend/tests/test_llama_cpp_placement.py::test_tensor_mode_prices_q8_with_required_flash_attention
+
