@@ -18381,9 +18381,7 @@ class LlamaCppBackend:
                             soft_overhead_bytes = _soft_overhead,
                             swa_full = swa_full,
                             kv_unified = planned_kv_unified,
-                            # Tensor splitting requires flash attention; pricing its
-                            # impossible FA-off recovery shape understates quantized KV.
-                            flash_attn = True,
+                            flash_attn = planned_flash_attn,
                             # Already resolved, not a second read: a mid-load save
                             # would otherwise size placement against a fraction the
                             # ranking above never used.
