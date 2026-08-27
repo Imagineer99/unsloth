@@ -1,0 +1,54 @@
+name: Qwen3.8 Flash Next multimodal repro
+
+on:
+  push:
+    branches:
+      - fix/qwen38-flash-next-repro
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: Immutable HF history + Studio detector A/B
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      UNSLOTH_STUDIO_HOME: ${{ github.workspace }}/.studio-qwen38-repro
+      QWEN_REPRO_OUTPUT: ${{ github.workspace }}/artifacts/qwen38-evidence.json
+
+    steps:
+      - name: Check out evidence branch
+        uses: actions/checkout@v4
+
+      - name: Install Studio without PyTorch
+        run: bash ./install.sh --local --no-torch
+
+      - name: Run Qwen3.8-Flash-Next recognition A/B
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio/backend
+        run: |
+          "$UNSLOTH_STUDIO_HOME/unsloth_studio/bin/python" \
+            .github/scripts/qwen38_flash_next_repro.py
+
+      - name: Publish concise evidence summary
+        if: always()
+        run: |
+          if [[ -f "$QWEN_REPRO_OUTPUT" ]]; then
+            {
+              echo '## Qwen3.8-Flash-Next multimodal recognition'
+              echo
+              echo '```json'
+              cat "$QWEN_REPRO_OUTPUT"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload evidence artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwen38-flash-next-multimodal-evidence
+          path: artifacts/qwen38-evidence.json
+          if-no-files-found: error
