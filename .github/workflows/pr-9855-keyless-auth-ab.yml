@@ -1,0 +1,149 @@
+name: PR 9855 keyless auth A/B
+
+on:
+  push:
+    branches:
+      - fix/pr-9855-keyless-ab-ci-20260827
+    paths:
+      - .github/workflows/pr-9855-keyless-auth-ab.yml
+      - .github/scripts/pr9855_keyless_ab_matrix.py
+      - .github/scripts/pr9855_keyless_route_guards.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-9855-keyless-auth-ab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  keyless-auth-ab:
+    name: ${{ matrix.label }} · before 403 / after allowed
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            label: Linux
+          - os: windows-latest
+            label: Windows
+          - os: macos-15
+            label: macOS
+
+    steps:
+      - name: Check out disposable harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: harness
+          persist-credentials: false
+
+      - name: Check out exact pre-fix revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: unslothai/unsloth
+          ref: d899dcbc347e6cbf281cb47c9443929819b29648
+          path: before
+          persist-credentials: false
+
+      - name: Check out exact PR head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          repository: unslothai/unsloth
+          ref: ce056a15460c14d59ab27dc4c71b901223d94626
+          path: after
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install isolated uv runner
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check "uv==0.8.15"
+          uv --version
+
+      - name: Run exact A/B authorization matrix
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          uv run --no-project \
+            --with "fastapi==0.141.1" \
+            --with "PyJWT==2.13.0" \
+            --with "httpx==0.28.1" \
+            python harness/.github/scripts/pr9855_keyless_ab_matrix.py \
+              --repo before \
+              --expected blocked \
+              --commit d899dcbc347e6cbf281cb47c9443929819b29648 \
+            | tee artifacts/before.json
+          uv run --no-project \
+            --with "fastapi==0.141.1" \
+            --with "PyJWT==2.13.0" \
+            --with "httpx==0.28.1" \
+            python harness/.github/scripts/pr9855_keyless_ab_matrix.py \
+              --repo after \
+              --expected allowed \
+              --commit ce056a15460c14d59ab27dc4c71b901223d94626 \
+            | tee artifacts/after.json
+
+      - name: Prove credential-changing routes remain guarded
+        shell: bash
+        run: |
+          uv run --no-project \
+            --with "fastapi==0.141.1" \
+            --with "PyJWT==2.13.0" \
+            --with "httpx==0.28.1" \
+            python harness/.github/scripts/pr9855_keyless_route_guards.py \
+              --repo after \
+            | tee artifacts/route-guards.txt
+
+      - name: Publish linkable A/B summary
+        if: always()
+        shell: bash
+        env:
+          RUNNER_LABEL: ${{ matrix.label }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          artifact_dir = Path("artifacts")
+          rows = []
+          for label, filename, expected in (
+              ("Before", "before.json", "Password setup gate reproduced (HTTP 403)"),
+              ("After", "after.json", "Keyless caller admitted as local admin"),
+          ):
+              path = artifact_dir / filename
+              if path.is_file():
+                  data = json.loads(path.read_text(encoding="utf-8"))
+                  result = f"PASS — {expected}; {data['total_cases']}/{data['total_cases']} cases"
+                  sha = data["commit"][:12]
+              else:
+                  result = "FAIL — result artifact missing"
+                  sha = "n/a"
+              rows.append((label, sha, result))
+
+          guards = artifact_dir / "route-guards.txt"
+          guard_result = guards.read_text(encoding="utf-8").strip() if guards.is_file() else "FAIL — result artifact missing"
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          with summary.open("a", encoding="utf-8") as handle:
+              handle.write(f"## PR #9855 keyless authentication A/B — {os.environ['RUNNER_LABEL']}\n\n")
+              handle.write("| Revision | SHA | Result |\n|---|---|---|\n")
+              for label, sha, result in rows:
+                  handle.write(f"| {label} | `{sha}` | {result} |\n")
+              handle.write(f"\nCredential-route guard proof: `{guard_result}`\n")
+          PY
+
+      - name: Upload raw A/B evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: pr-9855-keyless-auth-ab-${{ matrix.label }}
+          path: artifacts
+          if-no-files-found: warn
+          retention-days: 14
