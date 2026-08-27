@@ -75,6 +75,7 @@ jobs:
             --with "fastapi==0.141.1" \
             --with "PyJWT==2.13.0" \
             --with "httpx==0.28.1" \
+            --with "structlog==26.1.0" \
             python harness/.github/scripts/pr9855_keyless_ab_matrix.py \
               --repo before \
               --expected blocked \
@@ -84,6 +85,7 @@ jobs:
             --with "fastapi==0.141.1" \
             --with "PyJWT==2.13.0" \
             --with "httpx==0.28.1" \
+            --with "structlog==26.1.0" \
             python harness/.github/scripts/pr9855_keyless_ab_matrix.py \
               --repo after \
               --expected allowed \
@@ -97,6 +99,7 @@ jobs:
             --with "fastapi==0.141.1" \
             --with "PyJWT==2.13.0" \
             --with "httpx==0.28.1" \
+            --with "structlog==26.1.0" \
             python harness/.github/scripts/pr9855_keyless_route_guards.py \
               --repo after \
             | tee artifacts/route-guards.txt
@@ -119,13 +122,14 @@ jobs:
               ("After", "after.json", "Keyless caller admitted as local admin"),
           ):
               path = artifact_dir / filename
-              if path.is_file():
+              try:
                   data = json.loads(path.read_text(encoding="utf-8"))
-                  result = f"PASS — {expected}; {data['total_cases']}/{data['total_cases']} cases"
-                  sha = data["commit"][:12]
-              else:
+              except (OSError, json.JSONDecodeError):
                   result = "FAIL — result artifact missing"
                   sha = "n/a"
+              else:
+                  result = f"PASS — {expected}; {data['total_cases']}/{data['total_cases']} cases"
+                  sha = data["commit"][:12]
               rows.append((label, sha, result))
 
           guards = artifact_dir / "route-guards.txt"
