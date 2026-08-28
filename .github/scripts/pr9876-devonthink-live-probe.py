@@ -193,7 +193,7 @@ async def main() -> None:
             await context.add_init_script(init_script)
             page = await context.new_page()
             await page.goto(f"{base_url}/chat", wait_until = "domcontentloaded")
-            settings = page.get_by_role("button", name = "Settings")
+            settings = page.get_by_role("button", name = "Settings", exact = True)
             await settings.wait_for(state = "visible", timeout = 30_000)
             await settings.click()
             dialog = page.get_by_role("dialog")
