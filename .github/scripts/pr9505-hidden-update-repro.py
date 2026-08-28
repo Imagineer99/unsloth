@@ -15,6 +15,18 @@ REPRO_PERIODIC_DECLARATION = (
 )
 VISIBLE_DECLARATION = '"visible": false,'
 REPRO_VISIBLE_DECLARATION = '"visible": true,'
+PROBE_COMPONENT_NEEDLE = "export function AppProvider({ children }: AppProviderProps) {"
+PROBE_COMPONENT_REPLACEMENT = """function Pr9505ReproUpdateProbe() {
+  useTauriUpdate(false);
+  return null;
+}
+
+export function AppProvider({ children }: AppProviderProps) {"""
+PROBE_MOUNT_NEEDLE = """      <TooltipProvider>
+        <AppearanceCustomizationEffect />"""
+PROBE_MOUNT_REPLACEMENT = """      <TooltipProvider>
+        <Pr9505ReproUpdateProbe />
+        <AppearanceCustomizationEffect />"""
 
 IMPORT_NEEDLE = "use serde::Serialize;\n"
 IMPORTS = """use serde::Serialize;
@@ -212,6 +224,7 @@ def main() -> None:
     hook_path = repo / "studio/frontend/src/hooks/use-tauri-update.ts"
     updater_path = repo / "studio/src-tauri/src/desktop_updater.rs"
     config_path = repo / "studio/src-tauri/tauri.conf.json"
+    provider_path = repo / "studio/frontend/src/app/provider.tsx"
 
     hook = hook_path.read_text(encoding = "utf-8")
     periodic_present = PERIODIC_DECLARATION in hook
@@ -237,6 +250,21 @@ def main() -> None:
     )
     config_path.write_text(config, encoding = "utf-8")
 
+    provider = provider_path.read_text(encoding = "utf-8")
+    provider = replace_once(
+        provider,
+        PROBE_COMPONENT_NEEDLE,
+        PROBE_COMPONENT_REPLACEMENT,
+        "repro update probe component",
+    )
+    provider = replace_once(
+        provider,
+        PROBE_MOUNT_NEEDLE,
+        PROBE_MOUNT_REPLACEMENT,
+        "repro update probe mount",
+    )
+    provider_path.write_text(provider, encoding = "utf-8")
+
     updater = updater_path.read_text(encoding = "utf-8")
     if "PR9505_REPRO_STARTED" in updater:
         raise SystemExit("desktop updater is already instrumented")
@@ -256,7 +284,8 @@ def main() -> None:
     updater_path.write_text(updater, encoding = "utf-8")
     print(
         "PR9505_REPRO PREPARED "
-        f"periodic_timer_present={str(periodic_present).lower()} initial_window_visible=true"
+        f"periodic_timer_present={str(periodic_present).lower()} "
+        "initial_window_visible=true forced_update_hook=true"
     )
 
 
