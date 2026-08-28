@@ -1,0 +1,38 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 9920 GGUF disk tier A/B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-9920-gguf-disk-repro-ci-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.17.1"
+
+      - name: "Record pinned implementation"
+        shell: bash
+        run: |
+          git rev-parse HEAD
+          node --version
+
+      - name: "Assert PR 9920 disk-tier behavior"
+        shell: bash
+        run: |
+          node --experimental-strip-types .github/scripts/pr9920-gguf-disk-ab.mjs
+
