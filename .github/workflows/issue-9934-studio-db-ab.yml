@@ -1,0 +1,38 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "Issue 9934 studio.db deterministic A-B"
+
+on:
+  push:
+    branches:
+      - "fix/9934-studio-db-write-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install minimal probe dependency"
+        shell: pwsh
+        run: |
+          python -m pip install structlog
+
+      - name: "Run deterministic studio.db A/B probe"
+        shell: pwsh
+        run: |
+          $env:PYTHONPATH = Join-Path $env:GITHUB_WORKSPACE 'studio\backend'
+          python scripts\ci\issue_9934_studio_db_probe.py
+
