@@ -106,6 +106,11 @@ async def main() -> None:
     home = Path(os.environ["UNSLOTH_STUDIO_HOME"]).resolve()
     artifact_dir = Path(os.environ["STUDIO_ARTIFACT_DIR"]).resolve()
     artifact_dir.mkdir(parents = True, exist_ok = True)
+    # A direct .gguf path is enough for Studio's local catalog scanner. Keep the
+    # fixture tiny: the proof lists it but never attempts to load or infer with it.
+    seeded_model = Path.cwd() / "models" / "DEVONthink-Evidence-Q4_K_M.gguf"
+    seeded_model.parent.mkdir(parents = True, exist_ok = True)
+    seeded_model.write_bytes(b"GGUF")
     browser_name = os.environ.get("STUDIO_BROWSER", "chromium")
     expect_direct = os.environ.get("EXPECT_DIRECT_SLASH", "true").lower() == "true"
     commit = subprocess.check_output(
@@ -183,6 +188,8 @@ async def main() -> None:
             payload = discovery.json()
             if payload.get("object") != "list" or not isinstance(payload.get("data"), list):
                 raise AssertionError("direct model discovery did not return an OpenAI list")
+            if not payload["data"]:
+                raise AssertionError("direct model discovery omitted the seeded local model")
 
         init_script = seed_init_script(auth, [])
         async with async_playwright() as playwright:
@@ -258,6 +265,11 @@ async def main() -> None:
             "api_key_used": observed_used,
             "catalog_object": discovery.json().get("object") if expect_direct else None,
             "catalog_count": len(discovery.json().get("data", [])) if expect_direct else None,
+            "catalog_ids": (
+                [entry.get("id") for entry in discovery.json().get("data", [])]
+                if expect_direct
+                else None
+            ),
             "row_text": row_text,
             "studio_home": str(home),
             "studio_port": port,
