@@ -73,7 +73,7 @@ jobs:
           $exe = 'studio/src-tauri/target/debug/unsloth-studio.exe'
           if (-not (Test-Path -LiteralPath $exe)) { throw "missing desktop binary: $exe" }
           $env:UNSLOTH_PR9505_REPRO = '1'
-          $process = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden `
+          $process = Start-Process -FilePath $exe -PassThru `
             -RedirectStandardOutput repro-logs/stdout.log `
             -RedirectStandardError repro-logs/stderr.log
           if (-not $process.WaitForExit(45000)) {

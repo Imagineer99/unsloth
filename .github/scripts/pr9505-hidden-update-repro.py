@@ -13,6 +13,8 @@ PERIODIC_DECLARATION = "const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 REPRO_PERIODIC_DECLARATION = (
     "const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 2_000; // PR 9505 repro only"
 )
+VISIBLE_DECLARATION = '"visible": false,'
+REPRO_VISIBLE_DECLARATION = '"visible": true,'
 
 IMPORT_NEEDLE = "use serde::Serialize;\n"
 IMPORTS = """use serde::Serialize;
@@ -209,6 +211,7 @@ def main() -> None:
     repo = Path(__file__).resolve().parents[2]
     hook_path = repo / "studio/frontend/src/hooks/use-tauri-update.ts"
     updater_path = repo / "studio/src-tauri/src/desktop_updater.rs"
+    config_path = repo / "studio/src-tauri/tauri.conf.json"
 
     hook = hook_path.read_text(encoding = "utf-8")
     periodic_present = PERIODIC_DECLARATION in hook
@@ -224,6 +227,15 @@ def main() -> None:
             "periodic interval declaration",
         )
         hook_path.write_text(hook, encoding = "utf-8")
+
+    config = config_path.read_text(encoding = "utf-8")
+    config = replace_once(
+        config,
+        VISIBLE_DECLARATION,
+        REPRO_VISIBLE_DECLARATION,
+        "initial window visibility declaration",
+    )
+    config_path.write_text(config, encoding = "utf-8")
 
     updater = updater_path.read_text(encoding = "utf-8")
     if "PR9505_REPRO_STARTED" in updater:
@@ -242,7 +254,10 @@ def main() -> None:
         "check_desktop_update function",
     )
     updater_path.write_text(updater, encoding = "utf-8")
-    print(f"PR9505_REPRO PREPARED periodic_timer_present={str(periodic_present).lower()}")
+    print(
+        "PR9505_REPRO PREPARED "
+        f"periodic_timer_present={str(periodic_present).lower()} initial_window_visible=true"
+    )
 
 
 if __name__ == "__main__":
