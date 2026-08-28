@@ -1,0 +1,95 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: PR 9505 Hidden Desktop Update A-B Repro
+
+on:
+  push:
+    branches:
+      - 'fix/pr-9505-tray-update-repro-ci-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-9505-hidden-update-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-webview2-hidden-timer:
+    name: Windows WebView2 hidden timer
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable @ 2026-03-27
+
+      - uses: swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+        with:
+          save-if: false
+          workspaces: studio/src-tauri -> target
+
+      - name: Lockfile supply-chain audit
+        run: python scripts/lockfile_supply_chain_audit.py
+
+      - name: Prepare deterministic WebView2 suspension probe
+        shell: pwsh
+        run: |
+          $expect = if ('${{ github.ref_name }}'.EndsWith('-head')) { 'present' } else { 'absent' }
+          python .github/scripts/pr9505-hidden-update-repro.py --expect-periodic $expect
+
+      - name: Install frontend and pinned Tauri dependencies
+        shell: pwsh
+        run: |
+          npm ci --prefix studio/frontend --no-fund --no-audit
+          npm install --save-dev --prefix studio @tauri-apps/cli@2.10.1 --no-fund --no-audit
+          $version = npx --prefix studio tauri --version
+          Write-Host $version
+          if ($version -ne 'tauri-cli 2.10.1') { throw "unexpected Tauri CLI: $version" }
+
+      - name: Build debug desktop application
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ''
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: npx --prefix studio tauri build --debug --no-bundle
+
+      - name: Run hidden-renderer update probe
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path repro-logs | Out-Null
+          $exe = 'studio/src-tauri/target/debug/unsloth-studio.exe'
+          if (-not (Test-Path -LiteralPath $exe)) { throw "missing desktop binary: $exe" }
+          $env:UNSLOTH_PR9505_REPRO = '1'
+          $process = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden `
+            -RedirectStandardOutput repro-logs/stdout.log `
+            -RedirectStandardError repro-logs/stderr.log
+          if (-not $process.WaitForExit(45000)) {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            Get-Content repro-logs/stdout.log,repro-logs/stderr.log -ErrorAction SilentlyContinue
+            throw 'PR9505_REPRO HARNESS_ERROR desktop process timed out'
+          }
+          Get-Content repro-logs/stdout.log,repro-logs/stderr.log -ErrorAction SilentlyContinue
+          Write-Host "PR9505_REPRO process_exit=$($process.ExitCode)"
+          if ($process.ExitCode -ne 0) { exit $process.ExitCode }
+
+      - name: Upload repro logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: pr9505-hidden-update-${{ github.run_id }}
+          path: repro-logs
+          if-no-files-found: warn
+          retention-days: 7
