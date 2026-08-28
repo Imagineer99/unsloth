@@ -2,8 +2,8 @@
 """Live Studio + Playwright proof for PR 9876.
 
 The probe deliberately does not follow redirects. That matches the failing
-DEVONthink model-discovery request and lets the API-key row show whether the
-request reached authentication.
+DEVONthink model-discovery request and distinguishes the catch-all model lookup
+from the direct collection route added by the fix.
 """
 
 from __future__ import annotations
@@ -165,8 +165,10 @@ async def main() -> None:
                 row for row in after.json()["api_keys"] if row["id"] == key_id
             )
 
-        expected_status = 200 if expect_direct else 307
-        expected_used = expect_direct
+        expected_status = 200 if expect_direct else 404
+        # Before the fix, /models/{model_id:path} consumes the empty segment. It
+        # still authenticates the API key before returning model-not-found.
+        expected_used = True
         observed_used = after_row["last_used_at"] is not None
         if discovery.status_code != expected_status:
             raise AssertionError(
@@ -190,7 +192,10 @@ async def main() -> None:
             )
             await context.add_init_script(init_script)
             page = await context.new_page()
-            await page.goto(f"{base_url}/settings", wait_until = "domcontentloaded")
+            await page.goto(f"{base_url}/chat", wait_until = "domcontentloaded")
+            settings = page.get_by_role("button", name = "Settings")
+            await settings.wait_for(state = "visible", timeout = 30_000)
+            await settings.click()
             dialog = page.get_by_role("dialog")
             await dialog.wait_for(state = "visible", timeout = 30_000)
             await page.locator('[data-testid="settings-tab-api-keys"]').click()
@@ -198,7 +203,7 @@ async def main() -> None:
             await name.wait_for(state = "visible", timeout = 30_000)
             row = name.locator("xpath=../../..")
             row_text = await row.inner_text()
-            expected_text = "Used just now" if expect_direct else "Used never"
+            expected_text = "Used just now"
             if expected_text not in row_text:
                 raise AssertionError(
                     f"API settings row omitted {expected_text!r}: {row_text!r}"
@@ -206,7 +211,7 @@ async def main() -> None:
             await dialog.screenshot(
                 path = str(
                     artifact_dir
-                    / ("after-direct-model-discovery.png" if expect_direct else "before-redirect.png")
+                    / ("after-api-settings.png" if expect_direct else "before-api-settings.png")
                 )
             )
             await row.screenshot(
@@ -214,6 +219,33 @@ async def main() -> None:
                     artifact_dir
                     / ("after-token-row.png" if expect_direct else "before-token-row.png")
                 )
+            )
+
+            async def authorize_discovery(route, request):
+                headers = await request.all_headers()
+                headers["authorization"] = f"Bearer {api_key}"
+                await route.continue_(headers = headers)
+
+            await context.route("**/v1/models/", authorize_discovery)
+            response_page = await context.new_page()
+            browser_response = await response_page.goto(
+                f"{base_url}/v1/models/", wait_until = "domcontentloaded"
+            )
+            if browser_response is None or browser_response.status != expected_status:
+                raise AssertionError(
+                    "Playwright navigation did not reproduce the API status: "
+                    f"{None if browser_response is None else browser_response.status}"
+                )
+            await response_page.screenshot(
+                path = str(
+                    artifact_dir
+                    / (
+                        "after-model-catalog-response.png"
+                        if expect_direct
+                        else "before-model-not-found-response.png"
+                    )
+                ),
+                full_page = True,
             )
             await context.close()
             await browser.close()
@@ -230,6 +262,7 @@ async def main() -> None:
             "studio_home": str(home),
             "studio_port": port,
             "browser": browser_name,
+            "browser_status": browser_response.status if browser_response else None,
         }
         (artifact_dir / "facts.json").write_text(
             json.dumps(facts, indent = 2), encoding = "utf-8"
