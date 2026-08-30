@@ -106,7 +106,11 @@ import {
   type CodexReasoningLedger,
 } from "../codex-reasoning";
 
-import { toolCallReplayArguments } from "../tool-call-arguments";
+import {
+  mergedToolCallArgumentsText,
+  toolCallArgumentsText,
+  toolCallReplayArguments,
+} from "../tool-call-arguments";
 import {
   findStreamedToolCallPartIndex,
   resolveToolCallPartId,
@@ -6510,6 +6514,10 @@ export function createOpenAIStreamAdapter(
                   useChatRuntimeStore.getState().clearToolFullOutput(staleKey);
                   const toolArgs = (toolEvent.arguments ??
                     {}) as ToolCallMessagePart["args"];
+                  const toolArgsText = toolCallArgumentsText(
+                    toolEvent.arguments_text,
+                    toolArgs,
+                  );
                   const idx = toolCallParts.findIndex(
                     (p) => p.toolCallId === id,
                   );
@@ -6520,7 +6528,7 @@ export function createOpenAIStreamAdapter(
                     toolCallParts[idx] = {
                       ...existing,
                       toolName: toolEvent.tool_name as string,
-                      argsText: JSON.stringify(toolArgs),
+                      argsText: toolArgsText,
                       args: toolArgs,
                       provenance: mergeToolProvenance(
                         existing.provenance,
@@ -6532,7 +6540,7 @@ export function createOpenAIStreamAdapter(
                       type: "tool-call" as const,
                       toolCallId: id,
                       toolName: toolEvent.tool_name as string,
-                      argsText: JSON.stringify(toolArgs),
+                      argsText: toolArgsText,
                       args: toolArgs,
                       textCursor: cumulativeText.length,
                       ...(toolProvenance ? { provenance: toolProvenance } : {}),
@@ -6709,6 +6717,10 @@ export function createOpenAIStreamAdapter(
                       ...(toolCallParts[idx].args ?? {}),
                       ...(nextArgs ?? {}),
                     } as ToolCallMessagePart["args"];
+                    // Whether anything actually merged in, which decides if the exact text
+                    // the card was opened with still describes these arguments.
+                    let argsMerged =
+                      nextArgs !== undefined && Object.keys(nextArgs).length > 0;
                     // Merge tool_end native_part into args.google so the
                     // outbound translator replays both start (executableCode)
                     // and end (result / inlineData) on the same turn.
@@ -6722,6 +6734,7 @@ export function createOpenAIStreamAdapter(
                       endGoogle.native_part &&
                       typeof endGoogle.native_part === "object"
                     ) {
+                      argsMerged = true;
                       const argsObj = mergedArgs as Record<string, unknown>;
                       const existingGoogle = (argsObj.google ?? {}) as Record<
                         string,
@@ -6790,7 +6803,11 @@ export function createOpenAIStreamAdapter(
                     toolCallParts[idx] = {
                       ...existing,
                       args: mergedArgs,
-                      argsText: JSON.stringify(mergedArgs ?? {}),
+                      argsText: mergedToolCallArgumentsText(
+                        existing.argsText,
+                        mergedArgs,
+                        argsMerged,
+                      ),
                       result: parsedResult,
                       provenance: mergeToolProvenance(
                         existing.provenance,
