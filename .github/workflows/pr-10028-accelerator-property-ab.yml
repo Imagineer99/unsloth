@@ -1,0 +1,70 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 10028 Accelerator property A-B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-10028-accelerator-property-repro-ci-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install pinned Accelerate test dependencies"
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check "pytest==8.4.2" "accelerate==1.14.0"
+
+      - name: "Show exact descriptor behavior"
+        shell: pwsh
+        run: |
+          $probe = @'
+          import ast
+          from pathlib import Path
+
+          import accelerate
+          import accelerate.accelerator
+          from accelerate.utils.dataclasses import DistributedType
+
+          source = Path("unsloth/models/_utils.py").read_text(encoding="utf-8")
+          tree = ast.parse(source)
+          assignments = [
+              node
+              for node in ast.walk(tree)
+              if isinstance(node, ast.Assign)
+              and len(node.targets) == 1
+              and ast.unparse(node.targets[0]).endswith("Accelerator.distributed_type")
+          ]
+          assert len(assignments) == 1, len(assignments)
+          exec(ast.unparse(assignments[0]), globals())
+          instance = accelerate.accelerator.Accelerator.__new__(
+              accelerate.accelerator.Accelerator
+          )
+          value = instance.distributed_type
+          print(f"ACCELERATE={accelerate.__version__}")
+          print(f"VALUE_TYPE={type(value).__name__}")
+          print(f"VALUE={value!r}")
+          print(f"EQ_NO={value == DistributedType.NO}")
+          print(f"NE_NO={value != DistributedType.NO}")
+          '@
+          $probe | python -
+
+      - name: "Run focused PR regression tests"
+        shell: pwsh
+        run: |
+          python -m pytest -q tests/test_accelerator_distributed_type_patch.py
