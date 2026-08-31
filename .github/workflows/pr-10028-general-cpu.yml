@@ -1,0 +1,204 @@
+# Disposable fork-only validation for upstream PR #10028.
+
+name: "PR 10028 General CPU CI"
+
+on:
+  push:
+    branches:
+      - "fix/pr-10028-accelerator-property-general-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-lint:
+    name: "Source lint (Python + config)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: "Install lint dependencies"
+        run: python -m pip install --disable-pip-version-check "ruff==0.15.12" "pyyaml>=6"
+
+      - name: "Compile every committed Python source"
+        run: |
+          python -m compileall -q -j 0 \
+            unsloth unsloth_cli studio tests cli.py unsloth-cli.py
+
+      - name: "Dynamic execution and verifier self-tests"
+        run: |
+          python scripts/lint_exec_literals.py --self-test
+          python scripts/verify_import_hoist.py --self-test
+          python scripts/lint_duplicate_definitions.py --self-test
+          python scripts/lint_no_parallel_clamp.py --self-test
+
+      - name: "PR-specific import and duplicate-definition checks"
+        run: |
+          test "$(git merge-base 024ddb364cbf34aefeac02c941f310cb7f2f2184 c683babbcd367e8de72cd227f1fb10d1cce0b1a8)" = "024ddb364cbf34aefeac02c941f310cb7f2f2184"
+          python scripts/verify_import_hoist.py \
+            --before 024ddb364cbf34aefeac02c941f310cb7f2f2184 \
+            --after c683babbcd367e8de72cd227f1fb10d1cce0b1a8 \
+            unsloth/models/_utils.py
+          python scripts/lint_duplicate_definitions.py \
+            --before 024ddb364cbf34aefeac02c941f310cb7f2f2184 \
+            --after c683babbcd367e8de72cd227f1fb10d1cce0b1a8 \
+            unsloth/models/_utils.py \
+            tests/test_accelerator_distributed_type_patch.py
+
+      - name: "Ruff whole-repository correctness rules"
+        run: ruff check unsloth unsloth_cli studio tests cli.py unsloth-cli.py
+
+      - name: "Parse YAML and JSON configuration"
+        run: |
+          python - <<'PY'
+          import fnmatch
+          import json
+          import pathlib
+
+          import yaml
+
+          skip_parts = {
+              ".git", ".venv", "venv", "build", "dist", "node_modules",
+              "unsloth_compiled_cache", "unsloth.egg-info",
+          }
+          yaml_paths = sorted(
+              list(pathlib.Path(".").rglob("*.yml"))
+              + list(pathlib.Path(".").rglob("*.yaml"))
+          )
+          for path in yaml_paths:
+              if any(part in skip_parts for part in path.parts):
+                  continue
+              with path.open("r", encoding="utf-8") as handle:
+                  list(yaml.safe_load_all(handle))
+
+          for path in sorted(pathlib.Path(".").rglob("*.json")):
+              if any(part in skip_parts for part in path.parts):
+                  continue
+              if path.name in {"package-lock.json", "bun.lock"}:
+                  continue
+              if fnmatch.fnmatch(path.name, "tsconfig*.json"):
+                  continue
+              json.loads(path.read_text(encoding="utf-8"))
+          print("PASS: repository YAML and JSON parse cleanly")
+          PY
+
+  repo-cpu-tests:
+    name: "Repo tests (CPU)"
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: "Restore pip cache"
+        id: pip-cache
+        uses: ./.github/actions/pip-cache-restore
+        with:
+          name: pr-10028-repo-cpu-tests
+          key-files: |
+            pyproject.toml
+            studio/backend/requirements/*.txt
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+
+      - name: "Install CPU test dependencies"
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          pip install -r studio/backend/requirements/studio.txt
+          pip install \
+            python-multipart aiofiles sqlalchemy cryptography psutil \
+            pyyaml jinja2 mammoth unpdf requests typer \
+            "numpy<3" pytest pytest-asyncio pytest-xdist httpx
+          pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple \
+            "torch>=2.4,<2.11" "torchvision<0.26"
+          pip install "transformers>=4.51,<5.5"
+          pip install "bitsandbytes>=0.45"
+          for attempt in 1 2 3; do
+            if pip install "unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::unsloth_zoo install failed after 3 attempts"
+              exit 1
+            fi
+            sleep $((5 * attempt))
+          done
+          pip install -e . --no-deps
+
+      - name: "Repo tests (CPU, auto-discovered)"
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio
+          UNSLOTH_COMPILE_DISABLE: "1"
+        run: |
+          # Reason: these registry tests query live Hugging Face model metadata.
+          registry_deselects=(
+            "--deselect=tests/test_model_registry.py::test_model_registration"
+            # Reason: this is the second live Hugging Face registry probe.
+            "--deselect=tests/test_model_registry.py::test_all_model_registration"
+          )
+          # Reason: these expose a known no-torch tokenizers resolver bug unrelated to PR #10028.
+          resolver_deselects=(
+            "--deselect=tests/python/test_tokenizers_and_torch_constraint.py::TestE2ETokenizersFix::test_autoconfig_works_with_no_torch_runtime"
+            # Reason: this is the second known no-torch resolver failure.
+            "--deselect=tests/python/test_tokenizers_and_torch_constraint.py::TestE2EFullNoTorchSandbox::test_autoconfig_succeeds"
+          )
+          python -m pytest tests/ -q --tb=short -n 4 \
+            --ignore=tests/qlora \
+            --ignore=tests/saving \
+            --ignore=tests/utils \
+            --ignore=tests/sh \
+            --ignore=tests/studio/load_freeze \
+            --ignore=tests/studio/test_hardware_dispatch_matrix.py \
+            --ignore=tests/studio/test_is_mlx_dispatch_gate.py \
+            --ignore=tests/studio/test_xpu_spoof_pipeline.py \
+            --ignore=tests/vllm_compat \
+            --ignore=tests/version_compat \
+            -m "not server and not e2e" \
+            "${registry_deselects[@]}" \
+            "${resolver_deselects[@]}"
+
+      - name: "Hardware-spoof tests"
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio
+          UNSLOTH_COMPILE_DISABLE: "1"
+        run: |
+          python -m pytest -q --tb=short \
+            tests/studio/test_hardware_dispatch_matrix.py \
+            tests/studio/test_is_mlx_dispatch_gate.py \
+            tests/studio/test_xpu_spoof_pipeline.py
+
+      - name: "Event-loop latency tests"
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio
+          UNSLOTH_COMPILE_DISABLE: "1"
+        run: python -m pytest tests/studio/load_freeze -q --tb=short
+
+      - name: "CLI tests"
+        run: python -m pytest unsloth_cli/tests -q --tb=short
+
+      - name: "Save pip cache"
+        if: always()
+        uses: ./.github/actions/pip-cache-save
+        with:
+          dir: ${{ steps.pip-cache.outputs.dir }}
+          key: ${{ steps.pip-cache.outputs.key }}
+          cache-hit: ${{ steps.pip-cache.outputs.cache-hit }}
