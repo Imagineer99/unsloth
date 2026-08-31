@@ -2870,7 +2870,7 @@ if DEVICE_COUNT == 1 and int(os.environ.get("WORLD_SIZE", "1")) <= 1:
     accelerate.state.PartialState._prepare_backend = _prepare_backend
     # Must be a property: a bare function binds as a method, inverting every
     # `!= DistributedType.NO` guard in accelerate (#10016).
-    accelerate.accelerator.Accelerator.distributed_type = property(lambda self: DistributedType.NO)
+    accelerate.accelerator.Accelerator.distributed_type = lambda *args, **kwargs: DistributedType.NO
 
 
 # to move multiple tensors to the same device
