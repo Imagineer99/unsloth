@@ -3,9 +3,6 @@
 name: "PR 10028 General CPU CI"
 
 on:
-  push:
-    branches:
-      - "fix/pr-10028-accelerator-property-general-ci"
   workflow_dispatch:
 
 permissions:

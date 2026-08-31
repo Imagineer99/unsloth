@@ -1,0 +1,126 @@
+# Disposable fork-only follow-up for upstream PR #10028.
+
+name: "PR 10028 General CPU Follow-up"
+
+on:
+  push:
+    branches:
+      - "fix/pr-10028-accelerator-property-general-ci"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  classify-and-finish:
+    name: "Baseline parity + remaining CPU groups"
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "22"
+
+      - name: "Install the same CPU test environment"
+        run: |
+          python -m pip install --upgrade pip
+          pip install uv
+          pip install -r studio/backend/requirements/studio.txt
+          pip install \
+            python-multipart aiofiles sqlalchemy cryptography psutil \
+            pyyaml jinja2 mammoth unpdf requests typer \
+            "numpy<3" pytest pytest-asyncio pytest-xdist httpx
+          pip install \
+            --index-url https://download.pytorch.org/whl/cpu \
+            --extra-index-url https://pypi.org/simple \
+            "torch>=2.4,<2.11" "torchvision<0.26"
+          pip install "transformers>=4.51,<5.5"
+          pip install "bitsandbytes>=0.45"
+          for attempt in 1 2 3; do
+            if pip install "unsloth_zoo @ git+https://github.com/unslothai/unsloth-zoo"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::unsloth_zoo install failed after 3 attempts"
+              exit 1
+            fi
+            sleep $((5 * attempt))
+          done
+          pip install -e . --no-deps
+
+      - name: "Current-main versus merge-candidate parity for the sole outlier"
+        env:
+          CURRENT_MAIN_SHA: c47645fbd69953e174a8dea406eefe53d60c0cd1
+          MERGE_CANDIDATE_SHA: b87989186ac6f8ce778c599ef2e54048a43b6eca
+        run: |
+          git worktree add --detach "$RUNNER_TEMP/pr10028-current-main" "$CURRENT_MAIN_SHA"
+          python - <<'PY'
+          import importlib.util
+          import pathlib
+          import tempfile
+
+          roots = {
+              "current-main": pathlib.Path("${{ runner.temp }}/pr10028-current-main"),
+              "merge-candidate": pathlib.Path.cwd(),
+          }
+          outcomes = {}
+          body = """
+          import sys
+          before = len(sys.meta_path)
+          for _ in range(5):
+              _if.fix_torchao_nf4tensor_move()
+          print("ADDED", len(sys.meta_path) - before)
+          """
+          for label, root in roots.items():
+              test_path = root / "tests" / "test_torchao_nf4tensor_move.py"
+              spec = importlib.util.spec_from_file_location(f"torchao_probe_{label}", test_path)
+              module = importlib.util.module_from_spec(spec)
+              spec.loader.exec_module(module)
+              observed = []
+              for _ in range(5):
+                  with tempfile.TemporaryDirectory() as directory:
+                      temp = pathlib.Path(directory)
+                      module._make_torchao(temp, old=False, new=True)
+                      result = module._run(temp, body)
+                  assert result.returncode == 0, (label, result.stdout, result.stderr)
+                  line = result.stdout.strip().splitlines()[-1]
+                  assert line in {"ADDED 0", "ADDED 1"}, (label, result.stdout, result.stderr)
+                  observed.append(line)
+              outcomes[label] = observed
+              print(f"{label}: {observed}")
+          assert outcomes["current-main"] == outcomes["merge-candidate"], outcomes
+          print("PASS: sole broad-suite outlier has identical base/head behavior")
+          PY
+
+      - name: "PR-specific Accelerator property tests"
+        env:
+          UNSLOTH_COMPILE_DISABLE: "1"
+        run: python -m pytest tests/test_accelerator_distributed_type_patch.py -q --tb=short
+
+      - name: "Hardware-spoof tests"
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio
+          UNSLOTH_COMPILE_DISABLE: "1"
+        run: |
+          python -m pytest -q --tb=short \
+            tests/studio/test_hardware_dispatch_matrix.py \
+            tests/studio/test_is_mlx_dispatch_gate.py \
+            tests/studio/test_xpu_spoof_pipeline.py
+
+      - name: "Event-loop latency tests"
+        env:
+          PYTHONPATH: ${{ github.workspace }}/studio
+          UNSLOTH_COMPILE_DISABLE: "1"
+        run: python -m pytest tests/studio/load_freeze -q --tb=short
+
+      - name: "CLI tests"
+        run: python -m pytest unsloth_cli/tests -q --tb=short
