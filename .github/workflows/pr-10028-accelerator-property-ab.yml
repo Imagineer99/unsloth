@@ -28,6 +28,7 @@ jobs:
       - name: "Install pinned Accelerate test dependencies"
         shell: pwsh
         run: |
+          python -m pip install --disable-pip-version-check --index-url https://download.pytorch.org/whl/cpu "torch==2.8.0"
           python -m pip install --disable-pip-version-check "pytest==8.4.2" "accelerate==1.14.0"
 
       - name: "Show exact descriptor behavior"
