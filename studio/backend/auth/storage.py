@@ -13,7 +13,7 @@ import secrets
 import sqlite3
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterator, Optional, Tuple
 
 from utils.paths import auth_db_path, ensure_dir
@@ -24,6 +24,11 @@ DEFAULT_ADMIN_USERNAME = "unsloth"
 # Single source for the password policy; models/auth.py ChangePasswordRequest
 # and the terminal prompt both enforce it. Keep the unsloth_cli mirror in sync.
 MIN_PASSWORD_LENGTH = 8
+
+# Managed-account setup codes are high-entropy initial passwords. They are
+# intentionally short-lived because an owner may need to send one out of band.
+SETUP_CODE_TTL_MINUTES = 60
+_SETUP_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 # Plaintext bootstrap password file beside auth.db, deleted on first password
 # change so the credential never lingers on disk.
@@ -300,7 +305,9 @@ def get_connection() -> sqlite3.Connection:
             password_salt TEXT NOT NULL,
             password_hash TEXT NOT NULL,
             jwt_secret TEXT NOT NULL,
-            must_change_password INTEGER NOT NULL DEFAULT 0
+            must_change_password INTEGER NOT NULL DEFAULT 0,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            setup_code_expires_at TEXT
         );
         """
     )
@@ -348,6 +355,17 @@ def get_connection() -> sqlite3.Connection:
         conn.execute(
             "ALTER TABLE auth_user ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0"
         )
+    if "is_admin" not in columns:
+        conn.execute("ALTER TABLE auth_user ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        # The seeded legacy account is the installation owner. Upgrade it in
+        # the migration transaction; doing this on every read would turn all
+        # auth lookups into SQLite writers.
+        conn.execute(
+            "UPDATE auth_user SET is_admin = 1 WHERE username = ?",
+            (DEFAULT_ADMIN_USERNAME,),
+        )
+    if "setup_code_expires_at" not in columns:
+        conn.execute("ALTER TABLE auth_user ADD COLUMN setup_code_expires_at TEXT")
     refresh_columns = {row["name"] for row in conn.execute("PRAGMA table_info(refresh_tokens)")}
     if "is_desktop" not in refresh_columns:
         conn.execute("ALTER TABLE refresh_tokens ADD COLUMN is_desktop INTEGER NOT NULL DEFAULT 0")
@@ -620,6 +638,8 @@ def create_initial_user(
     jwt_secret: str,
     *,
     must_change_password: bool = False,
+    is_admin: bool = False,
+    setup_code_expires_at: Optional[str] = None,
 ) -> None:
     """
     Create the initial admin user in the database.
@@ -638,11 +658,21 @@ def create_initial_user(
                 password_salt,
                 password_hash,
                 jwt_secret,
-                must_change_password
+                must_change_password,
+                is_admin,
+                setup_code_expires_at
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (username, salt, pwd_hash, jwt_secret, int(must_change_password)),
+            (
+                username,
+                salt,
+                pwd_hash,
+                jwt_secret,
+                int(must_change_password),
+                int(is_admin),
+                setup_code_expires_at,
+            ),
         )
         conn.commit()
     finally:
@@ -659,6 +689,166 @@ def delete_user(username: str) -> None:
     try:
         conn.execute("DELETE FROM auth_user WHERE username = ?", (username,))
         conn.commit()
+    finally:
+        conn.close()
+
+
+def is_admin(username: str) -> bool:
+    """Return whether ``username`` may manage installation accounts."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT is_admin FROM auth_user WHERE username = ?",
+            (username,),
+        ).fetchone()
+        return bool(row and row["is_admin"])
+    finally:
+        conn.close()
+
+
+def list_users() -> list[dict]:
+    """List public account metadata; password and signing data never leave storage."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            """
+            SELECT username, must_change_password, is_admin, setup_code_expires_at
+            FROM auth_user
+            ORDER BY is_admin DESC, username COLLATE NOCASE
+            """
+        ).fetchall()
+        return [
+            {
+                "username": row["username"],
+                "must_change_password": bool(row["must_change_password"]),
+                "is_admin": bool(row["is_admin"]),
+                "setup_code_expires_at": row["setup_code_expires_at"],
+                "setup_code_expired": _setup_code_expired(row["setup_code_expires_at"]),
+            }
+            for row in rows
+        ]
+    finally:
+        conn.close()
+
+
+def _new_setup_code() -> str:
+    """Return an 80-bit, human-readable setup code without ambiguous glyphs."""
+    raw = "".join(secrets.choice(_SETUP_CODE_ALPHABET) for _ in range(16))
+    return "-".join(raw[index : index + 4] for index in range(0, len(raw), 4))
+
+
+def _new_setup_code_expiry() -> str:
+    return (datetime.now(timezone.utc) + timedelta(minutes = SETUP_CODE_TTL_MINUTES)).isoformat()
+
+
+def _setup_code_expired(expires_at: Optional[str]) -> bool:
+    if expires_at is None:
+        return False
+    try:
+        return datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc)
+    except (TypeError, ValueError):
+        # Fail closed if a managed credential's expiry was corrupted.
+        return True
+
+
+def create_managed_user(username: str) -> dict:
+    """Create a standard account and return its one-time-visible initial password."""
+    setup_code = _new_setup_code()
+    expires_at = _new_setup_code_expiry()
+    create_initial_user(
+        username = username,
+        password = setup_code,
+        jwt_secret = secrets.token_urlsafe(64),
+        must_change_password = True,
+        is_admin = False,
+        setup_code_expires_at = expires_at,
+    )
+    return {"setup_code": setup_code, "setup_code_expires_at": expires_at}
+
+
+def regenerate_managed_user_setup_code(username: str) -> dict:
+    """Replace a pending managed account's setup code and revoke its sessions."""
+    from .hashing import hash_password
+
+    setup_code = _new_setup_code()
+    expires_at = _new_setup_code_expiry()
+    salt, pwd_hash = hash_password(setup_code)
+    jwt_secret = secrets.token_urlsafe(64)
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT is_admin, must_change_password FROM auth_user WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if row is None:
+            conn.rollback()
+            raise KeyError(username)
+        if bool(row["is_admin"]):
+            conn.rollback()
+            raise ValueError("Administrator setup codes cannot be regenerated")
+        if not bool(row["must_change_password"]):
+            conn.rollback()
+            raise RuntimeError("Account setup is already complete")
+        conn.execute(
+            """
+            UPDATE auth_user
+            SET password_salt = ?, password_hash = ?, jwt_secret = ?,
+                setup_code_expires_at = ?, must_change_password = 1
+            WHERE username = ?
+            """,
+            (salt, pwd_hash, jwt_secret, expires_at, username),
+        )
+        conn.execute("DELETE FROM refresh_tokens WHERE username = ?", (username,))
+        conn.commit()
+        return {"setup_code": setup_code, "setup_code_expires_at": expires_at}
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def setup_code_login_allowed(username: str, password_hash: str) -> bool:
+    """Check expiry against the exact credential hash that login verified."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT setup_code_expires_at
+            FROM auth_user
+            WHERE username = ? AND password_hash = ?
+            """,
+            (username, password_hash),
+        ).fetchone()
+        return row is not None and not _setup_code_expired(row["setup_code_expires_at"])
+    finally:
+        conn.close()
+
+
+def delete_managed_user(username: str) -> bool:
+    """Revoke and delete a non-admin account while retaining its workspace files."""
+    conn = get_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute(
+            "SELECT is_admin FROM auth_user WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if row is None:
+            conn.rollback()
+            return False
+        if bool(row["is_admin"]):
+            conn.rollback()
+            raise ValueError("Administrator accounts cannot be deleted")
+        conn.execute("DELETE FROM refresh_tokens WHERE username = ?", (username,))
+        conn.execute("DELETE FROM api_keys WHERE username = ?", (username,))
+        conn.execute("DELETE FROM auth_user WHERE username = ?", (username,))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -757,6 +947,7 @@ def ensure_default_admin() -> bool:
             password = bootstrap_pw,
             jwt_secret = secrets.token_urlsafe(64),
             must_change_password = True,
+            is_admin = True,
         )
         return True
     except sqlite3.IntegrityError:
@@ -801,7 +992,8 @@ def update_password(
             cursor = conn.execute(
                 """
                 UPDATE auth_user
-                SET password_salt = ?, password_hash = ?, jwt_secret = ?, must_change_password = 0
+                SET password_salt = ?, password_hash = ?, jwt_secret = ?,
+                    must_change_password = 0, setup_code_expires_at = NULL
                 WHERE username = ?
                 """,
                 (salt, pwd_hash, jwt_secret, username),
@@ -810,7 +1002,8 @@ def update_password(
             cursor = conn.execute(
                 """
                 UPDATE auth_user
-                SET password_salt = ?, password_hash = ?, jwt_secret = ?, must_change_password = 0
+                SET password_salt = ?, password_hash = ?, jwt_secret = ?,
+                    must_change_password = 0, setup_code_expires_at = NULL
                 WHERE username = ? AND password_hash = ?
                 """,
                 (salt, pwd_hash, jwt_secret, username, expect_password_hash),

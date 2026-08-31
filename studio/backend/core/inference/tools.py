@@ -80,6 +80,7 @@ from core.inference.mcp_client import (
 from storage import mcp_servers_db
 
 from loggers import get_logger
+from utils.workspace_context import workspace_thread
 
 logger = get_logger(__name__)
 
@@ -7398,8 +7399,8 @@ def _orphan_records_dir() -> str:
     from anything else.
     """
     try:
-        from utils.paths.storage_roots import studio_root
-        return os.path.join(str(studio_root()), "orphaned-projects")
+        from utils.paths.storage_roots import workspace_root
+        return os.path.join(str(workspace_root()), "orphaned-projects")
     except Exception:
         # Only if the studio home cannot be resolved at all: beside the sandbox
         # root, whose parent an administrator may have made read-only.
@@ -8113,16 +8114,29 @@ def _legacy_sandbox_root() -> str:
 def sandbox_root() -> str:
     """Root of the per-session tool sandboxes.
 
-    Under the studio home, so UNSLOTH_STUDIO_HOME keeps everything in one place
-    instead of leaving a stray ~/studio_sandbox. Falls back to the legacy path
-    only if the studio root cannot be resolved.
+    Under the authenticated workspace, so managed accounts cannot see or reuse
+    another account's tool files. The owner keeps the historical
+    ``UNSLOTH_STUDIO_HOME/sandbox`` path. Falls back to the legacy path only if
+    the workspace root cannot be resolved.
     """
     override = (os.environ.get("UNSLOTH_STUDIO_SANDBOX_HOME") or "").strip()
     if override:
-        return os.path.expanduser(override)
+        root = os.path.expanduser(override)
+        try:
+            from utils.workspace_context import (
+                LEGACY_WORKSPACE_SUBJECT,
+                current_workspace_subject,
+                workspace_key,
+            )
+            subject = current_workspace_subject()
+            if subject != LEGACY_WORKSPACE_SUBJECT:
+                return os.path.join(root, "workspaces", workspace_key(subject))
+        except Exception:
+            pass
+        return root
     try:
-        from utils.paths.storage_roots import studio_root
-        return os.path.join(str(studio_root()), "sandbox")
+        from utils.paths.storage_roots import workspace_root
+        return os.path.join(str(workspace_root()), "sandbox")
     except Exception:
         return _legacy_sandbox_root()
 
@@ -10829,7 +10843,11 @@ def _search_knowledge_base_with_budget(
             release_slot()
 
     try:
-        threading.Thread(target = search, name = "rag-tool-search", daemon = True).start()
+        workspace_thread(
+            target = search,
+            name = "rag-tool-search",
+            daemon = True,
+        ).start()
     except Exception:
         release_slot()
         raise
@@ -14823,8 +14841,8 @@ def _spill_records_dir() -> str:
     beside the other records this file already keeps outside the sandboxes.
     """
     try:
-        from utils.paths.storage_roots import studio_root  # noqa: PLC0415
-        return os.path.join(str(studio_root()), "tool-output-records")
+        from utils.paths.storage_roots import workspace_root  # noqa: PLC0415
+        return os.path.join(str(workspace_root()), "tool-output-records")
     except Exception:
         return os.path.join(
             os.path.dirname(os.path.realpath(sandbox_root())), "tool-output-records"

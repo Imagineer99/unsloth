@@ -8,6 +8,7 @@ from __future__ import annotations
 import copy
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Annotated, Any, Optional
 from urllib.parse import urlparse
 
@@ -36,6 +37,7 @@ from models.data_recipe import (
     RecipePayload,
 )
 from utils.utils import safe_error_detail, safe_curated_detail, log_and_http_error
+from utils.paths import recipe_datasets_root
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -277,6 +279,7 @@ def _inject_local_providers(
     recipe: dict[str, Any],
     request: Request,
     expect_gen: Optional[str] = None,
+    username: str = "unsloth",
 ) -> Optional[int]:
     """Mutate recipe in-place: point is_local providers at this server and mint
     a short-lived internal sk-unsloth-* key for workflow auth.
@@ -329,7 +332,7 @@ def _inject_local_providers(
         # the caller revokes it when the job terminates.
         expires_at = (datetime.now(timezone.utc) + timedelta(hours = 24)).isoformat()
         token, row = storage.create_api_key(
-            username = "unsloth",
+            username = username,
             name = "data-recipe workflow",
             expires_at = expires_at,
             internal = True,
@@ -434,7 +437,12 @@ def create_job(
             ) from exc
 
     try:
-        internal_api_key_id = _inject_local_providers(recipe, request, credential[1])
+        internal_api_key_id = _inject_local_providers(
+            recipe,
+            request,
+            expect_gen = credential[1],
+            username = credential[0],
+        )
     except CredentialRotated as exc:
         # A reset-password landed after this request authenticated; the workflow key
         # is refused, so answer like any other revoked credential rather than 500.
@@ -493,6 +501,15 @@ def _revoke_internal_api_key_safe(key_id: int) -> None:
         storage.revoke_internal_api_key(key_id)
     except Exception:
         pass
+
+
+def _workspace_artifact_path(raw_path: str) -> str:
+    """Resolve a recipe artifact without crossing the caller's workspace."""
+    root = recipe_datasets_root().resolve()
+    candidate = Path(raw_path).expanduser().resolve()
+    if not candidate.is_relative_to(root):
+        raise HTTPException(status_code = 404, detail = "dataset not found")
+    return str(candidate)
 
 
 @router.get("/jobs/{job_id}/status")
@@ -586,6 +603,7 @@ def publish_job_dataset(job_id: str, payload: PublishDatasetRequest):
             status_code = 400,
             detail = "This execution does not have publishable dataset artifacts.",
         )
+    artifact_path = _workspace_artifact_path(artifact_path)
 
     try:
         url = publish_recipe_dataset(
