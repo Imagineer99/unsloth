@@ -104,15 +104,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: "Restore pip cache"
-        id: pip-cache
-        uses: ./.github/actions/pip-cache-restore
-        with:
-          name: pr-10028-repo-cpu-tests
-          key-files: |
-            pyproject.toml
-            studio/backend/requirements/*.txt
-
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: "22"
@@ -146,7 +137,6 @@ jobs:
 
       - name: "Repo tests (CPU, auto-discovered)"
         env:
-          PYTHONPATH: ${{ github.workspace }}/studio
           UNSLOTH_COMPILE_DISABLE: "1"
         run: |
           # Reason: these registry tests query live Hugging Face model metadata.
@@ -194,11 +184,3 @@ jobs:
 
       - name: "CLI tests"
         run: python -m pytest unsloth_cli/tests -q --tb=short
-
-      - name: "Save pip cache"
-        if: always()
-        uses: ./.github/actions/pip-cache-save
-        with:
-          dir: ${{ steps.pip-cache.outputs.dir }}
-          key: ${{ steps.pip-cache.outputs.key }}
-          cache-hit: ${{ steps.pip-cache.outputs.cache-hit }}
