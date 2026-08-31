@@ -1,0 +1,45 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 10023 exact arguments A/B (Ubuntu)"
+
+on:
+  push:
+    branches:
+      - "fix/pr-10023-ab-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "22.17.1"
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install probe dependencies"
+        shell: bash
+        run: |
+          npm ci --prefix .github/repro
+
+      - name: "Install browser engines"
+        shell: bash
+        run: |
+          npm exec --prefix .github/repro -- playwright install --with-deps chromium firefox webkit
+
+      - name: "Run exact-argument A/B probe"
+        shell: bash
+        run: |
+          python .github/repro/pr10023_ab_probe.py chromium firefox webkit

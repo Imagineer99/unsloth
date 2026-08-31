@@ -1,0 +1,8 @@
+{
+  "name": "pr-10023-ab-probe",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
