@@ -43,6 +43,43 @@ class AuthStatusResponse(BaseModel):
     )
 
 
+class CurrentUserResponse(BaseModel):
+    """Identity and privileges for the active browser session."""
+
+    username: str
+    is_admin: bool
+
+
+class ManagedUserResponse(BaseModel):
+    """Public account metadata visible to an installation administrator."""
+
+    username: str
+    is_admin: bool
+    must_change_password: bool
+    setup_code_expires_at: Optional[str] = None
+    setup_code_expired: bool = False
+
+
+class CreatedManagedUserResponse(ManagedUserResponse):
+    """Creation-only response. The setup code is never returned by list APIs."""
+
+    setup_code: str
+
+
+class ManagedUserListResponse(BaseModel):
+    users: list[ManagedUserResponse]
+
+
+class CreateManagedUserRequest(BaseModel):
+    username: str = Field(
+        ...,
+        min_length = 3,
+        max_length = 64,
+        pattern = r"^[a-z0-9][a-z0-9._-]*$",
+        description = "Lowercase login name using letters, numbers, dot, underscore, or dash",
+    )
+
+
 class DesktopInitialPasswordRequest(BaseModel):
     """Set the seeded admin's first real password from the desktop app."""
 
