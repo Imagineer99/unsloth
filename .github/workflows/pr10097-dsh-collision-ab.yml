@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
+
+name: PR 10097 DSH collision A-B
+
+on:
+  push:
+    branches:
+      - fix/pr-10097-dsh-collision-repro
+      - fix/pr-10097-dsh-collision-fixed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-distro-dsh:
+    name: Ubuntu distro dsh identity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install Ubuntu's unrelated dsh package
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes dsh
+          /usr/bin/dsh --version
+      - name: Install the minimal Unsloth CLI test dependencies
+        run: >-
+          python -m pip install
+          click huggingface-hub nest-asyncio pydantic pyyaml pytest rich structlog typer
+      - name: Reject Distributed Shell as DeepSeek Harness
+        run: python .github/scripts/pr10097_dsh_collision_probe.py
