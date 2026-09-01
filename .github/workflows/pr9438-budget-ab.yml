@@ -1,0 +1,36 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 9438 Conversation Budget A/B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-9438-budget-ab-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install pinned probe dependency"
+        shell: bash
+        run: |
+          python -m pip install "structlog==25.5.0"
+
+      - name: "Run pinned conversation-budget probe"
+        shell: bash
+        run: |
+          python .github/scripts/pr9438_budget_ab_probe.py
