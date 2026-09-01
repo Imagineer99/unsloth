@@ -8,6 +8,7 @@ import subprocess
 from pathlib import Path
 
 import click
+import typer
 
 from studio.backend.utils import coding_agents
 from unsloth_cli.commands import start
@@ -47,7 +48,7 @@ def main() -> None:
             "npm install -g @deepseek-ai/dsh",
             True,
         )
-    except click.exceptions.Exit:
+    except (click.exceptions.Exit, typer.Exit):
         rejected = True
     print(f"LAUNCHER_RESOLVED={resolved}")
     print(f"LAUNCHER_REJECTED_DISTRO_DSH={rejected}")
