@@ -425,27 +425,9 @@ export function useTauriUpdate(isExternalServer = false) {
     const periodicTimer = setInterval(() => {
       scheduledCheckRef.current();
     }, PERIODIC_UPDATE_CHECK_INTERVAL_MS);
-    const checkWhenVisibleAndDue = () => {
-      if (document.hidden) return;
-      const lastCheckAt = lastCheckAtRef.current;
-      if (lastCheckAt === null) return;
-      const elapsed = Date.now() - lastCheckAt;
-      if (
-        elapsed >= 0 &&
-        elapsed < PERIODIC_UPDATE_CHECK_INTERVAL_MS
-      ) {
-        return;
-      }
-      scheduledCheckRef.current();
-    };
-    window.addEventListener("focus", checkWhenVisibleAndDue);
-    document.addEventListener("visibilitychange", checkWhenVisibleAndDue);
-
     return () => {
       clearTimeout(startupTimer);
       clearInterval(periodicTimer);
-      window.removeEventListener("focus", checkWhenVisibleAndDue);
-      document.removeEventListener("visibilitychange", checkWhenVisibleAndDue);
     };
   }, []);
 
