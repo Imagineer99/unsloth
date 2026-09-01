@@ -35,8 +35,8 @@ PROBE_MOUNT_REPLACEMENT = """      <TooltipProvider>
         <Pr9505ReproUpdateProbe />
         <AppearanceCustomizationEffect />"""
 
-IMPORT_NEEDLE = "use serde::Serialize;\n"
-IMPORTS = """use serde::Serialize;
+IMPORT_NEEDLE = "use serde::{Deserialize, Serialize};\n"
+IMPORTS = """use serde::{Deserialize, Serialize};
 #[cfg(windows)]
 use std::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -52,7 +52,6 @@ use windows_core::{Interface, BOOL};
 """
 
 STRUCT_NEEDLE = """pub(crate) struct DesktopUpdateMetadata {
-    rid: tauri::ResourceId,
     current_version: String,
     version: String,
     date: Option<String>,
@@ -253,6 +252,7 @@ fn pr9505_repro_start(webview: tauri::Webview) {
 
 FUNCTION_NEEDLE = """pub(crate) async fn check_desktop_update(
     webview: tauri::Webview,
+    state: tauri::State<'_, DesktopUpdateState>,
 ) -> Result<Option<DesktopUpdateMetadata>, String> {
 """
 FUNCTION_REPLACEMENT = (
