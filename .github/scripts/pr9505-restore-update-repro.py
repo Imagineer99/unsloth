@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
-"""Instrument a disposable Windows build for PR 9505 hidden-timer proof."""
+"""Instrument a disposable Windows build for PR 9505 tray-restore proof."""
 
 from __future__ import annotations
 
@@ -13,6 +13,13 @@ PERIODIC_DECLARATION = "const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
 REPRO_PERIODIC_DECLARATION = (
     "const PERIODIC_UPDATE_CHECK_INTERVAL_MS = 2_000; // PR 9505 repro only"
 )
+PERIODIC_TIMER_NEEDLE = """    const periodicTimer = setInterval(() => {
+      scheduledCheckRef.current();
+    }, PERIODIC_UPDATE_CHECK_INTERVAL_MS);"""
+REPRO_PERIODIC_TIMER = """    const periodicTimer = setInterval(() => {
+      scheduledCheckRef.current();
+    }, 60_000); // PR 9505 repro: keep the interval dormant during restore proof"""
+RESTORE_HANDLER_NEEDLE = "const checkWhenVisibleAndDue = () => {"
 VISIBLE_DECLARATION = '"visible": false,'
 REPRO_VISIBLE_DECLARATION = '"visible": true,'
 PROBE_COMPONENT_NEEDLE = "export function AppProvider({ children }: AppProviderProps) {"
@@ -68,8 +75,7 @@ fn pr9505_repro_start(webview: tauri::Webview) {
     }
 
     tauri::async_runtime::spawn(async move {
-        // Return the first update check before suspending the renderer, then
-        // leave enough time for four accelerated periodic intervals.
+        // Return the first update check before suspending the renderer.
         tokio::time::sleep(Duration::from_millis(250)).await;
         let app = webview.app_handle().clone();
         let Some(window) = app.get_webview_window("main") else {
@@ -177,13 +183,69 @@ fn pr9505_repro_start(webview: tauri::Webview) {
             }
         }
 
+        // The renderer's periodic timer is deliberately dormant. Wait until
+        // the restore fallback is overdue and prove suspension itself did not
+        // run another JavaScript check.
         tokio::time::sleep(Duration::from_secs(8)).await;
+        let hidden_checks = PR9505_REPRO_CHECKS.load(Ordering::SeqCst);
+        if hidden_checks != 1 {
+            eprintln!(
+                "PR9505_REPRO HARNESS_ERROR hidden checks={hidden_checks}, expected=1"
+            );
+            std::process::exit(18);
+        }
+        eprintln!("PR9505_REPRO HIDDEN_COUNT_CONFIRMED checks={hidden_checks}");
+
+        let (resume_tx, resume_rx) = tokio::sync::oneshot::channel();
+        if let Err(error) = window.with_webview(move |platform| {
+            let result = (|| {
+                let controller = platform.controller();
+                let core = unsafe { controller.CoreWebView2()? };
+                let core3: ICoreWebView2_3 = core.cast()?;
+                unsafe {
+                    core3.Resume()?;
+                    controller.SetIsVisible(true)?;
+                }
+                Ok::<(), windows_core::Error>(())
+            })()
+            .map_err(|error| error.to_string());
+            let _ = resume_tx.send(result);
+        }) {
+            eprintln!("PR9505_REPRO HARNESS_ERROR resume dispatch failed: {error}");
+            std::process::exit(18);
+        }
+        match tokio::time::timeout(Duration::from_secs(5), resume_rx).await {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(error))) => {
+                eprintln!("PR9505_REPRO HARNESS_ERROR resume failed: {error}");
+                std::process::exit(18);
+            }
+            Ok(Err(error)) => {
+                eprintln!("PR9505_REPRO HARNESS_ERROR resume callback dropped: {error}");
+                std::process::exit(18);
+            }
+            Err(_) => {
+                eprintln!("PR9505_REPRO HARNESS_ERROR resume callback timed out");
+                std::process::exit(18);
+            }
+        }
+        if let Err(error) = window.show() {
+            eprintln!("PR9505_REPRO HARNESS_ERROR show failed: {error}");
+            std::process::exit(18);
+        }
+        if let Err(error) = window.set_focus() {
+            eprintln!("PR9505_REPRO HARNESS_ERROR focus failed: {error}");
+            std::process::exit(18);
+        }
+        eprintln!("PR9505_REPRO RESTORE_TRIGGERED");
+
+        tokio::time::sleep(Duration::from_secs(5)).await;
         let checks = PR9505_REPRO_CHECKS.load(Ordering::SeqCst);
         if checks >= 2 {
-            eprintln!("PR9505_REPRO PASS hidden update checks={checks}");
+            eprintln!("PR9505_REPRO PASS restored update checks={checks}");
             std::process::exit(0);
         }
-        eprintln!("PR9505_REPRO FAIL hidden update checks={checks}, expected>=2");
+        eprintln!("PR9505_REPRO FAIL restored update checks={checks}, expected>=2");
         std::process::exit(17);
     });
 }
@@ -217,7 +279,7 @@ def replace_once(text: str, needle: str, replacement: str, label: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--expect-periodic", choices = ("present", "absent"), required = True)
+    parser.add_argument("--expect-restore", choices = ("present", "absent"), required = True)
     args = parser.parse_args()
 
     repo = Path(__file__).resolve().parents[2]
@@ -228,18 +290,26 @@ def main() -> None:
 
     hook = hook_path.read_text(encoding = "utf-8")
     periodic_present = PERIODIC_DECLARATION in hook
-    if periodic_present != (args.expect_periodic == "present"):
+    if not periodic_present:
+        raise SystemExit("periodic interval declaration is missing")
+    restore_present = RESTORE_HANDLER_NEEDLE in hook
+    if restore_present != (args.expect_restore == "present"):
         raise SystemExit(
-            f"periodic timer presence={periodic_present}, expected={args.expect_periodic}"
+            f"restore handler presence={restore_present}, expected={args.expect_restore}"
         )
-    if periodic_present:
-        hook = replace_once(
-            hook,
-            PERIODIC_DECLARATION,
-            REPRO_PERIODIC_DECLARATION,
-            "periodic interval declaration",
-        )
-        hook_path.write_text(hook, encoding = "utf-8")
+    hook = replace_once(
+        hook,
+        PERIODIC_DECLARATION,
+        REPRO_PERIODIC_DECLARATION,
+        "periodic interval declaration",
+    )
+    hook = replace_once(
+        hook,
+        PERIODIC_TIMER_NEEDLE,
+        REPRO_PERIODIC_TIMER,
+        "periodic timer",
+    )
+    hook_path.write_text(hook, encoding = "utf-8")
 
     config = config_path.read_text(encoding = "utf-8")
     config = replace_once(
@@ -284,7 +354,8 @@ def main() -> None:
     updater_path.write_text(updater, encoding = "utf-8")
     print(
         "PR9505_REPRO PREPARED "
-        f"periodic_timer_present={str(periodic_present).lower()} "
+        f"restore_handler_present={str(restore_present).lower()} "
+        "restore_due_ms=2000 periodic_timer_ms=60000 "
         "initial_window_visible=true forced_update_hook=true"
     )
 

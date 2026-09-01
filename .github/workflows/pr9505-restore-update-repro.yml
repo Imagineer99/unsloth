@@ -1,24 +1,24 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
 
-name: PR 9505 Hidden Desktop Update A-B Repro
+name: PR 9505 Tray Restore Update A-B Repro
 
 on:
   push:
     branches:
-      - 'fix/pr-9505-tray-update-repro-ci-*'
+      - 'fix/pr-9505-restore-ab-*'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pr-9505-hidden-update-${{ github.ref }}
+  group: pr-9505-restore-update-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  windows-webview2-hidden-timer:
-    name: Windows WebView2 hidden timer
+  windows-webview2-tray-restore:
+    name: Windows WebView2 tray restore
     runs-on: windows-latest
     timeout-minutes: 35
     steps:
@@ -44,11 +44,11 @@ jobs:
       - name: Lockfile supply-chain audit
         run: python scripts/lockfile_supply_chain_audit.py
 
-      - name: Prepare deterministic WebView2 suspension probe
+      - name: Prepare deterministic WebView2 restore probe
         shell: pwsh
         run: |
           $expect = if ('${{ github.ref_name }}'.EndsWith('-head')) { 'present' } else { 'absent' }
-          python .github/scripts/pr9505-hidden-update-repro.py --expect-periodic $expect
+          python .github/scripts/pr9505-restore-update-repro.py --expect-restore $expect
 
       - name: Install frontend and pinned Tauri dependencies
         shell: pwsh
@@ -66,7 +66,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
         run: npx --prefix studio tauri build --debug --no-bundle
 
-      - name: Run hidden-renderer update probe
+      - name: Run suspended-renderer restore probe
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path repro-logs | Out-Null
@@ -89,7 +89,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pr9505-hidden-update-${{ github.run_id }}
+          name: pr9505-restore-update-${{ github.run_id }}
           path: repro-logs
           if-no-files-found: warn
           retention-days: 7
