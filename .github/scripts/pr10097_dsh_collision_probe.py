@@ -5,10 +5,13 @@
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import click
 import typer
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from studio.backend.utils import coding_agents
 from unsloth_cli.commands import start
