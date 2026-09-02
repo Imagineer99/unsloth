@@ -219,6 +219,7 @@ def documents_root() -> Path:
 
 
 def project_workspaces_root() -> Path:
+    assert_workspace_binding_current()
     override = (os.environ.get("UNSLOTH_STUDIO_PROJECTS_HOME") or "").strip()
     if override:
         root = Path(override).expanduser()
@@ -231,6 +232,7 @@ def project_workspaces_root() -> Path:
 
 
 def tmp_root() -> Path:
+    assert_workspace_binding_current()
     root = Path(tempfile.gettempdir()) / "unsloth-studio"
     subject = current_workspace_subject()
     if subject == LEGACY_WORKSPACE_SUBJECT:

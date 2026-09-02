@@ -5085,11 +5085,16 @@ def test_openai_video_jobs_do_not_outlive_their_account():
     video_routes._jobs.clear()
 
 
-def test_the_cache_paths_are_owner_only_in_both_directions():
+def test_installation_paths_are_owner_only_in_both_directions():
     import inspect
 
     from routes import settings as settings_routes
-    for route in ("get_hugging_face_cache", "update_hugging_face_cache"):
+    for route in (
+        "get_hugging_face_cache",
+        "update_hugging_face_cache",
+        "get_llama_cpp_path",
+        "update_llama_cpp_path",
+    ):
         signature = inspect.signature(getattr(settings_routes, route))
         dependency = signature.parameters["current_subject"].default
         assert dependency.dependency is settings_routes.require_install_admin, route
@@ -5159,6 +5164,79 @@ def test_a_request_admitted_before_deletion_cannot_name_the_workspace_again():
         assert workspace_root() is not None
     finally:
         reset_workspace_subject(fresh)
+
+
+def test_every_subject_keyed_root_rejects_a_stale_workspace_binding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    from utils.paths.storage_roots import project_workspaces_root, tmp_root
+    from utils.workspace_context import RetiredWorkspaceError, note_workspace_retired
+
+    monkeypatch.setenv("UNSLOTH_STUDIO_PROJECTS_HOME", str(tmp_path / "projects"))
+    admitted = set_workspace_subject("stale-root-user")
+    try:
+        assert project_workspaces_root().is_relative_to(tmp_path / "projects")
+        assert tmp_root().name == workspace_key("stale-root-user")
+        note_workspace_retired("stale-root-user")
+        for root in (project_workspaces_root, tmp_root):
+            with pytest.raises(RetiredWorkspaceError):
+                root()
+    finally:
+        reset_workspace_subject(admitted)
+
+
+def test_api_usage_writer_drops_a_receipt_admitted_before_account_retirement():
+    from utils.workspace_context import note_workspace_retired
+
+    entered = threading.Event()
+    release = threading.Event()
+    written: list[str] = []
+
+    def sink(receipt: ApiUsageReceipt) -> bool:
+        if receipt.id == "queue-blocker":
+            entered.set()
+            assert release.wait(timeout = 5)
+        written.append(receipt.id)
+        return True
+
+    writer = ApiUsageWriter(sink = sink)
+    assert writer.submit(
+        ApiUsageReceipt(
+            id = "queue-blocker",
+            subject = "queue-blocker-user",
+            endpoint = "/v1/chat/completions",
+            model = "public/model",
+            status = "completed",
+            prompt_tokens = 1,
+            completion_tokens = 1,
+            total_tokens = 2,
+            created_at = 1,
+        )
+    )
+    assert entered.wait(timeout = 5)
+
+    admitted = set_workspace_subject("retired-receipt-user")
+    try:
+        assert writer.submit(
+            ApiUsageReceipt(
+                id = "stale-receipt",
+                subject = "retired-receipt-user",
+                endpoint = "/v1/chat/completions",
+                model = "private/model-name",
+                status = "completed",
+                prompt_tokens = 2,
+                completion_tokens = 3,
+                total_tokens = 5,
+                created_at = 2,
+            )
+        )
+    finally:
+        reset_workspace_subject(admitted)
+
+    note_workspace_retired("retired-receipt-user")
+    release.set()
+    assert writer.stop()
+    assert written == ["queue-blocker"]
 
 
 def test_the_fence_is_raised_before_the_quiescence_sweep():

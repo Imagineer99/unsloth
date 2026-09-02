@@ -75,6 +75,35 @@ def test_processed_cache_options_are_local_deduplicated_and_non_train_capable(
     ]
 
 
+def test_local_options_do_not_read_a_cached_dataset_the_caller_cannot_access(
+    monkeypatch, tmp_path
+):
+    from hub.services.datasets import cache_access
+    from utils.workspace_context import reset_workspace_subject, set_workspace_subject
+
+    processed = tmp_path / "org___private"
+    _write_processed_info(
+        processed / "secret-config" / "0.0.0" / "hash-a",
+        "secret-config",
+        ["secret-split"],
+    )
+    monkeypatch.setattr(cache_access, "caller_may_read_cached_dataset", lambda _repo: False)
+
+    token = set_workspace_subject("bob")
+    try:
+        response = local_options.local_dataset_options(
+            LocalDatasetOptionsRequest(
+                dataset_name = "org/private",
+                local_path = str(processed),
+            )
+        )
+    finally:
+        reset_workspace_subject(token)
+
+    assert response.cache_available is False
+    assert response.splits == []
+
+
 def test_processed_cache_options_ignore_symlinked_and_malformed_metadata(monkeypatch, tmp_path):
     cache_root = tmp_path / "datasets"
     processed = cache_root / "org___data"

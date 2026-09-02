@@ -118,6 +118,31 @@ def run_in_workspace(subject: str, target: Callable[..., Any], /, *args: Any, **
         reset_workspace_subject(token)
 
 
+def run_in_workspace_at_generation(
+    subject: str,
+    admission_generation: int,
+    target: Callable[..., Any],
+    /,
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run deferred work under the workspace generation that admitted it.
+
+    Unlike :func:`run_in_workspace`, this must not mint a fresh binding when a
+    queue finally executes: a deleted and recreated username is a different
+    workspace even though its subject string is identical.
+    """
+    token = WorkspaceBinding(
+        _workspace_subject.set(subject),
+        _workspace_admission.set((subject, admission_generation)),
+    )
+    try:
+        assert_workspace_binding_current()
+        return target(*args, **kwargs)
+    finally:
+        reset_workspace_subject(token)
+
+
 def workspace_thread(
     *,
     target: Callable[..., Any],

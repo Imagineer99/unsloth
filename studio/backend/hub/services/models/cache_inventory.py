@@ -742,7 +742,12 @@ async def list_cached_gguf_response(hf_token: Optional[str] = None):
     """List GGUF repos downloaded to HF cache, legacy Unsloth cache, and HF default cache."""
     try:
         scan = await _shared_cached_inventory_scan("gguf", _scan_cached_gguf)
-        return {"cached": scan.rows, "scan_confirmed": scan.confirmed}
+        from hub.services.models.cache_access import visible_cached_model_rows
+
+        return {
+            "cached": await asyncio.to_thread(visible_cached_model_rows, scan.rows, hf_token),
+            "scan_confirmed": scan.confirmed,
+        }
     except Exception as e:
         from fastapi import HTTPException
         logger.error(
@@ -1245,7 +1250,12 @@ async def list_cached_models_response(hf_token: Optional[str] = None):
     """List non-GGUF model repos downloaded to HF cache, legacy Unsloth cache, and HF default cache."""
     try:
         scan = await _shared_cached_inventory_scan("models", _scan_cached_models)
-        return {"cached": scan.rows, "scan_confirmed": scan.confirmed}
+        from hub.services.models.cache_access import visible_cached_model_rows
+
+        return {
+            "cached": await asyncio.to_thread(visible_cached_model_rows, scan.rows, hf_token),
+            "scan_confirmed": scan.confirmed,
+        }
     except Exception as e:
         from fastapi import HTTPException
         logger.error(

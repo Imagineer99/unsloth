@@ -5153,10 +5153,18 @@ def _preferred_gguf_copy(
 
 
 @router.get("/cached-gguf")
-async def list_cached_gguf(current_subject: str = Depends(get_current_subject)):
+async def list_cached_gguf(
+    current_subject: str = Depends(get_current_subject),
+    hf_token: HfTokenArg = Depends(get_request_hf_token),
+):
     """List GGUF repos downloaded to HF cache, legacy Unsloth cache, and HF default cache."""
     try:
-        return {"cached": cached_gguf_rows()}
+        from hub.services.models.cache_access import visible_cached_model_rows
+
+        rows = cached_gguf_rows()
+        return {
+            "cached": await asyncio.to_thread(visible_cached_model_rows, rows, hf_token)
+        }
     except Exception as e:
         logger.error(f"Error listing cached GGUF repos: {e}", exc_info = True)
         return {"cached": []}
@@ -5264,7 +5272,12 @@ async def list_cached_models(
 ):
     """List non-GGUF model repos downloaded to HF cache, legacy Unsloth cache, and HF default cache."""
     try:
-        return {"cached": cached_model_rows()}
+        from hub.services.models.cache_access import visible_cached_model_rows
+
+        rows = cached_model_rows()
+        return {
+            "cached": await asyncio.to_thread(visible_cached_model_rows, rows, hf_token)
+        }
     except Exception as e:
         logger.error(f"Error listing cached models: {e}", exc_info = True)
         return {"cached": []}
@@ -5742,8 +5755,19 @@ async def list_checkpoints(
         )
 
 
-# Successful estimates only, keyed by model id. Failures aren't cached so they can recover.
-_EXPORT_SIZE_CACHE: dict[str, tuple[int, int, str]] = {}
+# Successful estimates only. Credential identity is part of the key: a result
+# learned with one account's private token is not evidence for another caller.
+_EXPORT_SIZE_CACHE: dict[tuple[str, str], tuple[int, int, str]] = {}
+
+
+def _export_size_cache_identity(hf_token: HfTokenArg) -> str:
+    from hub.utils.hf_tokens import ANONYMOUS_CACHE_IDENTITY, is_anonymous
+
+    if is_anonymous(hf_token):
+        return ANONYMOUS_CACHE_IDENTITY
+    if hf_token is None:
+        return "ambient"
+    return "token:" + hashlib.blake2s(hf_token.encode(), digest_size = 16).hexdigest()
 
 
 def advertised_shared_model_roots() -> list[str]:
@@ -5840,14 +5864,15 @@ def _is_sizable_local_path(model: str) -> bool:
 
 
 def _export_size_cached(
-    model: str, hf_token: Optional[str]
+    model: str, hf_token: HfTokenArg
 ) -> tuple[Optional[int], Optional[int], str]:
     """Estimate a model's fp16/bf16-equivalent size in bytes (+ total params).
 
-    Memoizes successful results by model id; never raises (failures return
+    Memoizes successful results by model and credential scope; never raises (failures return
     (None, None, "unavailable") and are not cached). Blocking I/O; call off-thread.
     """
-    cached = _EXPORT_SIZE_CACHE.get(model)
+    cache_key = (model, _export_size_cache_identity(hf_token))
+    cached = _EXPORT_SIZE_CACHE.get(cache_key)
     if cached is not None:
         return cached
     try:
@@ -5867,7 +5892,7 @@ def _export_size_cached(
         if not fp16_bytes or fp16_bytes <= 0:
             return None, None, source or "unavailable"
         result = (int(fp16_bytes), int(fp16_bytes) // 2, source)
-        _EXPORT_SIZE_CACHE[model] = result
+        _EXPORT_SIZE_CACHE[cache_key] = result
         return result
     except Exception as e:  # a size hint must never break export
         logger.warning("Could not estimate export size for '%s': %s", model, e)
@@ -5885,6 +5910,13 @@ async def get_export_size(
     Returns nulls with HTTP 200 when the size can't be determined. The HF token
     (for gated repos) comes from the X-HF-Token header so it never hits URLs/logs.
     """
+    from auth.storage import is_installation_owner
+    from hub.utils.hf_tokens import hf_token_arg
+
+    effective_hf_token = hf_token_arg(
+        hf_token,
+        allow_ambient_token = is_installation_owner(current_subject),
+    )
     if is_local_path(model):
         if not _is_sizable_local_path(model):
             return ExportSizeResponse(
@@ -5895,7 +5927,7 @@ async def get_export_size(
         resolved = resolve_cached_repo_id_case(model)
     # Blocking network/disk I/O: run off the event loop.
     fp16_bytes, total_params, source = await asyncio.to_thread(
-        _export_size_cached, resolved, hf_token
+        _export_size_cached, resolved, effective_hf_token
     )
     return ExportSizeResponse(
         model = resolved,
