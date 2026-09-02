@@ -1,0 +1,99 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026-present the Unsloth AI Inc. team. All rights reserved.
+
+name: Repro - Z-Image torch dynamo import
+
+on:
+  push:
+    branches:
+      - fix/repro-torch-dynamo-image-load
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-pypi-install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.12'
+
+      - name: Install the current public packages normally
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade unsloth
+          python -m pip check
+
+      - name: Record the resolved environment
+        run: |
+          python - <<'PY'
+          import importlib.metadata as metadata
+          import platform
+          import sys
+
+          print("platform:", platform.platform())
+          print("python:", sys.version)
+          for package in ("unsloth", "unsloth_zoo", "torch", "torchvision", "diffusers", "transformers"):
+              print(f"{package}: {metadata.version(package)}")
+          PY
+
+      - name: Repeat the cold Z-Image import path
+        run: |
+          python - <<'PY'
+          import subprocess
+          import sys
+
+          probe = r'''
+          import pathlib
+          import sys
+          import threading
+
+          import studio
+
+          backend = pathlib.Path(studio.__file__).resolve().parent / "backend"
+          sys.path.insert(0, str(backend))
+
+          errors = []
+          gate = threading.Barrier(3)
+
+          def run(name, load):
+              try:
+                  gate.wait()
+                  load()
+              except BaseException as exc:
+                  errors.append((name, repr(exc)))
+
+          def load_image_stack():
+              from core.inference.diffusion import get_diffusion_backend
+              from diffusers.models.transformers.transformer_z_image import ZImageTransformer2DModel
+              assert get_diffusion_backend() is not None
+              assert ZImageTransformer2DModel is not None
+
+          def load_dynamo():
+              import torch._dynamo
+              import torch._dynamo.utils
+              assert torch._dynamo.utils is not None
+
+          threads = [
+              threading.Thread(target=run, args=("image", load_image_stack)),
+              threading.Thread(target=run, args=("dynamo", load_dynamo)),
+          ]
+          for thread in threads:
+              thread.start()
+          gate.wait()
+          for thread in threads:
+              thread.join()
+
+          if errors:
+              raise RuntimeError(errors)
+          '''
+
+          for attempt in range(1, 11):
+              print(f"cold import attempt {attempt}/10", flush=True)
+              subprocess.run([sys.executable, "-c", probe], check=True)
+
+          print("all cold imports completed without a partially initialized torch._dynamo")
+          PY
