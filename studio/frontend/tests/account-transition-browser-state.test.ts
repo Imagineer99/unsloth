@@ -15,6 +15,7 @@ const { store } = installLocalStorageFake();
 const {
   ACCOUNT_CHANGED_EVENT,
   ACCOUNT_SCOPED_STORAGE_KEYS,
+  accountScopedDatabaseName,
   legacyBrowserDataBelongsToCurrentAccount,
   notifyAccountAuthenticated,
   purgeAccountScopedBrowserState,
@@ -61,6 +62,31 @@ test("a managed account signing in first does not inherit the legacy data", () =
   assert.equal(legacyBrowserDataBelongsToCurrentAccount(), true);
   assert.equal(store.get("unsloth_hf_token"), "alice-value");
   assert.equal(store.get("chat-draft:thread-1"), "unsent private text");
+});
+
+test("first managed login preserves unlisted legacy content for the owner", () => {
+  seedAlicesBrowser();
+  store.set("unsloth_model_configs", "{owner model configuration}");
+
+  notifyAccountAuthenticated("bob", "alice");
+  assert.equal(store.get("unsloth_model_configs"), undefined);
+
+  notifyAccountAuthenticated("alice", "alice");
+  assert.equal(
+    store.get("unsloth_model_configs"),
+    "{owner model configuration}",
+  );
+});
+
+test("recipe databases use the legacy name only for their owner", () => {
+  store.clear();
+  assert.equal(accountScopedDatabaseName("unsloth-data-recipes"), "unsloth-data-recipes");
+
+  notifyAccountAuthenticated("bob", "alice");
+  assert.notEqual(accountScopedDatabaseName("unsloth-data-recipes"), "unsloth-data-recipes");
+
+  notifyAccountAuthenticated("alice", "alice");
+  assert.equal(accountScopedDatabaseName("unsloth-data-recipes"), "unsloth-data-recipes");
 });
 
 test("chat deletion preferences do not carry into the next account", () => {

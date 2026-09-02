@@ -168,41 +168,28 @@ function isAccountScopedKey(key: string): boolean {
   return APP_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix));
 }
 
-/**
- * IndexedDB databases holding one account's records.
- *
- * localStorage was only ever half of it: recipes carry plaintext provider and
- * Hub tokens, prompts and local paths, and execution records carry generated
- * rows and logs.
- */
-const ACCOUNT_SCOPED_DATABASES: readonly string[] = [
-  "unsloth-data-recipes",
-  "unsloth-data-recipe-executions",
-];
-
-function deleteAccountScopedDatabases(): void {
-  try {
-    if (typeof indexedDB === "undefined") return;
-    for (const name of ACCOUNT_SCOPED_DATABASES) {
-      try {
-        indexedDB.deleteDatabase(name);
-      } catch {
-        // An open handle blocks the delete; the reload below drops it, and the
-        // next transition deletes it for real.
-      }
-    }
-  } catch {
-    // No IndexedDB (tests, private modes that disable it): nothing to drop.
-  }
-}
-
-/** Drop every account-scoped key and database. */
+/** Drop every account-scoped localStorage key. */
 export function purgeAccountScopedBrowserState(): void {
   for (const key of ACCOUNT_SCOPED_STORAGE_KEYS) removeItem(key);
   for (const key of storedKeys()) {
     if (isAccountScopedKey(key)) removeItem(key);
   }
-  deleteAccountScopedDatabases();
+}
+
+/**
+ * Give an account-owned IndexedDB a stable, isolated name.
+ *
+ * The pre-accounts installation owner keeps the historical database name, so
+ * an upgrade does not strand its recipes. Managed accounts receive their own
+ * database after authentication; the login flow reloads before those modules
+ * are constructed for the new account.
+ */
+export function accountScopedDatabaseName(baseName: string): string {
+  const account = readItem(LAST_ACCOUNT_KEY);
+  if (account === null || account === readItem(LEGACY_DATA_OWNER_KEY)) {
+    return baseName;
+  }
+  return `${baseName}::${encodeURIComponent(account)}`;
 }
 
 /**
@@ -239,12 +226,8 @@ export function legacyBrowserDataBelongsToCurrentAccount(): boolean {
  */
 function quarantineLegacyState(): void {
   const held: Record<string, string> = {};
-  for (const key of ACCOUNT_SCOPED_STORAGE_KEYS) {
-    const value = readItem(key);
-    if (value !== null) held[key] = value;
-  }
   for (const key of storedKeys()) {
-    if (!ACCOUNT_SCOPED_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))) continue;
+    if (!isAccountScopedKey(key)) continue;
     const value = readItem(key);
     if (value !== null) held[key] = value;
   }
