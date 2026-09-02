@@ -198,6 +198,7 @@ export const es = {
     tabs: {
       general: "General",
       profile: "Perfil",
+      accounts: "Cuentas",
       appearance: "Apariencia",
       resources: "Sistema",
       chat: "Chat",

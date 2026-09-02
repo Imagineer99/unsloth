@@ -197,6 +197,7 @@ export const ptBR = {
     tabs: {
       general: "Geral",
       profile: "Perfil",
+      accounts: "Contas",
       appearance: "Aparência",
       resources: "Sistema",
       chat: "Chat",

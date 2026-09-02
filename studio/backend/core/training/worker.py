@@ -3384,7 +3384,15 @@ def _run_mlx_training(event_queue, stop_queue, config):
                 SummaryWriter = None
         if SummaryWriter is not None:
             try:
-                tb_dir = config.get("tensorboard_dir") or f"{output_dir}/runs"
+                # Through the same resolver the non-MLX path uses: this value
+                # comes from the request, and handed to SummaryWriter raw it wrote
+                # event files into any directory the backend can reach.
+                from utils.paths import resolve_tensorboard_dir
+                tb_dir = str(
+                    resolve_tensorboard_dir(config.get("tensorboard_dir"))
+                    if config.get("tensorboard_dir")
+                    else f"{output_dir}/runs"
+                )
                 tb_writer = SummaryWriter(log_dir = tb_dir)
             except Exception as e:
                 _send("status", status_message = f"tensorboard init failed: {e}")
@@ -3666,6 +3674,16 @@ def _recorded_local_base(model_name) -> "tuple[str | None, bool]":
         return None, True
 
 
+def _bind_worker_workspace(config: dict):
+    """Bind spawn-only workspace metadata before the worker resolves any paths."""
+    subject = config.get("subject")
+    if not isinstance(subject, str) or not subject:
+        return None
+    from utils.workspace_context import set_workspace_subject
+
+    return set_workspace_subject(subject)
+
+
 def run_training_process(*, event_queue: Any, stop_queue: Any, config: dict) -> None:
     """Subprocess entrypoint. Fresh Python — no stale module state.
 
@@ -3674,6 +3692,10 @@ def run_training_process(*, event_queue: Any, stop_queue: Any, config: dict) -> 
         stop_queue: mp.Queue for stop commands from the parent.
         config: Training config dict with all parameters.
     """
+    # A spawn starts with the legacy ContextVar default. Bind the account before
+    # any dynamic output/cache/database path is resolved.
+    _bind_worker_workspace(config)
+
     # Off on Linux (forked map() workers deadlock); on spawn platforms map() is in-process.
     os.environ["TOKENIZERS_PARALLELISM"] = (
         "true" if sys.platform in ("win32", "darwin") else "false"

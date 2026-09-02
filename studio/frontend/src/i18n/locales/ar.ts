@@ -195,6 +195,7 @@ export const ar = {
     tabs: {
       general: "عام",
       profile: "الملف الشخصي",
+      accounts: "الحسابات",
       appearance: "المظهر",
       resources: "النظام",
       chat: "المحادثة",

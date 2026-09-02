@@ -650,6 +650,8 @@ test("a localStorage that throws degrades on every path instead of propagating",
       throw error;
     },
     removeItem: () => undefined,
+    length: 0,
+    key: () => null,
   };
   const asWindow = globalThis as unknown as { window: { localStorage: StorageFake } };
   Object.assign(globalThis, { localStorage: throwing });

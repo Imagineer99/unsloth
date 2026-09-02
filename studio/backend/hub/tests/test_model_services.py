@@ -813,6 +813,49 @@ def test_manifest_parser_rejects_non_text_v2_variant(invalid_variant):
 
 
 @pytest.mark.parametrize(
+    "inventory_request",
+    [
+        cache_inventory.list_cached_gguf_response,
+        cache_inventory.list_cached_models_response,
+    ],
+)
+def test_hub_cache_inventories_filter_the_shared_scan_per_request(
+    monkeypatch, inventory_request
+):
+    from fastapi import HTTPException
+    from routes import inference as inference_routes
+    from utils.workspace_context import reset_workspace_subject, set_workspace_subject
+
+    async def shared_scan(_name, _scanner):
+        return cache_inventory._CachedInventoryScan(
+            [
+                {"repo_id": "Org/Public", "cache_path": "/cache/public"},
+                {"repo_id": "Org/Alices-Private", "cache_path": "/cache/private"},
+            ],
+            True,
+        )
+
+    def guard(repo_id, _token, **_kwargs):
+        if repo_id == "Org/Alices-Private":
+            raise HTTPException(status_code = 403, detail = "private")
+
+    monkeypatch.setattr(cache_inventory, "_shared_cached_inventory_scan", shared_scan)
+    monkeypatch.setattr(
+        inference_routes,
+        "_reject_private_hub_repo_without_an_account_token",
+        guard,
+    )
+    token = set_workspace_subject("bob")
+    try:
+        response = asyncio.run(inventory_request(None))
+    finally:
+        reset_workspace_subject(token)
+
+    assert response["scan_confirmed"] is True
+    assert [row["repo_id"] for row in response["cached"]] == ["Org/Public"]
+
+
+@pytest.mark.parametrize(
     ("inventory_request", "scanner_name"),
     [
         (cache_inventory.list_cached_gguf_response, "_scan_cached_gguf"),

@@ -199,6 +199,7 @@ export const fr = {
     tabs: {
       general: "Général",
       profile: "Profil",
+      accounts: "Comptes",
       appearance: "Apparence",
       resources: "Système",
       chat: "Discussion",

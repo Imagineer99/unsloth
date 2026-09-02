@@ -24,6 +24,7 @@ from storage.api_usage_db import (
     canonical_api_model,
     canonical_api_subject,
 )
+from utils.workspace_context import workspace_generation
 
 
 logger = logging.getLogger(__name__)
@@ -175,6 +176,9 @@ class ApiMonitorEntry:
     updated_at: float
     # Who this row is attributed to; on a shared row it does not restrict visibility.
     subject: Optional[str] = None
+    # The account incarnation that admitted this request. Deferred durable
+    # receipts must not mint a fresh binding for a recreated username.
+    admission_generation: Optional[int] = None
     # True for sk-unsloth callers only: the panel auto-opens on these, not Unsloth's chat.
     via_api_key: bool = False
     # Monotonic anchors so duration math survives wall-clock steps (NTP).
@@ -381,6 +385,7 @@ class ApiMonitor:
             started_at = now,
             updated_at = now,
             subject = subject,
+            admission_generation = workspace_generation(subject) if subject else None,
             via_api_key = via_api_key,
             started_monotonic = time.monotonic(),
             context_length = context_length,
@@ -896,6 +901,7 @@ class ApiMonitor:
                 created_at = int(entry.finished_at * 1000),
                 kind = entry.kind,
                 via_api_key = entry.via_api_key,
+                admission_generation = entry.admission_generation,
             ),
         )
 

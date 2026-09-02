@@ -12,10 +12,11 @@ import sqlite3
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Callable, Optional
 
 from storage.studio_db import get_connection, is_sqlite_busy_error
+from utils.workspace_context import run_in_workspace_at_generation, workspace_generation
 
 
 # Kept aligned with the API monitor's defensive upper bound; the storage layer validates
@@ -50,6 +51,7 @@ class ApiUsageReceipt:
     created_at: int
     kind: str = "request"
     via_api_key: bool = True
+    admission_generation: Optional[int] = None
 
 
 def _valid_token_count(value: object) -> bool:
@@ -197,6 +199,11 @@ class ApiUsageWriter:
         with self._state_lock:
             if self._stopped:
                 return False
+            if receipt.admission_generation is None:
+                receipt = replace(
+                    receipt,
+                    admission_generation = workspace_generation(receipt.subject),
+                )
             self._queue.put_nowait(receipt)
             return True
 
@@ -232,7 +239,13 @@ class ApiUsageWriter:
                 busy_failures = 0
                 while True:
                     try:
-                        self._sink(item)  # type: ignore[arg-type]
+                        receipt = item  # type: ignore[assignment]
+                        run_in_workspace_at_generation(
+                            receipt.subject,
+                            receipt.admission_generation,
+                            self._sink,
+                            receipt,
+                        )
                         break
                     except sqlite3.OperationalError as exc:
                         if not _is_busy_error(exc):

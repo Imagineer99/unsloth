@@ -720,6 +720,13 @@ def local_dataset_options(request: LocalDatasetOptionsRequest) -> LocalDatasetOp
     repo_id = request.dataset_name.strip()
     if not is_valid_repo_id(repo_id):
         return LocalDatasetOptionsResponse(cache_available = False, splits = [])
+    # Config and split names are private repository metadata just as much as a
+    # preview row is. The cache is installation-wide, so knowing the repo id or
+    # its predictable path must not be enough to read them.
+    from hub.services.datasets import cache_access
+
+    if not cache_access.caller_may_read_cached_dataset(repo_id):
+        return LocalDatasetOptionsResponse(cache_available = False, splits = [])
 
     selected = (
         dataset_cache_path_from_cache_path(request.local_path, repo_id)

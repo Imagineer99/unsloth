@@ -110,6 +110,41 @@ class TestExportSizeEndpoint(unittest.TestCase):
         self.assertEqual(first.fp16_bytes, second.fp16_bytes)
         self.assertEqual(mock_sizer.call_count, 1)
 
+    def test_private_result_is_not_reused_across_token_scopes(self):
+        def sized(_model, *, hf_token = None):
+            return (
+                (_QWEN35_FP16_BYTES, "safetensors")
+                if hf_token == "alice-token"
+                else (2 * 1024**3, "config")
+            )
+
+        with (
+            patch.object(self.models_route, "is_local_path", return_value = False),
+            patch.object(self.models_route, "resolve_cached_repo_id_case", side_effect = lambda m: m),
+            patch(
+                "utils.hardware.hardware.estimate_fp16_model_size_bytes",
+                side_effect = sized,
+            ) as mock_sizer,
+        ):
+            alice = asyncio.run(
+                self.models_route.get_export_size(
+                    model = "org/private-model",
+                    hf_token = "alice-token",
+                    current_subject = "alice",
+                )
+            )
+            bob = asyncio.run(
+                self.models_route.get_export_size(
+                    model = "org/private-model",
+                    hf_token = "bob-token",
+                    current_subject = "bob",
+                )
+            )
+
+        self.assertEqual(alice.fp16_bytes, _QWEN35_FP16_BYTES)
+        self.assertEqual(bob.fp16_bytes, 2 * 1024**3)
+        self.assertEqual(mock_sizer.call_count, 2)
+
     def test_failures_are_not_cached(self):
         # A transient failure must not poison the cache; a later call recovers.
         with patch(
@@ -139,6 +174,26 @@ class TestExportSizeEndpoint(unittest.TestCase):
                 )
             )
         self.assertEqual(mock_sizer.call_args.kwargs.get("hf_token"), "secret-token")
+
+    def test_managed_account_without_a_token_uses_anonymous_hub_access(self):
+        with (
+            patch.object(self.models_route, "is_local_path", return_value = False),
+            patch.object(self.models_route, "resolve_cached_repo_id_case", side_effect = lambda m: m),
+            patch("auth.storage.is_installation_owner", return_value = False),
+            patch(
+                "utils.hardware.hardware.estimate_fp16_model_size_bytes",
+                return_value = (None, "unavailable"),
+            ) as mock_sizer,
+        ):
+            asyncio.run(
+                self.models_route.get_export_size(
+                    model = "org/private-model",
+                    hf_token = None,
+                    current_subject = "managed-user",
+                )
+            )
+
+        self.assertIs(mock_sizer.call_args.kwargs.get("hf_token"), False)
 
     def test_arbitrary_local_path_is_not_scanned(self):
         # Unsafe local paths must not be scanned -> unavailable.

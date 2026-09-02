@@ -119,6 +119,11 @@ def pytest_configure(config):
         "markers",
         "allow_network: let this test make non-loopback connections (see _no_outbound_network)",
     )
+    config.addinivalue_line(
+        "markers",
+        "real_auto_sync: keep the real folder_sync.start_auto_sync "
+        "(see _no_background_folder_sync_worker in test_rag_linked_folders.py)",
+    )
 
 
 def pytest_addoption(parser):
@@ -230,20 +235,6 @@ def _confine_prequant_registration_memo():
     diffusion_prequant._SAFE_GLOBALS_REGISTERED = registered
     diffusion_prequant._RESOLVED_SAFE_GLOBALS.clear()
     diffusion_prequant._RESOLVED_SAFE_GLOBALS.update(resolved)
-
-
-@pytest.fixture(autouse = True)
-def _isolate_audio_gallery(monkeypatch, tmp_path):
-    """Keep generated-clip persistence out of the developer's real gallery.
-
-    /audio/generate persists every clip, so a route test with a fake TTS core left silent
-    wavs in ``studio_root()/audio`` for the Audio page to list. Here, not per-suite, so
-    no test can leak.
-    """
-    from core.inference import audio_gallery
-
-    monkeypatch.setattr(audio_gallery, "studio_root", lambda: tmp_path)
-    yield
 
 
 @pytest.fixture(autouse = True)
@@ -967,3 +958,28 @@ def _no_carried_over_hardware_measurements():
     _clear()
     yield
     _clear()
+
+
+@pytest.fixture(autouse = True)
+def _thumbnail_registry_does_not_outlive_a_test():
+    """Clear the search-image registry after every test, not just before.
+
+    It is one in-memory bucket per account for the life of the process, and tests
+    seed it directly through the state_for_tests seam. That seam replaced a
+    `monkeypatch.setattr(search_images, "_registry", {})`, which had been giving
+    them a teardown for free: monkeypatch put the original dict back, so entries a
+    test wrote never outlived it. Without that, a seeded entry survives into
+    whatever xdist schedules next on the same worker, whose clear then takes a
+    non-empty snapshot and reaps images it is not responsible for.
+
+    Only touched when the module is already imported, so this costs nothing for
+    the suites that never load it.
+    """
+    yield
+    module = sys.modules.get("core.inference.search_images")
+    if module is None:
+        return
+    try:
+        module.reset_registry_for_tests()
+    except Exception:  # noqa: BLE001 - a teardown must never fail the test it follows
+        pass

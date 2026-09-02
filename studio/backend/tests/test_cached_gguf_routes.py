@@ -31,6 +31,75 @@ from hub.services.models import catalog_classification as _classification
 from hub.services.models import gguf_variants as GV
 
 
+def test_cached_model_inventory_confirms_the_supplied_token_can_read_a_private_repo(
+    monkeypatch,
+):
+    from fastapi import HTTPException
+    from hub.services.models import cache_access
+    from routes import inference as inference_routes
+
+    def reject_private(*_args, **_kwargs):
+        raise HTTPException(status_code = 403, detail = "private")
+
+    monkeypatch.setattr(
+        inference_routes,
+        "_reject_private_hub_repo_without_an_account_token",
+        reject_private,
+    )
+
+    class FakeApi:
+        def __init__(self, token):
+            self.token = token
+
+        def model_info(self, _repo_id, *, files_metadata):
+            assert files_metadata is False
+            if self.token != "authorized-token":
+                raise PermissionError("not yours")
+
+    monkeypatch.setattr("huggingface_hub.HfApi", FakeApi)
+
+    assert not cache_access.caller_may_read_cached_model("Org/Private", "unrelated-token")
+    assert cache_access.caller_may_read_cached_model("Org/Private", "authorized-token")
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "row_builder", "kwargs"),
+    [
+        (models_route.list_cached_gguf, "cached_gguf_rows", {"hf_token": None}),
+        (models_route.list_cached_models, "cached_model_rows", {"hf_token": None}),
+    ],
+)
+def test_compatibility_cache_inventories_hide_repos_this_account_cannot_read(
+    monkeypatch, endpoint, row_builder, kwargs
+):
+    from fastapi import HTTPException
+    from routes import inference as inference_routes
+    from utils.workspace_context import reset_workspace_subject, set_workspace_subject
+
+    rows = [
+        {"repo_id": "Org/Public", "cache_path": "/cache/public"},
+        {"repo_id": "Org/Alices-Private", "cache_path": "/cache/private"},
+    ]
+    monkeypatch.setattr(models_route, row_builder, lambda *args, **kwargs: rows)
+
+    def guard(repo_id, _token, **_kwargs):
+        if repo_id == "Org/Alices-Private":
+            raise HTTPException(status_code = 403, detail = "private")
+
+    monkeypatch.setattr(
+        inference_routes,
+        "_reject_private_hub_repo_without_an_account_token",
+        guard,
+    )
+    token = set_workspace_subject("bob")
+    try:
+        response = asyncio.run(endpoint(current_subject = "bob", **kwargs))
+    finally:
+        reset_workspace_subject(token)
+
+    assert [row["repo_id"] for row in response["cached"]] == ["Org/Public"]
+
+
 def _answer(
     repo_id,
     variants = (),

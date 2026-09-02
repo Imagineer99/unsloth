@@ -37,6 +37,12 @@ from core._torchao_stub import (
 )
 from loggers import get_logger
 from utils.hardware import clear_gpu_cache
+from utils.workspace_context import (
+    LEGACY_WORKSPACE_SUBJECT,
+    ForeignWorkspaceActiveError,
+    current_workspace_subject,
+    workspace_thread,
+)
 
 from .diffusion_families import (
     DIFFUSION_CANCELLED_MSG,
@@ -881,6 +887,9 @@ class _LoadingState:
     # Where the companion BYTES land: ``base_repo``, or its mirror when one was swapped in. Never surfaced
     # (``base_repo`` stays the id status() reports), but the cache scan and the delete guard must look here.
     fetch_repo: Optional[str] = None
+    # The account that started this load. The teardown guards looked only at the
+    # generation, so with _gen None any account could end another's pull.
+    subject: str = LEGACY_WORKSPACE_SUBJECT
 
 
 @dataclass
@@ -893,6 +902,10 @@ class _GenState:
     first_step_at: float = 0.0
     # Computed once per step (in the callback) so it's stable between polls.
     eta_seconds: Optional[float] = None
+    # Whose generation this is. The engine is one process-wide singleton, so
+    # without it every account's poll sees every other account's progress and
+    # any account's cancel stops whoever happens to be generating.
+    subject: str = LEGACY_WORKSPACE_SUBJECT
 
 
 def _estimate_eta(total_steps: int, step: int, first_step_at: float, now: float) -> Optional[float]:
@@ -1194,8 +1207,15 @@ class DiffusionBackend:
         self._generation_cancel_lock = threading.Lock()
         # Cancel Event of the in-flight generation; per-generation so a cancel can't be lost or leak
         self._active_generate_cancel: Optional[threading.Event] = None
+        # The workspace the admitted request belongs to, for the window between
+        # admission and the first denoise step, where _gen is not published yet.
+        self._active_generate_cancel_subject: Optional[str] = None
         # Queued requests; cancel_generate() decides which Stop may signal.
-        self._queued_generate_cancels: set[threading.Event] = set()
+        # Event -> the workspace that queued it. The cancel route can reach these
+        # while _gen is still None, so without the owner recorded here one account
+        # cancelled every other account's queued request.
+        self._queued_generate_cancels: dict[threading.Event, str] = {}
+        # True while a generation owns the slot, including its epilogue.
         self._generation_owns_slot = False
 
         self._transition_owns_slot = False
@@ -1208,9 +1228,10 @@ class DiffusionBackend:
         self._gen: Optional[_GenState] = None
         # img2img/inpaint pipes built via from_pipe (shared modules, no extra VRAM); cleared on unload
         self._aux_pipes: dict[str, Any] = {}
-        # Loaded ControlNets and their from_pipe pipelines, reusing resident modules
-        self._cn_models: dict[str, Any] = {}
-        self._cn_pipes: dict[tuple[str, str], Any] = {}
+        # Loaded ControlNets and their from_pipe pipelines, reusing resident modules; cleared on unload.
+        # Keyed by _controlnet_cache_key (id + resolved path), not by id alone: see there.
+        self._cn_models: dict[tuple[str, str], Any] = {}
+        self._cn_pipes: dict[tuple[str, tuple[str, str]], Any] = {}
 
     @property
     def is_loaded(self) -> bool:
@@ -1279,7 +1300,7 @@ class DiffusionBackend:
         """
         admitted = False
         with self._generation_cancel_lock:
-            self._queued_generate_cancels.add(cancel)
+            self._queued_generate_cancels[cancel] = current_workspace_subject()
         try:
             while True:
                 while True:
@@ -1292,8 +1313,9 @@ class DiffusionBackend:
                         with self._generation_cancel_lock:
                             cancelled = cancel.is_set()
                             if not cancelled:
-                                self._queued_generate_cancels.discard(cancel)
+                                owner = self._queued_generate_cancels.pop(cancel, None)
                                 self._active_generate_cancel = cancel
+                                self._active_generate_cancel_subject = owner
                                 self._generation_owns_slot = True
                                 admitted = True
                     else:
@@ -1314,12 +1336,13 @@ class DiffusionBackend:
                 with self._generation_cancel_lock:
                     if self._active_generate_cancel is cancel:
                         self._active_generate_cancel = None
+                        self._active_generate_cancel_subject = None
                     self._generation_owns_slot = False
                     self._generate_lock.release()
         finally:
             if not admitted:
                 with self._generation_cancel_lock:
-                    self._queued_generate_cancels.discard(cancel)
+                    self._queued_generate_cancels.pop(cancel, None)
 
     # Memory requests whose offload policy is decided by the REQUEST rather than by the measured footprint. `fast` and
     # `auto` are measurements and so cannot be judged network-free.
@@ -2041,9 +2064,16 @@ class DiffusionBackend:
             cancel_event = threading.Event()
             self._cancel_event = cancel_event
             # Seed with the family fallback; the worker resolves the real base and updates this.
-            self._loading = _LoadingState(repo_id = repo_id, base_repo = fam.base_repo)
+            self._loading = _LoadingState(
+                repo_id = repo_id,
+                base_repo = fam.base_repo,
+                subject = current_workspace_subject(),
+            )
 
-        threading.Thread(
+        # Pinned, not a bare Thread: a new thread does not inherit this request's
+        # context, so loras_dir() would resolve in the owner's workspace and bake a
+        # same-named owner adapter. Captured here, still on the request thread.
+        workspace_thread(
             target = self._run_load,
             kwargs = dict(
                 repo_id = repo_id,
@@ -2238,9 +2268,16 @@ class DiffusionBackend:
                 if self._load_token == token and self._loading is not None:
                     self._loading.error = redact_native_paths(text)
 
-    def load_progress(self) -> dict[str, Any]:
-        """Phase + downloaded/total bytes for the in-flight load (cache-scan based)."""
+    def load_progress(self, subject: Optional[str] = None) -> dict[str, Any]:
+        """Phase + downloaded/total bytes for the in-flight load (cache-scan based).
+
+        ``subject`` hides another account's load, whose payload names the repo or
+        private path it is pulling. None is the engine's own unfiltered view.
+        """
         loading = self._loading
+        if loading is not None and subject is not None and loading.subject != subject:
+            # Answered as "nothing loading", the same shape an idle engine gives.
+            return _progress("ready" if self._state is not None else None)
         if loading is not None and loading.error:
             return _progress("error", error = loading.error)
         if loading is None:
@@ -5300,6 +5337,21 @@ class DiffusionBackend:
                 self._aux_pipes[class_name] = pipe
         return pipe
 
+    @staticmethod
+    def _controlnet_cache_key(resolved_cn: Any) -> tuple[str, str]:
+        """Cache identity of a resolved ControlNet: its id plus what it resolved to.
+
+        controlnets_dir() is per account, so the canonical path is what tells two
+        same-named models apart; canonicalised so one directory spelled two ways
+        does not load twice."""
+        path = str(getattr(resolved_cn, "path", "") or "")
+        if getattr(resolved_cn, "is_local", False):
+            try:
+                path = str(Path(path).resolve())
+            except OSError:
+                pass
+        return (str(getattr(resolved_cn, "id", "") or ""), path)
+
     def _controlnet_pipe(self, state: _LoadState, resolved_cn: Any, cancel: threading.Event) -> Any:
         """Build (once, cached) the family's diffusers ControlNet pipeline around the requested
         ControlNet model. The ControlNet model is a small extra module loaded via from_pretrained
@@ -5313,7 +5365,12 @@ class DiffusionBackend:
             raise ValueError(f"ControlNet is not supported for the '{fam.name}' model family.")
         import diffusers
 
-        cn_model = self._cn_models.get(resolved_cn.id)
+        # Keyed by what was loaded, not what it was called: an id-only key handed
+        # the second caller the first's resident private ControlNet. The resolved
+        # path carries the workspace locally and is the repo id remotely, so hub
+        # models still share.
+        cn_key = self._controlnet_cache_key(resolved_cn)
+        cn_model = self._cn_models.get(cn_key)
         if cn_model is None:
             if cancel.is_set():
                 raise RuntimeError(DIFFUSION_CANCELLED_MSG)
@@ -5360,8 +5417,8 @@ class DiffusionBackend:
             if cancel.is_set():
                 del cn_model
                 raise RuntimeError(DIFFUSION_CANCELLED_MSG)
-            self._cn_models[resolved_cn.id] = cn_model
-        key = (pipe_cls_name, resolved_cn.id)
+            self._cn_models[cn_key] = cn_model
+        key = (pipe_cls_name, cn_key)
         pipe = self._cn_pipes.get(key)
         if pipe is None:
             pipe = self._from_pipe_no_recast(
@@ -5782,9 +5839,8 @@ class DiffusionBackend:
                 loaded_id = load_identity(state.repo_id, state.base_repo, state.family.name)
                 if expected_load is not None and expected_load != loaded_id:
                     raise DiffusionModelReplacedError(expected_load, loaded_id)
-                # Publish an active (step 0) state before the slow pre-denoise setup so a reload mount probe does not
-                # read idle.
-                self._gen = _GenState(total_steps = steps)
+                # Publish an active (step 0) state before the slow pre-denoise setup so a reload mount probe does not read idle.
+                self._gen = _GenState(total_steps = steps, subject = current_workspace_subject())
             try:
                 self._state_device_target(state)
                 # The local `state` ref keeps the pipe alive even if unload() nulls _state. Resolve the per-image
@@ -6071,9 +6127,10 @@ class DiffusionBackend:
                         "diffusion.generate: activation headroom re-check skipped (%s)", exc
                     )
 
-                gen = _GenState(total_steps = steps * len(chunks))
-                # Steps completed by FINISHED chunks, so the bar spans the whole multi-chunk call (mutable cell for
-                # _on_step).
+                gen = _GenState(
+                    total_steps = steps * len(chunks), subject = current_workspace_subject()
+                )
+                # Steps completed by FINISHED chunks, so the bar spans the whole multi-chunk call (mutable cell for _on_step).
                 steps_done = [0]
 
                 def _on_step(pipe, step_index, timestep, callback_kwargs):
@@ -6214,6 +6271,7 @@ class DiffusionBackend:
                         raise RuntimeError(DIFFUSION_CANCELLED_MSG)
                     if self._active_generate_cancel is cancel:
                         self._active_generate_cancel = None
+                        self._active_generate_cancel_subject = None
                 # Count the finished generation (drives deferred speed); a batch is one generation.
                 object.__setattr__(state, "generation_count", state.generation_count + 1)
                 return {
@@ -6244,14 +6302,21 @@ class DiffusionBackend:
                 with self._generation_cancel_lock:
                     if self._active_generate_cancel is cancel:
                         self._active_generate_cancel = None
+                        self._active_generate_cancel_subject = None
                 with self._lock:
                     # Sole clear of the published progress state, on every exit, so a crashed generation never leaves
                     # the UI stuck.
                     self._gen = None
 
-    def generate_progress(self) -> dict[str, Any]:
-        """Live per-step progress for an in-flight generation (lock-free read)."""
+    def generate_progress(self, subject: Optional[str] = None) -> dict[str, Any]:
+        """Live per-step progress for an in-flight generation (lock-free read).
+
+        ``subject`` reports idle for a generation belonging to another account.
+        None keeps the unfiltered view for the engine's own internal probes.
+        """
         gen = self._gen
+        if gen is not None and subject is not None and gen.subject != subject:
+            gen = None
         if gen is None or gen.total_steps <= 0:
             return {
                 "active": False,
@@ -6268,8 +6333,13 @@ class DiffusionBackend:
             "eta_seconds": gen.eta_seconds,
         }
 
-    def cancel_generate(self) -> bool:
+    def cancel_generate(self, subject: Optional[str] = None) -> bool:
         """Signal the in-flight generation to stop at its next step boundary.
+
+        ``subject`` refuses a cancel aimed at another account's generation, the
+        same way it is hidden from their progress poll. None is the engine's own
+        teardown path (unload, a superseding load), which must still stop
+        whatever is running whoever started it.
 
         The denoise loop already watches this event (``_on_step`` sets diffusers'
         ``_interrupt``, and the per-chunk check discards a partial batch), but until now only
@@ -6280,9 +6350,24 @@ class DiffusionBackend:
         during the VAE decode or the encode that precedes step 0 lands when that finishes.
         Same contract as the video backend."""
         with self._generation_cancel_lock:
+            gen = self._gen
+            if subject is not None and gen is not None and gen.subject != subject:
+                # Another account's denoise. Answered as "nothing was running",
+                # which is what a caller who cannot even see it should be told,
+                # and which settles their button exactly as an idle engine does.
+                return False
             # Stop targets the denoising generation, not a serialized waiter.
             active = self._active_generate_cancel
             if active is not None:
+                if (
+                    subject is not None
+                    and self._active_generate_cancel_subject is not None
+                    and self._active_generate_cancel_subject != subject
+                ):
+                    # Admitted but not yet denoising, so the gen.subject check
+                    # above had nothing to compare. Same answer as a foreign
+                    # denoise: nothing was running, as far as this caller can see.
+                    return False
                 active.set()
                 return True
             if self._generation_owns_slot:
@@ -6291,14 +6376,43 @@ class DiffusionBackend:
             if not self._teardown_waiters and not self._transition_owns_slot:
                 return False
             # Recheck live state so timed waiters observe a replacement handoff.
-            cancels = set(self._queued_generate_cancels)
+            cancels = [
+                event
+                for event, owner in self._queued_generate_cancels.items()
+                if subject is None or owner == subject
+            ]
             if not cancels:
                 return False
             for cancel in cancels:
                 cancel.set()
             return True
 
-    def unload(self) -> dict[str, Any]:
+    def _refuse_foreign_teardown(self, subject: Optional[str]) -> None:
+        if subject is None:
+            return
+        with self._generation_cancel_lock:
+            gen = self._gen
+            if gen is not None and gen.subject != subject:
+                raise ForeignWorkspaceActiveError(
+                    "Another account is generating an image right now."
+                )
+        # Read without _lock: unload() takes _lock then _generation_cancel_lock,
+        # so taking them the other way round here would invert that order.
+        loading = self._loading
+        if loading is not None and loading.error is None and loading.subject != subject:
+            raise ForeignWorkspaceActiveError(
+                "Another account is loading an image model right now."
+            )
+
+    def unload(self, subject: Optional[str] = None) -> dict[str, Any]:
+        """Free the pipeline, cancelling whatever is running.
+
+        ``subject`` refuses a teardown that would end another account's live
+        generation; None is the engine's own path (arbiter, superseding load,
+        exit). Scoping cancel_generate alone was not enough, since unload signals
+        the same event.
+        """
+        self._refuse_foreign_teardown(subject)
         with self._lock:
             # Abort an in-flight (lock-free) download so unload returns promptly. Under the lock, like video.py:
             # begin_load rebinds this attribute, so an unlocked read could set an event the current load no longer

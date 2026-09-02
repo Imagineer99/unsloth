@@ -13,8 +13,9 @@ import {
   type ReconciledGpuSelection,
   type GpuIndexKind,
 } from "@/hooks/use-gpu-info";
-import { toast } from "@/lib/toast";
+import { ACCOUNT_CHANGED_EVENT } from "@/lib/account-transition";
 import { DRAFT_N_MAX_SPEC_TYPES } from "@/lib/speculative-modes";
+import { toast } from "@/lib/toast";
 import { create } from "zustand";
 import { getChatSettings } from "../api/chat-settings-api";
 import {
@@ -6172,6 +6173,32 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>((set, get) => ({
       },
     })),
 }));
+
+// This store is already hydrated when a different account authenticates in
+// the same SPA. Clear raw media immediately; removing persisted keys alone
+// cannot reach this in-memory fallback before the login reload lands.
+const resetPendingMediaForAccountChange = () => {
+  useChatRuntimeStore.setState({
+    pendingAudioBase64: null,
+    pendingAudioName: null,
+    pendingImageEditReference: null,
+  });
+};
+if (
+  typeof window !== "undefined" &&
+  typeof window.addEventListener === "function"
+) {
+  window.addEventListener(
+    ACCOUNT_CHANGED_EVENT,
+    resetPendingMediaForAccountChange,
+  );
+  import.meta.hot?.dispose(() => {
+    window.removeEventListener(
+      ACCOUNT_CHANGED_EVENT,
+      resetPendingMediaForAccountChange,
+    );
+  });
+}
 
 // Mirror token edits made through the shared store (e.g. Unsloth's field).
 const unsubscribeHfTokenMirror = mirrorHfTokenInto(useChatRuntimeStore);
