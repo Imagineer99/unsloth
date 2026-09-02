@@ -25,10 +25,13 @@
 import { expect, test } from "@playwright/test";
 
 const baseURL = process.env.STUDIO_E2E_URL ?? "http://127.0.0.1:8767";
+// A same-origin JSON document gives these platform-only checks a stable realm;
+// the SPA may redirect while its asynchronous auth guard settles.
+const stableURL = new URL("/api/auth/status", baseURL).toString();
 const LAST_ACCOUNT_KEY = "unsloth.browser-account.v1";
 
 test.beforeEach(async ({ page }) => {
-  await page.goto(baseURL);
+  await page.goto(stableURL);
   await page.evaluate(() => localStorage.clear());
 });
 
@@ -70,7 +73,7 @@ test("a write in another tab is delivered with the new value already readable", 
   page,
 }) => {
   const other = await context.newPage();
-  await other.goto(baseURL);
+  await other.goto(stableURL);
 
   const settled = page.evaluate(
     ({ key }) =>

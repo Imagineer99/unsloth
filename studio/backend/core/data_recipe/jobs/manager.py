@@ -617,6 +617,7 @@ class JobManager:
 
     def _safe_handle_event(self, job: Job, event: dict) -> None:
         """Apply one event, swallowing any handler error so the pump can't die."""
+        # Worker exited: drain + finalize, guarded so an error can't strand the run "active".
         try:
             self._handle_event(job, event)
         except Exception:
@@ -638,8 +639,7 @@ class JobManager:
             try:
                 event = self._read_queue_with_timeout(mp_q, timeout_sec = 0.25)
             except Exception:
-                # If a read keeps raising after the worker died, finalize instead
-                # of spinning forever; only retry while the worker is still alive.
+                # Only retry while the worker is alive; otherwise finalize instead of spinning forever.
                 logger.exception("Data-recipe job pump: queue read failed; continuing")
                 if proc.is_alive():
                     time.sleep(0.1)
@@ -653,7 +653,6 @@ class JobManager:
             if proc.is_alive():
                 continue
 
-            # Worker exited: drain + finalize, guarded so an error can't strand the run "active".
             try:
                 for e in self._drain_queue(mp_q):
                     self._safe_handle_event(job, e)

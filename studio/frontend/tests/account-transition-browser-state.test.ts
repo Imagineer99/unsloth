@@ -113,8 +113,8 @@ test("the same account signing in again clears nothing", () => {
 test("an account change tells the live stores to reset themselves", () => {
   const seen: string[] = [];
   const listeners = new Map<string, (event: unknown) => void>();
-  (globalThis as { window?: Record<string, unknown> }).window = {
-    ...((globalThis as { window?: Record<string, unknown> }).window ?? {}),
+  (globalThis as unknown as { window?: Record<string, unknown> }).window = {
+    ...((globalThis as unknown as { window?: Record<string, unknown> }).window ?? {}),
     dispatchEvent: (event: { type: string }) => {
       seen.push(event.type);
       listeners.get(event.type)?.(event);
