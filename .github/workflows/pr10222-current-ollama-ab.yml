@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -36,17 +36,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          source_sha="$(git rev-parse HEAD^)"
           case "$GITHUB_REF_NAME" in
             *-base-*) expected_sha="$BASE_SHA" ;;
             *-head-*) expected_sha="$HEAD_SHA" ;;
             *) echo "Unexpected branch: $GITHUB_REF_NAME"; exit 2 ;;
           esac
+          git cat-file -e "${expected_sha}^{commit}"
+          test "$(git merge-base "$expected_sha" HEAD)" = "$expected_sha"
+          while IFS= read -r path; do
+            case "$path" in
+              .github/scripts/pr10222_current_ollama_probe.py) ;;
+              .github/workflows/pr10222-current-ollama-ab.yml) ;;
+              *) echo "Unexpected path after pinned source: $path"; exit 2 ;;
+            esac
+          done < <(git diff --name-only "$expected_sha..HEAD")
           echo "branch=$GITHUB_REF_NAME"
           echo "workflow_commit=$GITHUB_SHA"
-          echo "source_sha=$source_sha"
-          echo "expected_source_sha=$expected_sha"
-          test "$source_sha" = "$expected_sha"
+          echo "source_sha=$expected_sha"
+          git diff --name-status "$expected_sha..HEAD"
 
       - name: Install minimal Studio backend dependencies
         run: python -m pip install --disable-pip-version-check 'pydantic>=2,<3' 'structlog>=24,<26' 'pyyaml>=6,<7'
