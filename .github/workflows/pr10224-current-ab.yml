@@ -1,0 +1,56 @@
+# Disposable targeted validation for Unsloth PR #10224.
+name: "PR 10224 current Apple free-memory A/B"
+
+on:
+  push:
+    branches:
+      - "fix/pr-10224-apple-free-*-ab-ci-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apple-free-memory:
+    name: "Pinned Apple free-memory probe"
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Verify pinned staging parent"
+        shell: bash
+        run: |
+          set -euo pipefail
+          parent="$(git rev-parse HEAD^)"
+          case "$parent" in
+            2ed0da03e34e5cb0bb2b86d4ea06018180ed37b5|e74ef625a09d69f8de731d5a4908bdd9945efe36) ;;
+            *) echo "::error::unexpected staging parent $parent"; exit 1 ;;
+          esac
+          git log --oneline -2
+
+      - name: "Install minimal probe dependencies"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install psutil structlog mlx
+          python -m pip freeze | grep -Ei '^(mlx|psutil|structlog)=='
+
+      - name: "Probe identity"
+        shell: bash
+        run: |
+          set -euo pipefail
+          shasum -a 256 pr10224_current_probe.py
+
+      - name: "Run production-path A/B probe"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python pr10224_current_probe.py
+
