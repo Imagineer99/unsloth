@@ -1,0 +1,106 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Disposable current-SHA A/B proof for upstream PR 10222.
+
+name: PR 10222 current SHA ollama pull A-B
+
+on:
+  push:
+    branches:
+      - 'fix/pr10222-ollama-ab-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ollama-pull-visibility:
+    name: real ollama pull -> Studio inventory and load path
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE_SHA: 2ed0da03e34e5cb0bb2b86d4ea06018180ed37b5
+      HEAD_SHA: 60cce62f506ca19c7bd1263af6e0ab6b336b8538
+      OLLAMA_MODELS: ${{ github.workspace }}/ollama-store
+      PROBE_MODEL: qwen2.5:0.5b
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - name: Verify the pinned source under test
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD^)"
+          case "$GITHUB_REF_NAME" in
+            *-base-*) expected_sha="$BASE_SHA" ;;
+            *-head-*) expected_sha="$HEAD_SHA" ;;
+            *) echo "Unexpected branch: $GITHUB_REF_NAME"; exit 2 ;;
+          esac
+          echo "branch=$GITHUB_REF_NAME"
+          echo "workflow_commit=$GITHUB_SHA"
+          echo "source_sha=$source_sha"
+          echo "expected_source_sha=$expected_sha"
+          test "$source_sha" = "$expected_sha"
+
+      - name: Install minimal Studio backend dependencies
+        run: python -m pip install --disable-pip-version-check 'pydantic>=2,<3' 'structlog>=24,<26' 'pyyaml>=6,<7'
+
+      - name: Install pinned Ollama binary
+        env:
+          OLLAMA_VERSION: v0.33.2
+          OLLAMA_ARCHIVE_SHA256: 9785247dea264d9072f09f6c9c0eb4b8e666892826a3d8388eba3e8fb9ed1db9
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq zstd
+          mkdir -p "$HOME/ollama"
+          curl --fail --location --retry 3 --output /tmp/ollama-linux-amd64.tar.zst \
+            "https://github.com/ollama/ollama/releases/download/${OLLAMA_VERSION}/ollama-linux-amd64.tar.zst"
+          echo "${OLLAMA_ARCHIVE_SHA256}  /tmp/ollama-linux-amd64.tar.zst" | sha256sum --check --strict
+          zstd --decompress --stdout /tmp/ollama-linux-amd64.tar.zst | tar -xf - -C "$HOME/ollama"
+          test -x "$HOME/ollama/bin/ollama"
+          echo "$HOME/ollama/bin" >> "$GITHUB_PATH"
+
+      - name: Pull a real model into an isolated store
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$OLLAMA_MODELS"
+          ollama serve > /tmp/ollama-serve.log 2>&1 &
+          echo $! > /tmp/ollama-serve.pid
+          ready=0
+          for _ in $(seq 1 30); do
+            if ollama list > /dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 2
+          done
+          test "$ready" = 1
+          ollama --version
+          ollama pull "$PROBE_MODEL"
+          ollama list
+          du -sh "$OLLAMA_MODELS"
+
+      - name: Run Studio inventory and load-path probe
+        working-directory: studio/backend
+        env:
+          PYTHONPATH: .
+        run: python "${GITHUB_WORKSPACE}/.github/scripts/pr10222_current_ollama_probe.py"
+
+      - name: Show Ollama log on failure
+        if: failure()
+        run: tail -200 /tmp/ollama-serve.log || true
+
+      - name: Stop Ollama
+        if: always()
+        run: |
+          if test -f /tmp/ollama-serve.pid; then
+            kill "$(cat /tmp/ollama-serve.pid)" || true
+          fi
