@@ -18,23 +18,25 @@ jobs:
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          fetch-depth: 2
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
           python-version: "3.12"
 
-      - name: "Verify pinned staging parent"
+      - name: "Verify pinned staging source"
         shell: bash
         run: |
           set -euo pipefail
-          parent="$(git rev-parse HEAD^)"
-          case "$parent" in
-            2ed0da03e34e5cb0bb2b86d4ea06018180ed37b5|e74ef625a09d69f8de731d5a4908bdd9945efe36) ;;
-            *) echo "::error::unexpected staging parent $parent"; exit 1 ;;
+          case "${GITHUB_REF_NAME}" in
+            *-base-*) expected="2ed0da03e34e5cb0bb2b86d4ea06018180ed37b5" ;;
+            *-head-*) expected="e74ef625a09d69f8de731d5a4908bdd9945efe36" ;;
+            *) echo "::error::unexpected staging branch ${GITHUB_REF_NAME}"; exit 1 ;;
           esac
-          git log --oneline -2
+          git merge-base --is-ancestor "$expected" HEAD
+          echo "pinned_source=$expected"
+          git log --oneline "$expected"..HEAD
 
       - name: "Install minimal probe dependencies"
         shell: bash
