@@ -70,6 +70,17 @@ jobs:
         run: |
           python ".github/scripts/pr10438-cache-switch-probe.py"
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24"
+
+      - name: Cache-copy and Windows path regressions
+        shell: bash
+        working-directory: studio/frontend
+        run: |
+          npm ci --ignore-scripts --no-fund --no-audit
+          node --experimental-strip-types --test tests/cache-copy-selection.test.ts tests/hub-selection-resolution.test.ts tests/agent-cache-targets.test.ts tests/pinned-quant-sources.test.ts
+
       - name: Upload Studio probe artifacts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
