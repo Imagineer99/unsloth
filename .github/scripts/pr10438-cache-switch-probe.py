@@ -268,6 +268,8 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
              "browser": browser_name, "expect": "Two selectable cache copies after resetting the download folder; Q6_K and Q8_0 remain accessible."}
     async with open_chat(base_url, init_scripts=[init], browser_name=browser_name) as sp:
         try:
+            facts["navigations"] = []
+            sp.page.on("framenavigated", lambda frame: facts["navigations"].append(frame.url) if frame == sp.page.main_frame else None)
             token = await sp.page.evaluate("localStorage.getItem('unsloth_auth_token')")
             async with httpx.AsyncClient(base_url=base_url, headers={"Authorization": f"Bearer {token}"}, timeout=45) as client:
                 async def api(method, path, **kwargs):
@@ -285,7 +287,8 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
                     (repo / "refs").mkdir(exist_ok=True)
                     (repo / "refs" / "main").write_text("d" * 40)
                 seed(default_root, "Q6_K")
-                custom_home = Path(os.environ["UNSLOTH_STUDIO_HOME"]).parent / "custom-hf"
+                home = Path(os.environ["UNSLOTH_STUDIO_HOME"])
+                custom_home = home.with_name(home.name + "-custom-hf")
                 status = await api("PUT", "/api/settings/hugging-face-cache", json={"cache_home": str(custom_home)})
                 seed(Path(status["hub_cache"]), "Q8_0")
                 await api("PUT", "/api/settings/hugging-face-cache", json={"cache_home": None})
@@ -299,10 +302,13 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
                     variants[row["inventory_id"]] = [v["quant"] for v in listing["variants"] if v["downloaded"]]
                 facts["variants"] = variants
             await sp.page.evaluate("localStorage.setItem('unsloth.hub.modelsTab', 'downloaded')")
-            await sp.page.goto(base_url + "/hub", wait_until="domcontentloaded")
-            await sp.page.get_by_role("radio", name="On Device", exact=True).click()
+            from urllib.parse import urlencode
+            from playwright.async_api import expect
+            await sp.page.goto(base_url + "/hub?" + urlencode({"tab": "downloaded", "model": copies[0]["inventory_id"]}), wait_until="domcontentloaded")
+            await expect(sp.page.get_by_role("radio", name="On Device", exact=True)).to_have_attribute("aria-checked", "true")
             rows = sp.page.get_by_role("button", name=title, exact=True)
             await rows.first.wait_for(state="visible", timeout=45000)
+            await expect(sp.page.locator(f'div[data-selected="true"] > button[aria-label="{title}"]')).to_have_count(1, timeout=45000)
             await sp.page.screenshot(path=str(artifact_dir / "cache-switch.png"), full_page=True)
             facts["selectable_dom_rows"] = await rows.count()
             assert len(copies) == 2, facts
@@ -310,14 +316,28 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
             assert sorted(q for group in variants.values() for q in group) == ["Q6_K", "Q8_0"], facts
             assert facts["selectable_dom_rows"] == 2, facts
             selected = []
+            facts["clicks"] = []
+            await sp.page.evaluate("() => { window.cacheProofEvents = []; document.addEventListener('click', e => window.cacheProofEvents.push({label:e.target.closest('button')?.getAttribute('aria-label'), model:new URL(location.href).searchParams.get('model')}), true); }")
             for index in range(2):
-                await rows.nth(index).click()
+                target = sp.page.locator(f'div:not([data-selected="true"]) > button[aria-label="{title}"]').first
+                await target.hover()
+                await expect(target.locator("..")).to_have_attribute("data-slot", "tooltip-trigger")
+                previous = await sp.page.evaluate("new URL(location.href).searchParams.get('model')")
+                facts["clicks"].append({"before": previous, "box": await target.bounding_box(), "parent": await target.locator("..").get_attribute("data-selected")})
+                await target.click()
+                await expect(sp.page.locator(f'div[data-selected="true"] > button[aria-label="{title}"]')).to_have_count(1)
                 await sp.page.wait_for_function("() => new URL(location.href).searchParams.has('model')")
-                selected.append(await sp.page.evaluate("new URL(location.href).searchParams.get('model')"))
+                if previous:
+                    await sp.page.wait_for_function("previous => new URL(location.href).searchParams.get('model') !== previous", arg=previous)
+                current = await sp.page.evaluate("new URL(location.href).searchParams.get('model')")
+                selected.append(current)
+                await sp.page.get_by_text(variants[current][0], exact=True).first.wait_for(state="visible")
             facts["selected_ids"] = selected
             assert len(set(selected)) == 2, facts
             pass_log(f"{browser_name}: reset cache folder; both Q6/Q8 copies selectable")
         finally:
+            facts["events"] = await sp.page.evaluate("window.cacheProofEvents || []")
+            facts["final_selected_id"] = await sp.page.evaluate("new URL(location.href).searchParams.get('model')")
             (artifact_dir / "facts.json").write_text(json.dumps(facts, indent=2))
             await sp.page.screenshot(path=str(artifact_dir / "last-state.png"), full_page=True)
 
