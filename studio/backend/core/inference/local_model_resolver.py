@@ -88,21 +88,31 @@ def _advertised_loader_id(info) -> Optional[str]:
     return public_model_id(raw_id) or raw_id
 
 
-def _resolve_load_dir(p):
-    """The concrete dir holding the GGUFs. For an HF cache repo (``models--*``
-    with ``snapshots/``) this is the latest snapshot dir, so /load takes the
-    local branch instead of the download-capable repo-id branch."""
+def _resolve_load_dir(p, loader_id: Optional[str] = None):
     from pathlib import Path
 
+    load_dir = p
     try:
         if (p / "snapshots").is_dir():
             from routes.models import _resolve_hf_cache_realpath
             real = _resolve_hf_cache_realpath(p)
             if real:
-                return Path(real)
+                load_dir = Path(real)
     except Exception:
         pass
-    return p
+    try:
+        from utils.audio_tokens import detect_local_tts_audio_type
+        from utils.models.model_config import load_model_defaults
+
+        llm_dir = load_dir / "LLM"
+        if llm_dir.is_dir() and (
+            (loader_id and (load_model_defaults(loader_id) or {}).get("audio_type") == "bicodec")
+            or detect_local_tts_audio_type(llm_dir) == "bicodec"
+        ):
+            return llm_dir
+    except Exception:
+        pass
+    return load_dir
 
 
 def _legacy_variant_aliases(variants) -> tuple[tuple[str, str], ...]:
@@ -346,6 +356,52 @@ def _config_is_servable_here(load_dir, config: dict) -> bool:
     return _is_generative_chat_config(config)
 
 
+def _host_can_serve_minimax_music3() -> bool:
+    import sys
+    from importlib.util import find_spec
+    from importlib.metadata import version
+    from packaging.version import Version
+
+    try:
+        from core.inference.audio_device import audio_device_forces_cpu
+        from utils.hardware import hardware as hw
+        return (
+            sys.version_info >= (3, 10)
+            and hw.DEVICE == hw.DeviceType.CUDA
+            and not hw.IS_ROCM
+            and not audio_device_forces_cpu(None)
+            and find_spec("diffusers") is not None
+            and Version(version("diffusers")) >= Version("0.40.0")
+        )
+    except Exception:
+        return False
+
+
+def _native_audio_pipeline_is_servable_here(load_dir) -> bool:
+    from core.inference.native_audio import (
+        _MINIMAX_DOWNLOAD_COMPONENTS,
+        minimax_music3_local_components_complete,
+        native_audio_type_from_local_path,
+    )
+    from utils.security.remote_code_scan import REMOTE_CODE_CONFIG_FILES
+
+    if (
+        native_audio_type_from_local_path(str(load_dir)) != "minimax_music3"
+        or not _host_can_serve_minimax_music3()
+        or not minimax_music3_local_components_complete(load_dir)
+    ):
+        return False
+    for directory in (
+        load_dir,
+        *(load_dir / component for component in _MINIMAX_DOWNLOAD_COMPONENTS),
+    ):
+        for name in REMOTE_CODE_CONFIG_FILES:
+            config = _read_json(directory / name)
+            if isinstance(config, dict) and config.get("auto_map"):
+                return False
+    return not any((load_dir / name).is_file() for name in (*_ADAPTER_MARKERS, "modules.json"))
+
+
 def _local_weights_entry(loader_id: str, info) -> Optional[_LocalGgufEntry]:
     """Build an entry for a local non-GGUF checkpoint (safetensors, MLX) the
     inference orchestrator can serve, else None.
@@ -366,7 +422,9 @@ def _local_weights_entry(loader_id: str, info) -> Optional[_LocalGgufEntry]:
         p = Path(path)
         if not p.is_dir():
             return None
-        load_dir = _resolve_load_dir(p)
+        load_dir = _resolve_load_dir(p, loader_id)
+        if _native_audio_pipeline_is_servable_here(load_dir):
+            return _LocalGgufEntry(loader_id, str(load_dir), (), is_gguf = False)
         if not _weights_are_servable(load_dir):
             return None
         config = _read_json(load_dir / "config.json")

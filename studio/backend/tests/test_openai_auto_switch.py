@@ -106,12 +106,18 @@ class _LoadRecorder:
         current_subject = None,
         *,
         current_request_counted = False,
+        cache_environment = None,
+        anonymous_hf_access = False,
+        speech_codec_path = None,
     ):
         # Mirror the production load boundary before recording any replacement.
         await inference_route._wait_for_model_switch_idle(
             current_request_counted = current_request_counted
         )
         self.calls.append(request)
+        self.cache_environment = cache_environment
+        self.anonymous_hf_access = anonymous_hf_access
+        self.speech_codec_path = speech_codec_path
         if self.fail:
             from fastapi import HTTPException
             raise HTTPException(status_code = 503, detail = "load failed")
@@ -140,6 +146,7 @@ def _wire(monkeypatch, *, enabled, resolves_to, backend, recorder):
     # gate that auto-switch already owns, so it calls the impl directly).
     monkeypatch.setattr(inference_route, "_load_model_impl", recorder)
     monkeypatch.setattr(inference_route, "_auto_switch_waiters", {})
+    monkeypatch.setattr(inference_route, "_preflight_speech_codec_for_switch", lambda *_a: None)
 
 
 async def _noop_reject(*_args, **_kwargs):
@@ -5229,39 +5236,35 @@ def test_a_count_never_spawns_mcp_servers():
     assert "get_enabled_mcp_tools" not in called
 
 
-def test_audio_generate_is_reload_only(monkeypatch):
-    # Codex P2: /audio/generate must not switch to a client-named GGUF. A local
-    # GGUF's audio-input capability is not a cheap pre-load probe (the mmproj signal
-    # can't tell an audio projector from a vision one), so resolving the client model
-    # could evict the working audio model for a target that then fails the audio
-    # check. Only the idle-stash restore runs: the hook gets the reload-only sentinel.
-    from models.inference import ChatCompletionRequest
-
+def _capture_audio_switch(monkeypatch):
     class _Reached(Exception):
         pass
 
     captured = {}
 
-    async def _capture(
-        model,
-        request,
-        subject,
-        *,
-        require_vision = False,
-        claim_resident = True,
-    ):
+    async def _capture(model, request, subject, **kwargs):
         captured["model"] = model
-        captured["claim_resident"] = claim_resident
+        captured.update(kwargs)
         raise _Reached()
 
     monkeypatch.setattr(inference_route, "_maybe_auto_switch_model", _capture)
+    return _Reached, captured
+
+
+@pytest.mark.parametrize("model", [None, "", "org/B-GGUF"])
+def test_audio_generate_model_selection(monkeypatch, model):
+    from models.inference import ChatCompletionRequest
+
+    reached, captured = _capture_audio_switch(monkeypatch)
     payload = ChatCompletionRequest(
-        model = "org/B-GGUF", messages = [{"role": "user", "content": "say hi"}]
+        messages = [{"role": "user", "content": "say hi"}],
+        **({"model": model} if model is not None else {}),
     )
-    with pytest.raises(_Reached):
+    with pytest.raises(reached):
         asyncio.run(inference_route.generate_audio(payload, object(), "tester"))
-    assert captured["model"] == inference_route._RELOAD_ONLY_MODEL
+    assert captured["model"] == (model or inference_route._RELOAD_ONLY_MODEL)
     assert captured["claim_resident"] is False
+    assert captured["require_speech"] is True
 
 
 def test_note_model_unloaded_clears_reload_stash(monkeypatch):
@@ -9065,6 +9068,74 @@ def _local_checkpoint(root, name = "Qwen3-MLX-4bit"):
     return path
 
 
+def _complete_minimax_pipeline(root):
+    pipeline = root / "MiniMax-Music3"
+    pipeline.mkdir()
+    component_specs = {
+        "condition_encoder": ("diffusers", "MiniMaxMusic3ConditionEncoder"),
+        "language_model": ("transformers", "Qwen3ForCausalLM"),
+        "rvq_depth_decoder": ("diffusers", "MiniMaxMusic3RVQDepthDecoder"),
+        "scheduler": ("diffusers", "FlowMatchEulerDiscreteScheduler"),
+        "tokenizer": ("transformers", "Qwen2Tokenizer"),
+        "transformer": ("diffusers", "MiniMaxMusic3Transformer1DModel"),
+        "vocoder": ("diffusers", "MiniMaxMusic3Vocoder"),
+    }
+    index = {
+        "_class_name": "MiniMaxMusic3ModularPipeline",
+        "_blocks_class_name": "MiniMaxMusic3Blocks",
+        **{
+            component: [*component_specs[component], {"subfolder": component}]
+            for component in component_specs
+        },
+    }
+    (pipeline / "modular_model_index.json").write_text(json.dumps(index))
+    for component in component_specs:
+        directory = pipeline / component
+        directory.mkdir()
+        if component == "scheduler":
+            (directory / "scheduler_config.json").write_text(
+                json.dumps({"_class_name": "Scheduler"})
+            )
+        elif component == "tokenizer":
+            (directory / "tokenizer_config.json").write_text(
+                json.dumps({"tokenizer_class": "PreTrainedTokenizerFast"})
+            )
+            (directory / "tokenizer.json").write_text(
+                json.dumps({"model": {"type": "BPE", "vocab": {}, "merges": []}})
+            )
+        else:
+            (directory / "config.json").write_text(json.dumps({"_class_name": "Component"}))
+            stem = "model" if component == "language_model" else "diffusion_pytorch_model"
+            (directory / f"{stem}.safetensors").write_bytes(_safetensors_bytes())
+    return pipeline
+
+
+@pytest.mark.parametrize(
+    "repo", ["unsloth/Spark-TTS-0.5B", "SparkAudio/Spark-TTS-0.5B", "org/custom-voice"]
+)
+def test_a_downloaded_spark_repository_resolves_to_its_llm_checkpoint(tmp_path, repo):
+    snapshot = tmp_path / "models--unsloth--Spark-TTS-0.5B" / "snapshots" / "revision"
+    llm = snapshot / "LLM"
+    llm.mkdir(parents = True)
+    (llm / "config.json").write_text(
+        json.dumps({"architectures": ["Qwen2ForCausalLM"], "model_type": "qwen2"})
+    )
+    (llm / "model.safetensors").write_bytes(_safetensors_bytes())
+    tokens = {
+        str(i): {"content": f"<|bicodec_{name}_0|>"}
+        for i, name in enumerate(("semantic", "global"))
+    }
+    (llm / "tokenizer_config.json").write_text(json.dumps({"added_tokens_decoder": tokens}))
+    info = types.SimpleNamespace(id = repo, model_id = repo, path = str(snapshot), partial = False)
+    entry = resolver._local_weights_entry(repo, info)
+    assert entry is not None
+    assert entry.load_path == str(llm)
+    assert entry.is_gguf is False
+    assert inference_route._target_speech_audio_type(entry.load_path, False) == "bicodec"
+    (llm / "tokenizer_config.json").write_text("{}")
+    assert resolver._local_weights_entry("org/text", info) is None
+
+
 def test_a_diffusers_pipeline_is_not_a_servable_chat_model(tmp_path):
     # The Images and Video backends own these; /v1/chat/completions cannot serve them.
     from types import SimpleNamespace
@@ -10453,3 +10524,183 @@ def test_a_serving_hf_cache_row_is_reported_loaded(tmp_path, monkeypatch):
     assert [(is_gguf, quants, resident) for _i, is_gguf, quants, resident in rows] == [
         (False, (), True)
     ]
+
+
+def _speech_case(
+    monkeypatch,
+    audio_type = "snac",
+    gguf = True,
+):
+    backend = _FakeBackend("org/A-GGUF")
+    recorder = _LoadRecorder(backend)
+    target = ("/local/B.gguf", "Q8_0", "org/B-GGUF") if gguf else ("/local/B", None, "org/B-GGUF")
+    _wire(monkeypatch, enabled = True, resolves_to = target, backend = backend, recorder = recorder)
+    monkeypatch.setattr(inference_route, "_target_speech_audio_type", lambda *_a: audio_type)
+    return backend, recorder
+
+
+@pytest.mark.parametrize(
+    "audio_type,context,text,instructions,status",
+    [
+        (None, 8192, "hi", "", 400),
+        ("snac", 8192, "hi", "", None),
+        ("snac", 512, "x" * 1000, "", 400),
+        ("snac", None, "hi", "", None),
+        ("higgs_tts2", 512, "hi", "x" * 1000, 400),
+        ("minimax_music3", None, "hi", "", 400),
+        ("minimax_music3", None, "hi", "a warm ballad", None),
+    ],
+)
+def test_speech_switch_admission(monkeypatch, audio_type, context, text, instructions, status):
+    backend, recorder = _speech_case(monkeypatch, audio_type, audio_type in (None, "snac"))
+    monkeypatch.setattr(inference_route, "_target_effective_context_length", lambda *_a: context)
+    call = inference_route._maybe_auto_switch_model(
+        "org/B-GGUF",
+        object(),
+        "tester",
+        require_speech = True,
+        speech_budget = {"text": text, "instructions": instructions},
+    )
+    if status:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(call)
+        assert error.value.status_code == status
+        assert recorder.calls == [] and backend.model_identifier == "org/A-GGUF"
+    else:
+        asyncio.run(call)
+        assert len(recorder.calls) == 1
+
+
+@pytest.mark.parametrize("audio_type", ["snac", "bicodec", "dac", "higgs_tts2"])
+@pytest.mark.parametrize("token", [None, "caller-token"])
+def test_speech_switch_preserves_staged_assets_and_identity(monkeypatch, audio_type, token):
+    from starlette.requests import Request
+
+    _, recorder = _speech_case(monkeypatch, audio_type, audio_type != "higgs_tts2")
+    staged = inference_route._SpeechCodecPreflightResult(
+        {"HF_HUB_CACHE": "/captured/hub"}, "/captured/codec"
+    )
+    seen = []
+    monkeypatch.setattr(
+        inference_route, "_preflight_speech_codec_for_switch", lambda *a: seen.append(a) or staged
+    )
+    headers = [(b"x-unsloth-hf-token", token.encode())] if token else []
+    request = Request({"type": "http", "path": "/v1/audio/speech", "headers": headers})
+    asyncio.run(
+        inference_route._maybe_auto_switch_model(
+            "org/B-GGUF", request, "tester", require_speech = True
+        )
+    )
+    assert seen[0][-1] == token
+    assert recorder.cache_environment == staged.cache_environment
+    assert recorder.speech_codec_path == staged.codec_path
+    assert recorder.anonymous_hf_access is (token is None)
+    assert recorder.calls[0].hf_token == token
+
+
+@pytest.mark.parametrize("condition", ["complete", "missing", "unsafe"])
+@pytest.mark.parametrize("token", [None, "caller-token"])
+def test_higgs_companion_preflight_before_eviction(tmp_path, monkeypatch, condition, token):
+    import huggingface_hub
+    from core.inference import native_audio
+    from utils import hf_cache_settings, security, utils
+    from starlette.requests import Request
+
+    preflight = inference_route._preflight_speech_codec_for_switch
+    backend, recorder = _speech_case(monkeypatch, "higgs_tts2", False)
+    monkeypatch.setattr(inference_route, "_preflight_speech_codec_for_switch", preflight)
+    codec = tmp_path / "codec"
+    codec.mkdir()
+    (codec / "config.json").write_text(json.dumps({"model_type": "higgs_audio_v2_tokenizer"}))
+    if condition != "missing":
+        (codec / "model.safetensors").write_bytes(_safetensors_bytes())
+    cache = hf_cache_settings.HuggingFaceCachePaths(
+        tmp_path, tmp_path / "hub", tmp_path / "xet", "studio"
+    )
+    seen = []
+    monkeypatch.setattr(hf_cache_settings, "get_hf_cache_paths", lambda: cache)
+    monkeypatch.setattr(utils, "hf_env_offline", lambda: True)
+    monkeypatch.setattr(
+        native_audio, "native_audio_security_targets", lambda p, *_a: [p, "org/codec"]
+    )
+    monkeypatch.setattr(
+        huggingface_hub, "snapshot_download", lambda repo, **kw: seen.append(kw) or str(codec)
+    )
+    monkeypatch.setattr(
+        security,
+        "evaluate_file_security",
+        lambda *_a, **_k: types.SimpleNamespace(blocked = condition == "unsafe", reason = "unsafe"),
+    )
+    headers = [(b"x-unsloth-hf-token", token.encode())] if token else []
+    request = Request({"type": "http", "path": "/v1/audio/speech", "headers": headers})
+    call = inference_route._maybe_auto_switch_model(
+        "org/B-GGUF", request, "tester", require_speech = True
+    )
+    if condition == "complete":
+        asyncio.run(call)
+        assert len(recorder.calls) == 1
+    else:
+        with pytest.raises(HTTPException) as error:
+            asyncio.run(call)
+        assert error.value.status_code == 503
+        assert recorder.calls == [] and backend.is_loaded
+    assert seen == [
+        {"token": token or False, "cache_dir": str(cache.hub_cache), "local_files_only": True}
+    ]
+
+
+def test_speech_budget_rechecks_changing_load_override(monkeypatch):
+    backend, recorder = _speech_case(monkeypatch)
+    reads = []
+
+    def override(*_a):
+        value = 8192 if not reads else 512
+        reads.append(value)
+        return "org/B-GGUF:Q8_0", {"max_seq_length": value}
+
+    monkeypatch.setattr(settings, "resolve_override_for_load", override)
+    with pytest.raises(HTTPException) as error:
+        asyncio.run(
+            inference_route._maybe_auto_switch_model(
+                "org/B-GGUF",
+                object(),
+                "tester",
+                require_speech = True,
+                speech_budget = {"text": "x" * 1000},
+            )
+        )
+    assert reads == [8192, 512] and error.value.status_code == 400
+    assert recorder.calls == [] and backend.model_identifier == "org/A-GGUF"
+
+
+@pytest.mark.parametrize("fault", [None, "weights", "metadata", "remote-code"])
+def test_minimax_pipeline_completeness(tmp_path, monkeypatch, fault):
+    pipeline = _complete_minimax_pipeline(tmp_path)
+    monkeypatch.setattr(resolver, "_host_can_serve_minimax_music3", lambda: True)
+    if fault == "weights":
+        (pipeline / "vocoder" / "diffusion_pytorch_model.safetensors").unlink()
+    elif fault == "metadata":
+        (pipeline / "tokenizer" / "tokenizer.json").write_text("not-json")
+    elif fault == "remote-code":
+        (pipeline / "language_model" / "config.json").write_text(
+            json.dumps({"auto_map": {"AutoModel": "modeling.Custom"}})
+        )
+    info = types.SimpleNamespace(id = "MiniMaxAI/MiniMax-Music3", path = str(pipeline))
+    assert resolver.local_servable_model(info) == ((False, ()) if fault is None else None)
+
+
+@pytest.mark.parametrize(
+    "audio_type,allowed",
+    [
+        ("moss_tts_local", False),
+        ("moss_tts_nano", False),
+        ("higgs_tts3", False),
+        ("higgs_tts2", True),
+    ],
+)
+def test_speech_probe_refuses_remote_code(monkeypatch, audio_type, allowed):
+    from utils.models import model_config
+    monkeypatch.setattr(model_config, "detect_audio_type", lambda *_a, **_kw: audio_type)
+    assert inference_route._target_speech_audio_type("/local/model", False) == (
+        audio_type if allowed else None
+    )

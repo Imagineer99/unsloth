@@ -49,7 +49,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Callable, List, Tuple, Union
+from typing import Callable, List, Tuple
 import hashlib
 import json
 import threading
@@ -1119,7 +1119,7 @@ def _hub_model_info(
 
 
 # Revision-less entries keep the historical 3-part key; pinned entries append revision.
-_CapabilityCacheKey = Union[Tuple[str, Optional[str], bool], Tuple[str, Optional[str], bool, str]]
+_CapabilityCacheKey = Tuple[Any, ...]
 _vision_detection_cache: Dict[_CapabilityCacheKey, bool] = {}
 _vision_cache_lock = threading.Lock()
 
@@ -1320,6 +1320,36 @@ _AUDIO_OFFLINE_MISS_TTL_S = 60.0
 _audio_offline_miss_cache: Dict[_CapabilityCacheKey, float] = {}
 
 
+def _local_audio_metadata_fingerprint(model_name: str) -> tuple:
+    try:
+        root = Path(normalize_path(model_name)).expanduser()
+        if root.is_file():
+            root = root.parent
+        identities = []
+        for relative in (
+            "config.json",
+            "modular_model_index.json",
+            *_AUDIO_TOKENIZER_CONFIG_PATHS,
+        ):
+            candidate = root / relative
+            try:
+                stat = candidate.stat()
+                identity = (
+                    stat.st_mtime_ns,
+                    stat.st_size,
+                    getattr(stat, "st_ctime_ns", None),
+                    getattr(stat, "st_dev", None),
+                    getattr(stat, "st_ino", None),
+                )
+            except OSError:
+                identity = None
+            identities.append((relative, identity))
+        return tuple(identities)
+    except Exception:
+        # Keep cache-key construction from turning an unreadable path into a request failure.
+        return (("unreadable", None),)
+
+
 def detect_audio_type(
     model_name: str,
     hf_token: Optional[str] = None,
@@ -1379,6 +1409,9 @@ def detect_audio_type_checked(
     # does not put an anonymous caller back on the wire. Inconclusive for it instead.
     if effective_offline and is_anonymous(hf_token) and not is_local_path(model_name):
         return None, False
+    local_fingerprint = (
+        _local_audio_metadata_fingerprint(model_name) if is_local_path(model_name) else None
+    )
     # Checked on the RAW name, before the casing resolution below, because resolving a
     # repo id that is not in the cache walks every cache directory, and that walk is the
     # cost this cache exists to avoid. A casing variant just takes its own entry, which
@@ -1390,6 +1423,8 @@ def detect_audio_type_checked(
     )
     if revision is not None:
         miss_key += (revision,)
+    if local_fingerprint is not None:
+        miss_key += (local_fingerprint,)
     if effective_offline:
         seen_at = _audio_offline_miss_cache.get(miss_key)
         if seen_at is not None and time.monotonic() - seen_at < _AUDIO_OFFLINE_MISS_TTL_S:
@@ -1410,6 +1445,8 @@ def detect_audio_type_checked(
     )
     if revision is not None:
         cache_key += (revision,)
+    if local_fingerprint is not None:
+        cache_key += (local_fingerprint,)
     if cache_key in _audio_detection_cache:
         # Only definitive results are cached, so a hit is definitive by construction.
         return _audio_detection_cache[cache_key], True
