@@ -79,7 +79,7 @@ jobs:
         working-directory: studio/frontend
         run: |
           npm ci --ignore-scripts --no-fund --no-audit
-          node --experimental-strip-types --test tests/cache-copy-selection.test.ts tests/hub-selection-resolution.test.ts tests/agent-cache-targets.test.ts tests/pinned-quant-sources.test.ts tests/inactive-cache-updates.test.ts
+          node --experimental-strip-types --test tests/cache-copy-selection.test.ts tests/hub-selection-resolution.test.ts tests/agent-cache-targets.test.ts tests/pinned-quant-sources.test.ts tests/inactive-cache-updates.test.ts tests/auto-load-target-key.test.ts tests/last-local-model-load.test.ts tests/diffusion-route-search.test.ts tests/media-cache-targets.test.ts
 
       - name: Upload Studio probe artifacts
         if: always()
