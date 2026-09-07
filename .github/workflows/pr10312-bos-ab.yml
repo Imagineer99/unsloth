@@ -1,0 +1,73 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 10312 BOS A-B regression proof"
+
+on:
+  push:
+    branches:
+      - "fix/pr-10312-bos-ab-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    if: github.repository == 'Imagineer99/unsloth'
+    name: "A/B proof (${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      UV_CACHE_DIR: ${{ github.workspace }}/temp/pr10312/uv-cache
+      HF_HUB_DISABLE_XET: "1"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: "Install pinned CPU-only reproduction environment"
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          venv = root / "temp/pr10312/venv"
+          subprocess.run([sys.executable, "-m", "pip", "install", "uv==0.12.1"], check=True)
+          subprocess.run([sys.executable, "-m", "uv", "venv", str(venv), "--python", sys.executable], check=True)
+          python = venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+          cmd = [sys.executable, "-m", "uv", "pip", "install", "--python", str(python), "torch==2.11.0", "torchvision==0.26.0"]
+          if sys.platform != "darwin":
+              cmd += ["--index-url", "https://download.pytorch.org/whl/cpu"]
+          subprocess.run(cmd, check=True)
+          subprocess.run([sys.executable, "-m", "uv", "pip", "install", "--python", str(python),
+              "transformers==5.5.0", "tokenizers==0.22.2", "pillow==12.1.1", "librosa==0.11.0", "jinja2==3.1.6"], check=True)
+          subprocess.run([sys.executable, "-m", "uv", "pip", "install", "--python", str(python), "--no-deps", "unsloth-zoo==2026.9.1"], check=True)
+          subprocess.run([sys.executable, "-m", "uv", "pip", "freeze", "--python", str(python)], check=True)
+
+      - name: "Prove baseline passes and PR fails only the BOS assertion"
+        shell: python
+        run: |
+          import os, pathlib, subprocess, sys
+          root = pathlib.Path(os.environ["GITHUB_WORKSPACE"])
+          python = root / "temp/pr10312/venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+          subprocess.run([str(python), ".github/scripts/pr10312_bos_ab.py", "paired", "--repo", str(root),
+              "--output", str(root / "temp/pr10312/evidence")], check=True)
+
+      - name: Upload paired evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: bos-ab-${{ matrix.os }}
+          path: |
+            temp/pr10312/evidence/*.log
+            temp/pr10312/evidence/paired-result.json
+            temp/pr10312/evidence/*/result.json
+          if-no-files-found: warn
