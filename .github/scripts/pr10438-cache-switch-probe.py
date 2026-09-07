@@ -294,6 +294,9 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
                 await api("PUT", "/api/settings/hugging-face-cache", json={"cache_home": None})
                 inventory = await api("GET", "/api/hub/cached-gguf")
                 copies = [row for row in inventory["cached"] if row["repo_id"] == repo_id]
+                from urllib.parse import quote
+                for row in copies:
+                    row["inventory_id"] = row.get("inventory_id") or "cache:gguf:" + quote(repo_id, safe="")
                 facts["api_copies"] = len(copies)
                 facts["active_flags"] = [row.get("active_cache") for row in copies]
                 variants = {}
@@ -311,6 +314,8 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
             await expect(sp.page.locator(f'div[data-selected="true"] > button[aria-label="{title}"]')).to_have_count(1, timeout=45000)
             await sp.page.screenshot(path=str(artifact_dir / "cache-switch.png"), full_page=True)
             facts["selectable_dom_rows"] = await rows.count()
+            for index in range(facts["selectable_dom_rows"]):
+                await rows.nth(index).locator("..").screenshot(path=str(artifact_dir / f"fixture-row-{index}.png"))
             assert len(copies) == 2, facts
             assert sorted(facts["active_flags"]) == [False, True], facts
             assert sorted(q for group in variants.values() for q in group) == ["Q6_K", "Q8_0"], facts
