@@ -169,6 +169,8 @@ def paired(args):
             subprocess.run(["git", "worktree", "add", "--detach", str(checkout), sha], cwd=root, check=True)
         command = [sys.executable, str(Path(__file__).resolve()), "probe", "--repo", str(checkout),
                    "--output", str(output / label), "--label", label, "--snapshot", str(snapshot)]
+        result_file = output / label / "result.json"
+        result_file.unlink(missing_ok=True)  # Never accept evidence from an earlier run.
         with (output / (label + ".log")).open("w", encoding="utf-8") as log:
             completed = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT)
         result_file = output / label / "result.json"
