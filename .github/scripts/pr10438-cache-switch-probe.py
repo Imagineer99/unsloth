@@ -263,6 +263,8 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
     init = await auth_init(base_url, password)
     repo_id = "Org/Cache-Switch-10438-GGUF"
     title = repo_id.split("/")[1]
+    older_snapshot = os.environ.get("STUDIO_OLDER_SNAPSHOT") == "1"
+    expected_count = 3 if older_snapshot else 2
     facts = {"commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
              "home": str(Path(os.environ["UNSLOTH_STUDIO_HOME"]).resolve()), "url": base_url,
              "browser": browser_name, "expect": "Two selectable cache copies after resetting the download folder; Q6_K and Q8_0 remain accessible."}
@@ -287,6 +289,12 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
                     (repo / "refs").mkdir(exist_ok=True)
                     (repo / "refs" / "main").write_text("d" * 40)
                 seed(default_root, "Q6_K")
+                if older_snapshot:
+                    older = default_root / "models--Org--Cache-Switch-10438-GGUF" / "snapshots" / ("a" * 40)
+                    older.mkdir(parents=True)
+                    (older / "Model-Q4_K_M.gguf").write_bytes(b"\0" * 256)
+                    os.utime(older, (1, 1))
+                    facts["expect"] = "Three selectable snapshot/cache rows; Q4_K_M, Q6_K and Q8_0 remain accessible."
                 home = Path(os.environ["UNSLOTH_STUDIO_HOME"])
                 custom_home = home.with_name(home.name + "-custom-hf")
                 status = await api("PUT", "/api/settings/hugging-face-cache", json={"cache_home": str(custom_home)})
@@ -301,7 +309,7 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
                 facts["active_flags"] = [row.get("active_cache") for row in copies]
                 variants = {}
                 for row in copies:
-                    listing = await api("GET", "/api/hub/gguf-variants", params={"repo_id": repo_id, "prefer_local_cache": "true", "local_path": row["cache_path"]})
+                    listing = await api("GET", "/api/hub/gguf-variants", params={"repo_id": repo_id, "prefer_local_cache": "true", "local_path": row.get("load_id") or row["cache_path"]})
                     variants[row["inventory_id"]] = [v["quant"] for v in listing["variants"] if v["downloaded"]]
                 facts["variants"] = variants
             await sp.page.evaluate("localStorage.setItem('unsloth.hub.modelsTab', 'downloaded')")
@@ -316,15 +324,20 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
             facts["selectable_dom_rows"] = await rows.count()
             for index in range(facts["selectable_dom_rows"]):
                 await rows.nth(index).locator("..").screenshot(path=str(artifact_dir / f"fixture-row-{index}.png"))
-            assert len(copies) == 2, facts
-            assert sorted(facts["active_flags"]) == [False, True], facts
-            assert sorted(q for group in variants.values() for q in group) == ["Q6_K", "Q8_0"], facts
-            assert facts["selectable_dom_rows"] == 2, facts
+            assert len(copies) == expected_count, facts
+            assert sorted(facts["active_flags"]) == ([False, True, True] if older_snapshot else [False, True]), facts
+            assert sorted(q for group in variants.values() for q in group) == (["Q4_K_M", "Q6_K", "Q8_0"] if older_snapshot else ["Q6_K", "Q8_0"]), facts
+            assert facts["selectable_dom_rows"] == expected_count, facts
             selected = []
             facts["clicks"] = []
             await sp.page.evaluate("() => { window.cacheProofEvents = []; document.addEventListener('click', e => window.cacheProofEvents.push({label:e.target.closest('button')?.getAttribute('aria-label'), model:new URL(location.href).searchParams.get('model')}), true); }")
-            for index in range(2):
-                target = sp.page.locator(f'div:not([data-selected="true"]) > button[aria-label="{title}"]').first
+            for index in range(expected_count):
+                target = rows.nth(index)
+                if await target.locator("..").get_attribute("data-selected") == "true":
+                    current = await sp.page.evaluate("new URL(location.href).searchParams.get('model')")
+                    selected.append(current)
+                    await sp.page.get_by_text(variants[current][0], exact=True).first.wait_for(state="visible")
+                    continue
                 await target.hover()
                 await expect(target.locator("..")).to_have_attribute("data-slot", "tooltip-trigger")
                 previous = await sp.page.evaluate("new URL(location.href).searchParams.get('model')")
@@ -338,8 +351,8 @@ async def scenario_smoke(base_url: str, password: str, browser_name: str, artifa
                 selected.append(current)
                 await sp.page.get_by_text(variants[current][0], exact=True).first.wait_for(state="visible")
             facts["selected_ids"] = selected
-            assert len(set(selected)) == 2, facts
-            pass_log(f"{browser_name}: reset cache folder; both Q6/Q8 copies selectable")
+            assert len(set(selected)) == expected_count, facts
+            pass_log(f"{browser_name}: reset cache folder; {expected_count} snapshot/cache copies selectable")
         finally:
             facts["events"] = await sp.page.evaluate("window.cacheProofEvents || []")
             facts["final_selected_id"] = await sp.page.evaluate("new URL(location.href).searchParams.get('model')")
