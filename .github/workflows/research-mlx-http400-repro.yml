@@ -1,0 +1,65 @@
+name: Research MLX HTTP 400 reproduction
+
+on:
+  push:
+    branches: [fix/research-mlx-http400-repro]
+    paths:
+      - .github/workflows/research-mlx-http400-repro.yml
+      - studio/backend/tests/test_research_mlx_http400_repro.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: research-mlx-http400-repro-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  reproduce:
+    name: Research route repro (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    env:
+      REPRO_ARTIFACT_DIR: ${{ github.workspace }}/repro-artifacts
+      UNSLOTH_STUDIO_HOME: ${{ github.workspace }}/.studio-repro
+      UNSLOTH_STUDIO_DISABLE_DEVICE_PROBE: '1'
+      HF_HUB_OFFLINE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Record source and host
+        run: |
+          mkdir -p "$REPRO_ARTIFACT_DIR"
+          git rev-parse HEAD | tee "$REPRO_ARTIFACT_DIR/commit.txt"
+          python -c 'import platform; print(platform.platform()); print(platform.machine()); print(platform.python_version())' | tee "$REPRO_ARTIFACT_DIR/host.txt"
+      - name: Install backend and test dependencies (no ML runtime)
+        run: |
+          python -m pip install uv
+          uv pip install --system -r studio/backend/requirements/studio.txt \
+            pytest pytest-timeout python-multipart aiofiles sqlalchemy psutil pyyaml jinja2 pillow requests
+          uv pip freeze --system > "$REPRO_ARTIFACT_DIR/dependencies.txt"
+      - name: Reproduce rejection and run single-field controls
+        run: |
+          set -o pipefail
+          python -m pytest studio/backend/tests/test_research_mlx_http400_repro.py \
+            -q -s --tb=short --timeout=30 \
+            --junitxml="$REPRO_ARTIFACT_DIR/junit.xml" \
+            2>&1 | tee "$REPRO_ARTIFACT_DIR/pytest.log"
+      - name: Upload reproduction evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: research-mlx-http400-${{ matrix.os }}
+          path: repro-artifacts/
+          if-no-files-found: error
+          retention-days: 14
