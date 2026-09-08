@@ -11,6 +11,8 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from loopback_server import LoopbackHTTPServer
+import tempfile
 
 import pytest
 import typer
@@ -38,7 +40,7 @@ def test_real_process_stream(monkeypatch,tmp_path,model,mode):
                     time.sleep(.04)
             except (BrokenPipeError,ConnectionResetError,ConnectionAbortedError):pass
         def log_message(self,*args):pass
-    upstream=ThreadingHTTPServer(('127.0.0.1',0),Source)
+    upstream=LoopbackHTTPServer(('127.0.0.1',0),Source)
     thread=threading.Thread(target=upstream.serve_forever,daemon=True)
     thread.start()
     with socket.socket() as sock:
@@ -67,6 +69,8 @@ def test_real_process_stream(monkeypatch,tmp_path,model,mode):
                     pass
             time.sleep(.02)
         else:
+            log=Path(tempfile.gettempdir())/f'unsloth-start-server-{os.getpid()}.log'
+            print(log.read_text(errors='replace').replace('sk-unsloth-test','[test-key]'))
             raise AssertionError('Test child/transfer never became ready for timing')
         timed_start.append(time.monotonic())
         release.set()

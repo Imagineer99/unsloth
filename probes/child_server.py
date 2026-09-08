@@ -7,6 +7,7 @@ import time
 import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from loopback_server import LoopbackHTTPServer
 
 port, source, cache, mode = int(sys.argv[1]), sys.argv[2], Path(sys.argv[3]), sys.argv[4]
 cache.write_bytes(b'')
@@ -29,7 +30,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(raw)
     def log_message(self,*args):pass
 
-server=ThreadingHTTPServer(('127.0.0.1',port),Handler)
+print('probe: binding numeric loopback listener',flush=True)
+server=LoopbackHTTPServer(('127.0.0.1',port),Handler)
 threading.Thread(target=server.serve_forever,daemon=True).start()
 print('UNSLOTH_START_API_KEY: sk-unsloth-test',flush=True)
 with urllib.request.urlopen(source,timeout=5) as response, cache.open('wb') as out:
