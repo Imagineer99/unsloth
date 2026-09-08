@@ -31,6 +31,8 @@ jobs:
           python3 -m venv .pr9666-venv
           .pr9666-venv/bin/python -m pip install Pillow==11.3.0
       - name: Validate pinned sources in native windows
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: .pr9666-venv/bin/python .github/scripts/pr9666/run.py
       - name: Retain review artifacts including failures
         if: always()

@@ -78,7 +78,8 @@ def main():
     try:
         if platform.system()!='Darwin' or int(platform.mac_ver()[0].split('.')[0])<14:
             raise RuntimeError('Requires native macOS14+; browser emulation is not accepted')
-        with urllib.request.urlopen('https://api.github.com/repos/unslothai/unsloth/pulls/9666',timeout=30) as response:
+        request=urllib.request.Request('https://api.github.com/repos/unslothai/unsloth/pulls/9666',headers={'Authorization': 'Bearer '+os.environ['GH_TOKEN'], 'Accept':'application/vnd.github+json'})
+        with urllib.request.urlopen(request,timeout=30) as response:
             live=json.load(response)
         if live['head']['sha']!=MANIFEST['head']:raise RuntimeError('Live PR head changed; approval pins must be refreshed')
         work.mkdir(parents=True,exist_ok=False)
