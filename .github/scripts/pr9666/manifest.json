@@ -1,0 +1,14 @@
+{
+  "pr": 9666,
+  "repository": "unslothai/unsloth",
+  "fork": "Imagineer99/unsloth",
+  "branch": "fix/pr9666-native-mac-ab-20260908",
+  "base": "5c44c8c96b7fad0777cb6ea1240e5427f81e6fe4",
+  "head": "70775b3bdf147d10e941306c17c25d51d98a4bca",
+  "scene": "native_mac_interface_scale_and_toolbar",
+  "expect": "BEFORE has no Interface scale control. AFTER exposes 50-200%, changes WKWebView.pageZoom, restores 125% after reload and resets to 100%. At a 900-point window width, the sidebar trigger must remain clear of the actual native window-button frames at every tested scale. The existing simulation predicts a clearance failure at 125%; the native result must be measured independently.",
+  "evidence_scope": "Production AppearanceTab, Navbar, SidebarProvider and SidebarInset in a controlled Tauri native window; production appearance effect and Mac chrome styles extracted verbatim from each side. This is not a complete Studio backend/session or installer test.",
+  "scales": [50, 100, 125, 200],
+  "window_points": {"width": 900, "height": 600},
+  "verified": null
+}
