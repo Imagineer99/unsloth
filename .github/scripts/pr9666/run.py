@@ -48,6 +48,7 @@ def side_run(checkout, side, work, artifacts, run_id):
     binary = work/f'pr9666-probe-{side}'
     shutil.copy2(work/'cargo-target/debug/pr9666_probe',binary)
     port = free_port()
+    env['PR9666_PROFILE'] = json.loads((out/'provenance.json').read_text())['profile_uuid']
     env['PR9666_URL'] = f'http://127.0.0.1:{port}/pr9666-native.html'
     provenance = json.loads((out/'provenance.json').read_text())
     provenance.update(port=port,runtime_url=env['PR9666_URL'])

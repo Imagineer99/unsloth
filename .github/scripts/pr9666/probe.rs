@@ -108,6 +108,16 @@ fn main() {
             .parse()
             .expect("Invalid loopback URL"),
     );
+    // Configure the isolated profile at runtime: the pinned codegen emits a Vec
+    // for this array field when it is provided through compile-time JSON.
+    let profile = std::env::var("PR9666_PROFILE").expect("PR9666_PROFILE required");
+    let hex = profile.replace('-', "");
+    assert_eq!(hex.len(), 32);
+    let mut bytes = [0u8; 16];
+    for (index, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&hex[index * 2..index * 2 + 2], 16).unwrap();
+    }
+    context.config_mut().app.windows[0].data_store_identifier = Some(bytes);
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![native_geometry, capture, finish])
         .setup(|app| {

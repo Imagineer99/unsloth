@@ -74,8 +74,8 @@ import {NATIVE_MAC_TITLEBAR_HEIGHT_VAR,NATIVE_MAC_TRAFFIC_LIGHT_INSET_VAR} from 
     profile = uuid.uuid5(uuid.NAMESPACE_URL, f'pr9666/{run_id}/{side}/{sha}')
     identity = {'side':side,'sha':sha,'profile_uuid':str(profile)}
     (front/'public/pr9666-identity.json').write_text(json.dumps(identity))
-    window.update(width=900, height=600, visible=False, resizable=True,
-                  dataStoreIdentifier=list(profile.bytes))
+    window.update(width=900, height=600, visible=False, resizable=True)
+    window.pop("dataStoreIdentifier", None)
     override = {'identifier': f'ai.unsloth.pr9666.{side}',
                 'build': {'devUrl': f'http://127.0.0.1:{port}/pr9666-native.html', 'beforeDevCommand': None},
                 'app': {'windows': [window]}}
