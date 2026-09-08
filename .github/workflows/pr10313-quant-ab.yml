@@ -1,0 +1,46 @@
+name: PR 10313 deterministic quant A-B
+
+on:
+  push:
+    branches: [fix/pr10313-quant-ab-20260908]
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    name: A-B (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    steps:
+      - name: Checkout test harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          path: temp/harness
+      - name: Checkout immutable PR revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: b4a60aeefd46e7573d35b10e2a3264589ef1d293
+          persist-credentials: false
+          path: temp/subject
+      - name: Install exact Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.14.0
+      - name: Require exact failure signature in A and passing correction in B
+        run: node temp/harness/.github/scripts/pr10313-ab/run-ab.mjs temp/subject temp/evidence
+      - name: Retain evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr10313-ab-${{ matrix.os }}
+          path: |
+            temp/evidence/results.json
+            temp/evidence/existing-tests.log
+          if-no-files-found: warn
