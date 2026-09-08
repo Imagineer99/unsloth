@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,13 +20,19 @@ ROOT=Path(__file__).resolve().parent
 
 @pytest.mark.parametrize('model,mode', [('org/model','live'),('org/model-GGUF','live'),('org/model','stall')])
 def test_real_process_stream(monkeypatch,tmp_path,model,mode):
+    # Keep loopback test traffic independent of the runner's ambient proxy settings.
+    monkeypatch.setenv('no_proxy','*')
+    monkeypatch.setenv('NO_PROXY','*')
+    release=threading.Event()
     class Source(BaseHTTPRequestHandler):
         def do_GET(self):
             self.send_response(200)
             self.send_header('Content-Length',str(65536*60))
             self.end_headers()
             try:
-                for _ in range(60):
+                for index in range(60):
+                    if index==5 and not release.wait(30):
+                        raise TimeoutError('Probe setup did not release the transfer')
                     self.wfile.write(b'x'*65536)
                     self.wfile.flush()
                     time.sleep(.04)
@@ -41,10 +48,28 @@ def test_real_process_stream(monkeypatch,tmp_path,model,mode):
     real_popen=subprocess.Popen
     children=[]
     shutdowns=[]
+    timed_start=[]
     def spawn(command,**kwargs):
         child=real_popen([sys.executable,str(ROOT/'child_server.py'),str(port),
             f'http://127.0.0.1:{upstream.server_port}/payload',str(cache),mode],**kwargs)
         children.append(child)
+        # Popen returns before production starts its deadline. Hold it here until
+        # the child has received bytes and the real HTTP health endpoint responds.
+        limit=time.monotonic()+25
+        while time.monotonic()<limit:
+            assert child.poll() is None, 'Test child exited during setup'
+            if cache.exists() and cache.stat().st_size>=5*65536:
+                try:
+                    with urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health',timeout=1) as response:
+                        assert json.load(response)['status']=='healthy'
+                    break
+                except OSError:
+                    pass
+            time.sleep(.02)
+        else:
+            raise AssertionError('Test child/transfer never became ready for timing')
+        timed_start.append(time.monotonic())
+        release.set()
         return child
     def shutdown(child):
         shutdowns.append(cache.stat().st_size)
@@ -62,7 +87,7 @@ def test_real_process_stream(monkeypatch,tmp_path,model,mode):
             with pytest.raises(typer.Exit):
                 s._start_studio_server(f'http://127.0.0.1:{port}',model,s.LoadOptions())
             assert shutdowns==[5*65536]
-            assert time.monotonic()-begin < 5, 'Noisy stall exceeded its bounded timeout'
+            assert time.monotonic()-timed_start[0] < 5, 'Noisy stall exceeded its bounded timeout'
         else:
             try:
                 child=s._start_studio_server(f'http://127.0.0.1:{port}',model,s.LoadOptions())
@@ -72,7 +97,7 @@ def test_real_process_stream(monkeypatch,tmp_path,model,mode):
                 assert len(shutdowns) == 1
                 assert 0 < shutdowns[0] < 65536*60
                 assert children[0].poll() is not None
-                assert time.monotonic()-begin >= 1.0
+                assert time.monotonic()-timed_start[0] >= 1.0
                 print(json.dumps({'arm':'base','model':model,'outcome':'active-download-killed',
                     'bytes_at_shutdown':shutdowns[0]}))
                 pytest.xfail('Confirmed baseline kills an active file transfer')
@@ -83,6 +108,7 @@ def test_real_process_stream(monkeypatch,tmp_path,model,mode):
         print(json.dumps({'mode':mode,'model':model,'seconds':time.monotonic()-begin,
             'bytes':cache.stat().st_size,'shutdowns':shutdowns}))
     finally:
+        release.set()
         for child in children:
             if child.poll() is None: child.terminate()
             child.wait(timeout=5)
