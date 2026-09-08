@@ -1,0 +1,33 @@
+{
+  "base_sha": "999dd8500fa845cd766d3d1b3bd408c1fe0ee647",
+  "head_sha": "b799cae17e35d66de427abe5c01e9b7f6fb50446",
+  "expected_difference": "Only AFTER stages the absent MTP companion and displays its filename and companion-only byte progress.",
+  "facts": {
+    "before": {
+      "side": "BEFORE",
+      "backend_downloaded": true,
+      "download_size_bytes": 112238658784,
+      "pending_drafter_filename": null,
+      "pending_drafter_size_bytes": 0,
+      "main_bytes_cached": 112238658784,
+      "mtp_bytes_missing": 2786568256,
+      "staged": false,
+      "manager_outcome": null,
+      "page_errors": []
+    },
+    "after": {
+      "side": "AFTER",
+      "backend_downloaded": false,
+      "download_size_bytes": 115025227040,
+      "pending_drafter_filename": "MTP/mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf",
+      "pending_drafter_size_bytes": 2786568256,
+      "main_bytes_cached": 112238658784,
+      "mtp_bytes_missing": 2786568256,
+      "staged": true,
+      "manager_outcome": "started",
+      "page_errors": []
+    }
+  },
+  "method": "Production inventory against temporary sparse seeded cache; real frontend download manager with deterministic intercepted API responses; separate Vite processes and browser contexts. No inference or model transfer.",
+  "fixture": "Original reported shared-only MTP listing. Current main prefers the self-contained Q8 head when both forms exist; covered separately by the backend regression test."
+}
