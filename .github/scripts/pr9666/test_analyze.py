@@ -56,12 +56,12 @@ class VerdictTests(unittest.TestCase):
             directory=self.root/side;directory.mkdir()
             (directory/'provenance.json').write_text(json.dumps({'sha':MANIFEST[side],'profile_uuid':side}))
             (directory/'result.json').write_text(json.dumps({'status':'complete','sha':MANIFEST[side]}))
-            labels=['appearance100','toolbar100']
-            if side=='head':labels+=['appearance125','appearance50','appearance200','toolbar125','toolbar50','toolbar200','reload125','reset100']
+            labels=['appearance100','toolbar100','preferences100']
+            if side=='head':labels+=['preferences125','appearance125','appearance50','appearance200','toolbar125','toolbar50','toolbar200','reload125','reset100']
             for label in labels:
                 pct=int(''.join(c for c in label if c.isdigit()))
                 record=sample(pct/100,x=84/(pct/100))
-                record['facts'].update(side=side,sha=MANIFEST[side],scale_control=side=='head')
+                record['facts'].update(side=side,sha=MANIFEST[side],scale_control=side=='head',preferences_native_top=58)
                 (directory/f'{label}.json').write_text(json.dumps(record))
         self.composer=patch('analyze.composite');self.composer.start()
     def tearDown(self):self.composer.stop();self.temporary.cleanup()
@@ -81,6 +81,9 @@ class VerdictTests(unittest.TestCase):
     def test_wrong_source_capture_is_incomplete(self):
         self.alter('head','appearance125',lambda r:r['facts'].update(sha=MANIFEST['base']))
         with self.assertRaisesRegex(ValueError,'identity'):analyze(self.root)
+    def test_misaligned_preferences_are_rejected(self):
+        self.alter('head','preferences125',lambda r:r['facts'].update(preferences_native_top=120))
+        with self.assertRaisesRegex(ValueError,'not aligned'):analyze(self.root)
     def test_shared_profile_is_incomplete(self):
         path=self.root/'head/provenance.json';value=json.loads(path.read_text());value['profile_uuid']='base';path.write_text(json.dumps(value))
         with self.assertRaisesRegex(ValueError,'shared native profile'):analyze(self.root)

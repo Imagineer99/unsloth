@@ -57,7 +57,22 @@ function facts() {
     stored_scale:localStorage.getItem('unsloth_interface_scale'),
     sidebar_button:rect?{x:rect.x,y:rect.y,width:rect.width,height:rect.height}:null};
 }
-async function shot(label: string) {await delay(200); return invoke('capture',{label,facts:facts()});}
+async function shot(label: string) {
+  if(label.startsWith('appearance')) {
+    document.querySelector<HTMLElement>('[data-probe-scene="appearance"]')!.scrollTop=0;
+  }
+  await delay(200); return invoke('capture',{label,facts:facts()});
+}
+async function preferences(pct: number) {
+  const main=document.querySelector<HTMLElement>('[data-probe-scene="appearance"]')!;
+  const section=document.querySelector<HTMLElement>('section[data-settings-label="Preferences"]')!;
+  assert(section, 'Preferences section missing');
+  main.scrollTop += section.getBoundingClientRect().top - 58/(pct/100);
+  await delay(250);
+  const nativeTop=section.getBoundingClientRect().top*(pct/100);
+  assert(Math.abs(nativeTop-58)<2, 'Preferences native anchor did not align');
+  await invoke('capture',{label:`preferences${pct}`,facts:{...facts(),preferences_native_top:nativeTop,scroll_top:main.scrollTop}});
+}
 async function run() {
   await until(()=>!!document.querySelector('[data-probe-scene]'),'Initial scene missing');
   if (sessionStorage.getItem('pr9666-phase')==='reload') {
@@ -70,12 +85,12 @@ async function run() {
     await invoke('finish',{result:{status:'complete',side:SIDE.side,sha:SIDE.sha,reload125:true,reset100:true}});return;
   }
   await zoom(1); assert(!!scaleInput()===(SIDE.side==='head'),'Incorrect control visibility');
-  await shot('appearance100'); await show('toolbar'); await shot('toolbar100');
+  await shot('appearance100'); await preferences(100); await show('toolbar'); await shot('toolbar100');
   if (SIDE.side==='base') {
     await invoke('finish',{result:{status:'complete',side:SIDE.side,sha:SIDE.sha}});return;
   }
   for(const pct of [125,50,200]) {
-    await changeScale(pct); await shot(`appearance${pct}`); await show('toolbar'); await shot(`toolbar${pct}`);
+    await changeScale(pct); await shot(`appearance${pct}`); if(pct===125) await preferences(pct); await show('toolbar'); await shot(`toolbar${pct}`);
   }
   await changeScale(125); sessionStorage.setItem('pr9666-phase','reload'); location.reload();
 }

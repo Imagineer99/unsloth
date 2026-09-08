@@ -88,7 +88,14 @@ def analyze(root):
         raise ValueError('Sides shared native profile')
     if not measurements['base/toolbar100']['clear']:
         raise ValueError('Baseline fails; this does not establish a PR regression')
-    composite(root,'appearance-before-after','appearance100','appearance125')
+    for side, label in [('base','preferences100'),('head','preferences100'),('head','preferences125')]:
+        record=json.loads((root/side/f'{label}.json').read_text())
+        if not record['capture_ok'] or abs(record['facts']['preferences_native_top']-58)>2:
+            raise ValueError('Preferences screenshots are not aligned')
+        if record['facts']['sha'] != MANIFEST[side]: raise ValueError('Preferences SHA mismatch')
+    composite(root,'appearance-before-after','appearance100','appearance100')
+    composite(root,'preferences-before-after','preferences100','preferences100')
+    composite(root,'preferences-scaling-before-after','preferences100','preferences125')
     composite(root,'toolbar-before-after','toolbar100','toolbar125')
     result = {'pr':9666,'base':MANIFEST['base'],'head':MANIFEST['head'],
               'expect':MANIFEST['expect'],'scope':MANIFEST['evidence_scope'],
