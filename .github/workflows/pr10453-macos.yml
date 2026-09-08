@@ -1,0 +1,54 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 10453 macOS download liveness A-B"
+
+on:
+  push:
+    branches:
+      - "fix/pr10453-macos-liveness-20260908"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "macos-15"
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+
+      - name: "Create isolated environment and fetch pinned sources"
+        shell: bash
+        run: |
+          python -m venv temp/venv
+          temp/venv/bin/python -m pip install pytest==9.1.1 typer==0.12.5 click==8.1.8 rich==13.9.4 pydantic==2.11.7 pyyaml==6.0.3 nest-asyncio==1.6.0 huggingface-hub==0.34.6 structlog==24.4.0
+          for entry in base:acad3f00f6bef9a8c5c9ec57e5fe04ad96a11ff6 head:8d0c5df5f4107962f469412e5ab4364a2ccc8453; do
+            arm="${entry%%:*}"
+            sha="${entry#*:}"
+            git init "temp/$arm"
+            git -C "temp/$arm" remote add origin https://github.com/unslothai/unsloth.git
+            git -C "temp/$arm" fetch --depth=1 --filter=blob:none origin "$sha"
+            git -C "temp/$arm" sparse-checkout set unsloth_cli studio/backend
+            git -C "temp/$arm" checkout --detach "$sha"
+            test "$(git -C "temp/$arm" rev-parse HEAD)" = "$sha"
+          done
+          shasum -a 256 probes/*.py
+          temp/venv/bin/python -m pip freeze
+
+      - name: "BEFORE � require active-download termination and bounded noisy stall"
+        shell: bash
+        run: |
+          temp/venv/bin/python probes/run_ci.py base
+
+      - name: "AFTER � require completion, polling recovery and bounded noisy stall"
+        shell: bash
+        run: |
+          temp/venv/bin/python probes/run_ci.py head
