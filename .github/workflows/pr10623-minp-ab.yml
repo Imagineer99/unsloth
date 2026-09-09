@@ -1,0 +1,70 @@
+name: PR 10623 Min P A-B
+on:
+  push:
+    branches: [fix/pr10623-minp-ab]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  studio-ab:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            browser: chromium
+          - os: macos-15
+            browser: webkit
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: unslothai/unsloth
+          ref: 178e1722f5445c7260be1b932c1502426675ba36
+          path: temp/before
+          persist-credentials: false
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: unslothai/unsloth
+          ref: f458f1d0e9200282953ba2470801e886643f212e
+          path: temp/after
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.14.0'
+      - name: Install isolated dependencies
+        shell: bash
+        run: |
+          python -m venv temp/venv
+          source temp/venv/bin/activate
+          python -m pip install -r temp/after/studio/backend/requirements/studio.txt 'playwright==1.56.0' 'httpx>=0.27,<1'
+          if [ "$RUNNER_OS" = Linux ]; then
+            python -m playwright install --with-deps '${{ matrix.browser }}'
+          else
+            python -m playwright install '${{ matrix.browser }}'
+          fi
+      - name: Build both pinned frontends
+        shell: bash
+        run: |
+          for side in before after; do
+            (cd "temp/$side/studio/frontend" && npm ci --ignore-scripts --no-audit --no-fund && npm run build)
+          done
+      - name: Assert BEFORE rejection and AFTER success and recovery
+        shell: bash
+        run: |
+          temp/venv/bin/python .github/scripts/pr10623-minp-ab-probe.py --before temp/before --after temp/after --output temp/evidence --browser '${{ matrix.browser }}'
+      - name: Upload only redacted evidence
+        if: success()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: minp-ab-${{ matrix.os }}-${{ matrix.browser }}
+          path: temp/evidence/public/
+          if-no-files-found: error
+          retention-days: 7
