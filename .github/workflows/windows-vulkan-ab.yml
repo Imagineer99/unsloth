@@ -1,0 +1,43 @@
+name: Windows Vulkan registry causal A-B
+on:
+  push:
+    branches: [fix/vulkan-registry-ab]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  registry-ab:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          path: harness
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: unslothai/unsloth
+          ref: cedbb58e4a49befe12d4f28f385abc4393c763e5
+          path: pinned-checkout
+          sparse-checkout: |
+            studio/install_llama_prebuilt.py
+            studio/prebuilt_core.py
+            studio/backend/utils/prebuilt/llama_backend.py
+          sparse-checkout-cone-mode: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.11'
+      - name: Export exact source bytes (avoid Windows checkout newline conversion)
+        shell: pwsh
+        run: |
+          git -C pinned-checkout archive --format=zip --output="$env:GITHUB_WORKSPACE/source.zip" HEAD studio/install_llama_prebuilt.py studio/prebuilt_core.py studio/backend/utils/prebuilt/llama_backend.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath source.zip -DestinationPath source
+      - name: Released A, completed-discovery B, restored A2
+        shell: pwsh
+        run: python -S harness/scripts/vulkan_registry_ab.py --source source --output evidence/result.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: windows-vulkan-registry-ab
+          path: evidence/
+          if-no-files-found: error
