@@ -1,0 +1,97 @@
+name: PR 10615 native isolation A-B
+on:
+  push:
+    branches: [fix/pr10615-isolation-validation]
+    paths:
+      - .github/workflows/pr10615-native-ab.yml
+      - validation/pr10615/native_ab.py
+      - validation/pr10615/requirements.txt
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-ab:
+    if: github.repository == 'Imagineer99/unsloth'
+    name: ${{ matrix.os }} / ${{ matrix.side }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+        side: [base, head]
+        include:
+          - side: base
+            sha: 4b98ad5e507b30b1dc0aa40605d611f5704a4843
+          - side: head
+            sha: a9bf18d5e7dc83d7b865e3b1a09cdd4adc0ab81c
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout validation harness
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4, resolved 2026-09-09
+        with:
+          ref: ${{ github.sha }}
+          path: validation-harness
+          persist-credentials: false
+      - name: Checkout immutable upstream revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: unslothai/unsloth
+          ref: ${{ matrix.sha }}
+          path: source
+          persist-credentials: false
+      - name: Pinned Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5, resolved 2026-09-09
+        with:
+          python-version: '3.12.11'
+      - name: Pinned Node (Windows head only)
+        if: runner.os == 'Windows' && matrix.side == 'head'
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4, resolved 2026-09-09
+        with:
+          node-version: '22.17.1'
+      - name: Install native Linux dependency
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap
+          bwrap --version
+      - name: Isolated minimal Python environment
+        run: |
+          python -m venv source/temp/native-venv
+          PYTHON=source/temp/native-venv/bin/python
+          if [ "${{ runner.os }}" = Windows ]; then
+            PYTHON=source/temp/native-venv/Scripts/python.exe
+          fi
+          "$PYTHON" -m pip install --disable-pip-version-check --no-deps -r validation-harness/validation/pr10615/requirements.txt
+          "$PYTHON" --version
+      - name: Provision Windows SRT on disposable runner
+        if: runner.os == 'Windows' && matrix.side == 'head'
+        shell: pwsh
+        run: |
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+            throw "Runner must be elevated for explicit SRT account and WFP provisioning."
+          }
+          & source/temp/native-venv/Scripts/python.exe source/studio/install_srt_runtime.py --windows-install
+          if ($LASTEXITCODE -ne 0) { throw "SRT setup failed; this is not a sandbox pass." }
+      - name: Assert native behavior and failure selection
+        working-directory: source
+        run: |
+          PYTHON=temp/native-venv/bin/python
+          if [ "${{ runner.os }}" = Windows ]; then
+            PYTHON=temp/native-venv/Scripts/python.exe
+          fi
+          "$PYTHON" ../validation-harness/validation/pr10615/native_ab.py --side "${{ matrix.side }}" --area temp/native-results
+      - name: Print bounded owned-canary results
+        if: always()
+        working-directory: source
+        run: |
+          if [ -f temp/native-results/results.json ]; then
+            cat temp/native-results/results.json
+          fi
+# Deliberately no upload-artifact, secrets, caches, PR trigger or GitHub write token.
