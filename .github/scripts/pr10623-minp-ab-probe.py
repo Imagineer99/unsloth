@@ -190,7 +190,8 @@ def run_side(args,label,tree,pw,fixture):
             expect(page.locator('input[aria-label="Min P"]:visible').first).to_have_value('0',timeout=15000)
             facts['reload_min_p']=0
         facts['page_errors']=errors
-        assert all(e==REJECTION for e in errors),errors
+        # WebKit serializes Error.message with an Error: prefix.
+        assert all(e in (REJECTION, 'Error: '+REJECTION) for e in errors),errors
         (side/'requests.json').write_text(json.dumps(fixture.requests,indent=2))
         facts['settings_api']=httpx.get(base+'/api/chat/settings',headers=headers).json()
         facts['passed']=True
