@@ -127,7 +127,8 @@ def run_side(args,label,tree,pw,fixture):
             page.get_by_role('button',name=re.compile('Sampling',re.I)).first.click()
         expect(number).to_be_visible(timeout=15000)
         mode=page.locator('[aria-label="Min P mode"]:visible').first
-        facts.update({'provider':'vllm','model':MODEL,'minP':float(number.input_value()),'mode':mode.inner_text() if mode.count() else None,'input_disabled':number.is_disabled()})
+        if label=='after':expect(mode).to_have_text('Server default',timeout=15000)
+        facts.update({'provider':'vllm','model':MODEL,'minP':float(number.input_value()),'mode':' '.join(mode.inner_text().split()) if mode.count() else None,'input_disabled':number.is_disabled()})
         assert facts['minP']==0.01
         assert facts['input_disabled']==(label=='after')
         assert (facts['mode']=='Server default') if label=='after' else facts['mode'] is None
@@ -165,7 +166,7 @@ def run_side(args,label,tree,pw,fixture):
             expect(action).to_be_visible(timeout=3000)
             page.screenshot(path=str(side/'recovery.png'))
             action.click();expect(number).to_have_value('0')
-            assert mode.inner_text()=='Custom'
+            expect(mode).to_have_text('Custom')
             prior=len(fixture.requests)
             page.get_by_role('button',name='Retry',exact=True).click()
             end=time.monotonic()+30
