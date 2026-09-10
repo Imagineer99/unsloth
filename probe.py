@@ -153,7 +153,7 @@ def requirements_probe():
     wheel('review_child', '2.0')
     uv('install', '--python', sys.executable, '--no-deps', *map(str, cores))
     # Execute the same named step directly from each source's real function body.
-    text = (source / 'studio/install_python_stack.py').read_text()
+    text = (source / 'studio/install_python_stack.py').read_text(encoding="utf-8")
     begin = text.index('    # 8. Unsloth dependencies')
     end = text.index('    # 8b.', begin)
     code = compile(textwrap.dedent(text[begin:end]), 'actual-requirements-step', 'exec')
@@ -228,7 +228,7 @@ def triton_probe():
     commit = 'a' * 40
     (info / 'direct_url.json').write_text(json.dumps({'url': url, 'subdirectory': 'python/triton_kernels', 'vcs_info': {'vcs': 'git', 'requested_revision': 'release/3.6.x', 'commit_id': commit}}))
     (reqroot / 'triton-kernels.txt').write_text(f'triton_kernels @ git+{url}@release/3.6.x#subdirectory=python/triton_kernels\n')
-    tree = ast.parse((source / 'studio/install_python_stack.py').read_text())
+    tree = ast.parse((source / 'studio/install_python_stack.py').read_text(encoding="utf-8"))
     function = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'install_python_stack')
     nodes = [n for n in function.body if isinstance(n, ast.If) and ('_triton_kernels_step()' in ast.unparse(n) or 'Installing triton kernels' in ast.unparse(n))]
     assert len(nodes) == 1
@@ -280,7 +280,7 @@ def mlx_probe():
         check('mlx_' + mode + '_probe_calls', len(calls), 0 if args.side == 'head' and mode == 'unchanged' else 1)
 
 def shell_probe():
-    text = (source / 'studio/setup.sh').read_text()
+    text = (source / 'studio/setup.sh').read_text(encoding="utf-8")
     start = text.index('        _setup_pin="${UNSLOTH_TORCH_INDEX_URL')
     end = text.index('    elif [ -n "$INSTALLED_VER"', start)
     block = work / 'fastpath.sh'
@@ -298,7 +298,7 @@ def shell_probe():
         check('shell_' + have + '_to_' + want, run.stdout.strip(), 'false' if changed and args.side == 'head' else 'true')
 
 def windows_probe():
-    text = (source / 'studio/setup.ps1').read_text()
+    text = (source / 'studio/setup.ps1').read_text(encoding="utf-8")
     invoke = next(line.strip() for line in text.splitlines() if '$output = Fast-Install @_rocmTrio' in line and '$ROCmIndexUrl' in line)
     guard = ''
     if '$rocmForce = @()' in text:
