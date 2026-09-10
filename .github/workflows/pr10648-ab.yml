@@ -40,6 +40,7 @@ jobs:
       - name: Isolated test dependencies
         id: deps
         run: |
+          python -c "from pathlib import Path; Path('temp').mkdir(exist_ok=True)"
           python -m venv .venv
           python -m pip --python .venv install pytest==9.1.1
       - name: Real Node and release-order probes
