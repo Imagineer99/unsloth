@@ -1,0 +1,280 @@
+{
+  "side": "base",
+  "source_sha": "191b69c12b4434b5247f1fd7a455b4a760b169ae",
+  "python": "3.13.15",
+  "os": "darwin",
+  "machine": "arm64",
+  "results": [
+    {
+      "case": "plugin_digest_available",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "cold_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "cold_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "warm_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "warm_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "no_redundant_install_invariant",
+      "category": "negative_proof",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "removed_child_breaks_import",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "repair_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "repair_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_repair_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "settled_repair_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "constraint_change_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "constraint_change_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "constraint_installed_version",
+      "category": "compatibility",
+      "actual": "2.0",
+      "expected": "2.0",
+      "status": "pass"
+    },
+    {
+      "case": "settled_constraint_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "settled_constraint_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "requirements_change_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "requirements_change_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_requirements_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "settled_requirements_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "other_reader_accepts_manifest",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "live_interrupted_is_incomplete",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "parked_interrupted_is_incomplete",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_intact_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_missing_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_truncated_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_no_record_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_forced_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_intact_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_missing_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_truncated_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_no_record_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_forced_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "mlx_unchanged_probe_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "mlx_dependency_version_probe_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "mlx_dependency_payload_probe_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "mlx_mlx_payload_probe_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "mlx_no_record_probe_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    }
+  ],
+  "limitations": [
+    "Fixture packages, not a full Studio installation",
+    "No GPU kernels or browser tests",
+    "MLX import subprocess and git remote responses are controlled test doubles"
+  ]
+}

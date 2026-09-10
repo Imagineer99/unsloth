@@ -1,0 +1,343 @@
+{
+  "side": "head",
+  "source_sha": "b675a9d70a9514bbdcb95b98fe41242313c0707b",
+  "python": "3.13.15",
+  "os": "win32",
+  "machine": "AMD64",
+  "results": [
+    {
+      "case": "plugin_ignores_build/lib/plugin.py",
+      "category": "compatibility",
+      "actual": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "expected": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "status": "pass"
+    },
+    {
+      "case": "plugin_ignores_dist/output.whl",
+      "category": "compatibility",
+      "actual": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "expected": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "status": "pass"
+    },
+    {
+      "case": "plugin_ignores_src/plugin.egg-info/PKG-INFO",
+      "category": "compatibility",
+      "actual": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "expected": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "status": "pass"
+    },
+    {
+      "case": "plugin_ignores___pycache__/plugin.pyc",
+      "category": "compatibility",
+      "actual": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "expected": "8fdd0824f9cb15c3c42e1a02362e7290d71bb3dcb0d8377ec3513ad1ddc6bf17",
+      "status": "pass"
+    },
+    {
+      "case": "plugin_source_edit_invalidates",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "cold_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "cold_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "warm_install_calls",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "warm_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "no_redundant_install_invariant",
+      "category": "negative_proof",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "removed_child_breaks_import",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "repair_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "repair_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_repair_install_calls",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_repair_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "constraint_change_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "constraint_change_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "constraint_installed_version",
+      "category": "compatibility",
+      "actual": "2.0",
+      "expected": "2.0",
+      "status": "pass"
+    },
+    {
+      "case": "settled_constraint_install_calls",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_constraint_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "requirements_change_install_calls",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "requirements_change_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_requirements_install_calls",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "settled_requirements_import",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "other_reader_accepts_manifest",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "legacy_manifest_forces_pass",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "live_interrupted_is_incomplete",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "live_interrupted_evidence_consumed",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "parked_interrupted_is_incomplete",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "parked_interrupted_evidence_consumed",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "locked_parked_evidence_aborts",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "locked_parked_evidence_no_mutation",
+      "category": "compatibility",
+      "actual": [],
+      "expected": [],
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_intact_dispatch",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_missing_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_truncated_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_no_record_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_no_evidence_forced_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_intact_dispatch",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 0,
+      "status": "pass"
+    },
+    {
+      "case": "triton_warm_missing_dispatch",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 1,
+      "status": "fail"
+    },
+    {
+      "case": "triton_warm_truncated_dispatch",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 1,
+      "status": "fail"
+    },
+    {
+      "case": "triton_warm_no_record_dispatch",
+      "category": "compatibility",
+      "actual": 0,
+      "expected": 1,
+      "status": "fail"
+    },
+    {
+      "case": "triton_warm_forced_dispatch",
+      "category": "compatibility",
+      "actual": 1,
+      "expected": 1,
+      "status": "pass"
+    },
+    {
+      "case": "windows_rocm_intact_force",
+      "category": "compatibility",
+      "actual": false,
+      "expected": false,
+      "status": "pass"
+    },
+    {
+      "case": "windows_rocm_wrong_family_force",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "windows_rocm_missing_payload_force",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "windows_rocm_no_record_force",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    },
+    {
+      "case": "windows_rocm_changed_index_force",
+      "category": "compatibility",
+      "actual": true,
+      "expected": true,
+      "status": "pass"
+    }
+  ],
+  "limitations": [
+    "Fixture packages, not a full Studio installation",
+    "No GPU kernels or browser tests",
+    "MLX import subprocess and git remote responses are controlled test doubles"
+  ]
+}
