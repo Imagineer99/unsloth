@@ -1,0 +1,28 @@
+F............                                                            [100%]
+=================================== FAILURES ===================================
+_____________ test_latest_pointer_must_not_hide_newer_publication ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x71c33d9875c0>
+
+    def test_latest_pointer_must_not_hide_newer_publication(monkeypatch):
+        releases=[{'tag_name':'release-1','published_at':'2026-01-01T00:00:00Z'}, {'tag_name':'release-2','published_at':'2026-02-01T00:00:00Z'}]
+        monkeypatch.setattr(M,'github_releases',lambda *a,**kw:releases)
+        monkeypatch.setattr(M,'_download_host_latest_release_tag',lambda *a:'release-1')
+        monkeypatch.setattr(M,'_METADATA_MEMO',None)
+        monkeypatch.delenv('UNSLOTH_LLAMA_DISABLE_DOWNLOAD_HOST_RESOLVE',raising=False)
+        host=H.macos_host(macos_version=(15,0))
+        full=next(M.iter_release_payloads_by_time(M.DEFAULT_PUBLISHED_REPO,requested_tag='latest'))['tag_name']
+        fast=M._expected_release_tag_without_plan({'release_tag':'release-1','tag':'b9001'},'latest',M.DEFAULT_PUBLISHED_REPO,'',host=host)
+>       assert fast==full, f'fast path keeps {fast}; full publication ordering selects {full}'
+E       AssertionError: fast path keeps release-1; full publication ordering selects release-2
+E       assert 'release-1' == 'release-2'
+E
+E         - release-2
+E         ?         ^
+E         + release-1
+E         ?         ^
+
+test_independent.py:18: AssertionError
+=========================== short test summary info ============================
+FAILED test_independent.py::test_latest_pointer_must_not_hide_newer_publication
+1 failed, 12 passed in 0.46s

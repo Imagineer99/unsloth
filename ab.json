@@ -1,0 +1,23 @@
+{
+  "base": {
+    "first_check": [
+      "node -v",
+      "npm --version"
+    ],
+    "second_check": [
+      "node -v",
+      "npm --version"
+    ],
+    "broken_npm_rejected": true
+  },
+  "head": {
+    "first_check": [
+      "node -v",
+      "npm --version"
+    ],
+    "second_check": [
+      "npm --version"
+    ],
+    "broken_npm_rejected": true
+  }
+}

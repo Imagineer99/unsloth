@@ -1,0 +1,21 @@
+........................................................................ [ 11%]
+........................................................................ [ 22%]
+........................................................................ [ 34%]
+........................................................................ [ 45%]
+........................................................................ [ 57%]
+........................................................................ [ 68%]
+.sssssssss.............................................................. [ 80%]
+........................................................................ [ 91%]
+......................................................                   [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/studio/install/test_rocm_rdna_routing.py:22: could not import 'torch': No module named 'torch'
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:534: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:540: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:545: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:556: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:562: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:567: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:578: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:584: pwsh not available
+SKIPPED [1] tests/studio/install/test_llama_pr_force_and_source.py:593: pwsh not available
+621 passed, 10 skipped in 41.05s

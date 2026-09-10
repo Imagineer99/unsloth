@@ -1,0 +1,26 @@
+....................s................................................... [ 69%]
+.................s..........s.F.                                         [100%]
+================================== FAILURES ===================================
+______________ test_a_refreshed_marker_keeps_its_owner_and_group ______________
+
+tmp_path = WindowsPath('//wsl.localhost/Ubuntu<review-root>/pytest-windows/test_a_refreshed_marker_keeps_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000001D87BCA9CA0>
+
+    def test_a_refreshed_marker_keeps_its_owner_and_group(tmp_path, monkeypatch):
+        """os.replace installs the temp file's ownership; a group-shared marker refreshed by
+        another member must not take that member's group and stop being readable."""
+        install_dir = tmp_path / "node"
+        install_dir.mkdir()
+        marker = M.metadata_path(install_dir)
+        marker.write_text("{}", encoding = "utf-8")
+        original = marker.stat()
+        chowned = []
+>       monkeypatch.setattr(M.os, "chown", lambda path, uid, gid: chowned.append((uid, gid)))
+E       AttributeError: <module 'os' (frozen)> has no attribute 'chown'
+
+<review-root>\head\tests\studio\install\test_install_node_prebuilt_logic.py:1236: AttributeError
+=========================== short test summary info ===========================
+SKIPPED [1] <review-root>\head\tests\studio\install\test_install_node_prebuilt_logic.py:168: Node ships a .zip (no symlinks) on Windows; the tar+symlink path is Unix-only
+SKIPPED [1] <review-root>\head\tests\studio\install\test_install_node_prebuilt_logic.py:961: needs an unprivileged POSIX user: root and Windows both ignore the execute bit
+SKIPPED [1] <review-root>\head\tests\studio\install\test_install_node_prebuilt_logic.py:1154: POSIX modes
+1 failed, 100 passed, 3 skipped in 7.51s
