@@ -1,0 +1,77 @@
+name: PR 10648 pinned installer A-B
+on:
+  pull_request:
+    branches: [feat/pr10648-review-evidence]
+    paths: [validation/**, .github/workflows/pr10648-ab.yml]
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: ${{ matrix.revision.name }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        revision:
+          - name: base
+            sha: 191b69c12b4434b5247f1fd7a455b4a760b169ae
+          - name: reviewed-head
+            sha: b2d65068d7cbc9c5e3a5acf70c2c3600a97eadf7
+          - name: current-head
+            sha: f269003eab795a4c887ef1cab318f595d9e67f6d
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          repository: unslothai/unsloth
+          ref: ${{ matrix.revision.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Isolated test dependencies
+        id: deps
+        run: |
+          python -m venv .venv
+          python -m pip --python .venv install pytest==9.1.1
+      - name: Real Node and release-order probes
+        id: probes
+        continue-on-error: true
+        env:
+          VALIDATION_SOURCE: source
+          VALIDATION_REVISION: ${{ matrix.revision.sha }}
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          "$PY" -m pytest validation/test_probes.py -q -s --basetemp=temp/probes --junitxml=results/probes.xml
+      - name: Native Node installer suite
+        id: suite
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          "$PY" -m pytest source/tests/studio/install/test_install_node_prebuilt_logic.py --confcutdir=source/tests/studio/install -q -rs --basetemp=temp/node-suite --junitxml=results/node-suite.xml
+      - name: Upload exact test results
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr10648-${{ matrix.revision.name }}-${{ matrix.os }}
+          path: results/*.xml
+          retention-days: 14
+      - name: Preserve failure verdict
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        shell: python
+        run: |
+          import sys
+          outcomes = ["${{ steps.probes.outcome }}", "${{ steps.suite.outcome }}"]
+          print("Probe and suite outcomes:", outcomes)
+          sys.exit(0 if outcomes == ["success", "success"] else 1)
