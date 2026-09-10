@@ -1,0 +1,42 @@
+[
+  {
+    "case": "cold install from local wheels",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "unchanged install",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "missing transitive dependency repaired",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "settled after repair",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "changed constraint applied",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "settled after constraint change",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "changed input bytes rerun",
+    "skipped": false,
+    "import_ok": true
+  },
+  {
+    "case": "settled after input change",
+    "skipped": false,
+    "import_ok": true
+  }
+]
