@@ -1,0 +1,45 @@
+name: Mixed ONNX tags A-B reproduction
+on:
+  push:
+    branches: [fix/mixed-onnx-repro-ci]
+permissions:
+  contents: read
+jobs:
+  compare:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: A - original classifier must reproduce the false rejection
+        shell: bash
+        run: |
+          git show 6a5b21b2a638529d1e5e98a55ce1087f7e4c7ffd:studio/frontend/src/features/hub/lib/unsloth-support.ts > studio/frontend/src/features/hub/lib/unsloth-support.ts
+          set +e
+          node --experimental-strip-types --test --test-reporter=tap --test-name-pattern='native .* weights coexist' studio/frontend/tests/unsloth-support-mixed-formats.test.ts > before.log 2>&1
+          result=$?
+          set -e
+          cat before.log
+          test "$result" -eq 1
+          grep -q '# fail 4' before.log
+          grep -q 'Detected ONNX-format weights' before.log
+          echo 'Confirmed: all four mixed-format cases fail on the original classifier.'
+      - name: B - fixed classifier and rejection controls pass
+        shell: bash
+        run: |
+          git restore studio/frontend/src/features/hub/lib/unsloth-support.ts
+          set -o pipefail
+          node --experimental-strip-types --test --test-reporter=tap studio/frontend/tests/unsloth-support-*.test.ts | tee after.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mixed-onnx-${{ matrix.os }}
+          path: |
+            before.log
+            after.log
