@@ -161,12 +161,10 @@ def trial(pw, mode, index, seconds, tokens):
             env = dict(os.environ, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222')
             spawn([str(APP)], tree, label, env)
             browser = attach(pw, 9222)
-            deadline = time.monotonic() + 60
-            while not browser.contexts[0].pages:
-                if time.monotonic() > deadline:
-                    raise RuntimeError('Desktop has no WebView page')
-                time.sleep(.5)
-            page = browser.contexts[0].pages[0]
+            context = browser.contexts[0]
+            # A plain time.sleep loop starves the synchronous Playwright event
+            # dispatcher when CDP connects before WebView2 creates its page.
+            page = context.pages[0] if context.pages else context.wait_for_event('page', timeout=60000)
             chat_ready(page)
             tokens = page.evaluate('''() => ({
                 unsloth_auth_token: localStorage.getItem('unsloth_auth_token'),
@@ -190,7 +188,7 @@ def trial(pw, mode, index, seconds, tokens):
                    'about:blank'], tree, label + '-browser')
             browser = attach(pw, 9223)
             context = browser.contexts[0]
-            page = context.pages[0]
+            page = context.pages[0] if context.pages else context.wait_for_event('page', timeout=60000)
             if mode == 'web-existing':
                 page.wait_for_timeout(10000)
                 baseline = measure(page, tree, 10)
