@@ -34,6 +34,7 @@ jobs:
         with:
           workspaces: studio/src-tauri -> target
           shared-key: desktop-web-overhead
+          cache-on-failure: true
       - name: Audit dependency lockfiles
         run: python scripts/lockfile_supply_chain_audit.py
       - name: Install backend from this checkout without model runtime

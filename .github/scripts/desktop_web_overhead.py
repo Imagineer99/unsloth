@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import secrets
 import statistics
 import subprocess
 import time
@@ -24,6 +25,17 @@ OUT.mkdir(exist_ok=True)
 CLI = Path.home() / '.unsloth/studio/unsloth_studio/Scripts/unsloth.exe'
 APP = Path('studio/src-tauri/target/release/unsloth-studio.exe').resolve()
 EDGE = Path(os.environ.get('PROGRAMFILES(X86)', 'C:/Program Files (x86)')) / 'Microsoft/Edge/Application/msedge.exe'
+BENCH_PASSWORD = secrets.token_hex(24)
+
+
+def auth_post(path, payload, token=None):
+    headers = {'Content-Type': 'application/json'}
+    if token:
+        headers['Authorization'] = 'Bearer ' + token
+    request = urllib.request.Request('http://127.0.0.1:8888/api/auth/' + path,
+                                     data=json.dumps(payload).encode(), headers=headers)
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.load(response)
 
 
 class Tree:
@@ -109,6 +121,14 @@ def chat_ready(page):
     page.bring_to_front()
 
 
+def backend_ready(tree):
+    # These trials own a clean runner and request port 8888. A fallback to a
+    # different server/port indicates isolation failure, not a valid sample.
+    wait_url('http://127.0.0.1:8888/api/health', seconds=10)
+    if not any(p.name().lower().startswith('python') for p in tree.live()):
+        raise RuntimeError('No Python backend in the measured process tree')
+
+
 def measure(page, tree, seconds, typing=False):
     rows = [tree.sample()]
     start = time.monotonic()
@@ -135,6 +155,7 @@ def trial(pw, mode, index, seconds, tokens):
     page = None
     baseline = None
     try:
+        print(f'START {label}', flush=True)
         start = time.monotonic()
         if mode == 'desktop':
             env = dict(os.environ, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222')
@@ -153,6 +174,15 @@ def trial(pw, mode, index, seconds, tokens):
             })''')
             if not tokens['unsloth_auth_token']:
                 raise RuntimeError('Desktop did not authenticate')
+            if index == 'warmup':
+                # Use the supported desktop account-setup endpoint, then normal
+                # password login for browser trials. Desktop tokens alone do not
+                # satisfy the browser's first-password routing check.
+                fresh = auth_post('desktop-initial-password',
+                                  {'new_password': BENCH_PASSWORD}, tokens['unsloth_auth_token'])
+                tokens = {'unsloth_auth_token': fresh['access_token'],
+                          'unsloth_refresh_token': fresh['refresh_token']}
+                page.evaluate('(tokens) => {for (const [k,v] of Object.entries(tokens)) localStorage.setItem(k,v)}', tokens)
         else:
             profile = (OUT / f'edge-profile-{label}').resolve()
             spawn([str(EDGE), '--remote-debugging-port=9223', f'--user-data-dir={profile}',
@@ -167,6 +197,11 @@ def trial(pw, mode, index, seconds, tokens):
                 start = time.monotonic()
             spawn([str(CLI), 'studio', '-H', '127.0.0.1', '-p', '8888'], tree, label + '-backend')
             wait_url('http://127.0.0.1:8888/api/health')
+            fresh = auth_post('login', {'username': 'unsloth', 'password': BENCH_PASSWORD})
+            if fresh.get('must_change_password'):
+                raise RuntimeError('Benchmark account setup did not complete')
+            tokens = {'unsloth_auth_token': fresh['access_token'],
+                      'unsloth_refresh_token': fresh['refresh_token']}
             context.add_init_script('const tokens = ' + json.dumps(tokens) +
                                     '; for (const [k,v] of Object.entries(tokens)) localStorage.setItem(k,v);')
             if mode == 'web-existing':
@@ -178,16 +213,21 @@ def trial(pw, mode, index, seconds, tokens):
         session.send('Emulation.setDeviceMetricsOverride', {
             'width': 1280, 'height': 800, 'deviceScaleFactor': 1, 'mobile': False})
         page.wait_for_timeout(30000)
+        backend_ready(tree)
+        print(f'READY {label}; collecting idle and composer samples', flush=True)
         page.screenshot(path=str(OUT / f'{label}.png'))
         result = {'mode': mode, 'round': index, 'ready_seconds': ready_seconds,
                   'url': page.url, 'viewport': page.evaluate('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio})'),
                   'user_agent': page.evaluate('navigator.userAgent'),
                   'idle': measure(page, tree, seconds),
                   'typing': measure(page, tree, seconds, typing=True)}
+        backend_ready(tree)
+        chat_ready(page)
         if baseline:
             result['blank_browser_baseline'] = baseline
             result['idle_incremental_private_mib'] = result['idle']['median_private_mib'] - baseline['median_private_mib']
         (OUT / f'{label}.json').write_text(json.dumps(result, indent=2))
+        print(f'PASS {label}', flush=True)
         return result, tokens
     except Exception:
         if page:
