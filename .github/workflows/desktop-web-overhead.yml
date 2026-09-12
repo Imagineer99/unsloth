@@ -30,6 +30,10 @@ jobs:
         with:
           python-version: '3.12'
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+        with:
+          workspaces: studio/src-tauri -> target
+          shared-key: desktop-web-overhead
       - name: Audit dependency lockfiles
         run: python scripts/lockfile_supply_chain_audit.py
       - name: Install backend from this checkout without model runtime
@@ -57,6 +61,5 @@ jobs:
             benchmark-results/*.json
             benchmark-results/*.png
             benchmark-results/*.md
-            benchmark-results/*.log
             benchmark-results/*-failed.txt
           if-no-files-found: warn
