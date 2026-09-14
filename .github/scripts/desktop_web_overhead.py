@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import secrets
 import statistics
 import subprocess
@@ -24,7 +25,9 @@ OUT = Path('benchmark-results')
 OUT.mkdir(exist_ok=True)
 CLI = Path.home() / '.unsloth/studio/unsloth_studio/Scripts/unsloth.exe'
 APP = Path('studio/src-tauri/target/release/unsloth-studio.exe').resolve()
-EDGE = Path(os.environ.get('PROGRAMFILES(X86)', 'C:/Program Files (x86)')) / 'Microsoft/Edge/Application/msedge.exe'
+EDGE = Path(os.environ['BENCH_EDGE'])
+ENGINE_VERSION = os.environ['BENCH_ENGINE_VERSION']
+ENGINE_IDENTITY = None
 BENCH_PASSWORD = secrets.token_hex(24)
 
 
@@ -115,6 +118,22 @@ def attach(pw, port):
     return pw.chromium.connect_over_cdp(f'http://127.0.0.1:{port}')
 
 
+def verify_engine(browser, label):
+    global ENGINE_IDENTITY
+    session = browser.new_browser_cdp_session()
+    version = session.send('Browser.getVersion')
+    session.detach()
+    (OUT / f'{label}-engine.json').write_text(json.dumps(version, indent=2))
+    match = re.search(r'/(\d+\.\d+\.\d+\.\d+)', version['product'])
+    if not match or match.group(1) != ENGINE_VERSION:
+        raise RuntimeError(f'Expected engine {ENGINE_VERSION}, received {version["product"]}')
+    identity = (match.group(1), version['revision'], version['jsVersion'])
+    if ENGINE_IDENTITY is not None and identity != ENGINE_IDENTITY:
+        raise RuntimeError(f'Engine identity differs between rendering hosts: {identity}')
+    ENGINE_IDENTITY = identity
+    return version
+
+
 def chat_ready(page):
     page.wait_for_url('**/chat**', timeout=180000)
     page.locator('textarea').first.wait_for(state='visible', timeout=180000)
@@ -158,9 +177,12 @@ def trial(pw, mode, index, seconds, tokens):
         print(f'START {label}', flush=True)
         start = time.monotonic()
         if mode == 'desktop':
-            env = dict(os.environ, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222')
+            env = dict(os.environ, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222',
+                       WEBVIEW2_RELEASE_CHANNELS='1')
+            env.pop('WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', None)
             spawn([str(APP)], tree, label, env)
             browser = attach(pw, 9222)
+            engine = verify_engine(browser, label)
             context = browser.contexts[0]
             # A plain time.sleep loop starves the synchronous Playwright event
             # dispatcher when CDP connects before WebView2 creates its page.
@@ -187,6 +209,7 @@ def trial(pw, mode, index, seconds, tokens):
                    '--no-first-run', '--no-default-browser-check', '--window-size=1280,900',
                    'about:blank'], tree, label + '-browser')
             browser = attach(pw, 9223)
+            engine = verify_engine(browser, label)
             context = browser.contexts[0]
             page = context.pages[0] if context.pages else context.wait_for_event('page', timeout=60000)
             if mode == 'web-existing':
@@ -217,6 +240,7 @@ def trial(pw, mode, index, seconds, tokens):
         result = {'mode': mode, 'round': index, 'ready_seconds': ready_seconds,
                   'url': page.url, 'viewport': page.evaluate('({width:innerWidth,height:innerHeight,dpr:devicePixelRatio})'),
                   'user_agent': page.evaluate('navigator.userAgent'),
+                  'engine': engine,
                   'idle': measure(page, tree, seconds),
                   'typing': measure(page, tree, seconds, typing=True)}
         backend_ready(tree)
@@ -259,12 +283,15 @@ def main():
     metadata = {'sha': os.environ.get('GITHUB_SHA'), 'platform': platform.platform(),
                 'cpu_count': psutil.cpu_count(), 'ram_bytes': psutil.virtual_memory().total,
                 'app_sha256': hashlib.sha256(APP.read_bytes()).hexdigest(),
+                'expected_engine': ENGINE_VERSION, 'edge_path': str(EDGE),
                 'scope': 'No model loaded; no-torch backend; release-mode unsigned desktop; headed Edge; CDP enabled on both'}
     (OUT / 'metadata.json').write_text(json.dumps(metadata, indent=2))
     results = []
     with sync_playwright() as pw:
         # First launch setup/auth and caches are excluded from reported trials.
         _, tokens = trial(pw, 'desktop', 'warmup', 2, {})
+        # Validate both hosts before collecting reported comparison trials.
+        _, tokens = trial(pw, 'web-fresh', 'warmup-web', 2, tokens)
         orders = [('desktop', 'web-fresh', 'web-existing'),
                   ('web-existing', 'web-fresh', 'desktop'),
                   ('web-fresh', 'desktop', 'web-existing')]
@@ -274,6 +301,7 @@ def main():
                 results.append(result)
     lines = ['# Windows UI overhead experiment', '',
              metadata['scope'], '',
+             f'Controlled preview-runtime experiment: both hosts use Edge Beta {ENGINE_VERSION}; full CDP version, revision and JavaScript engine identity must match. This does not represent the default Evergreen installation.', '',
              'Private MiB includes the backend and every tracked app/browser descendant. CPU is cores consumed (CPU seconds / wall second).', '',
              '| Mode | Idle private MiB median [min, max] | Idle CPU cores median | Typing CPU cores median |',
              '|---|---:|---:|---:|']

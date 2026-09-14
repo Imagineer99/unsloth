@@ -37,6 +37,19 @@ jobs:
           cache-on-failure: true
       - name: Audit dependency lockfiles
         run: python scripts/lockfile_supply_chain_audit.py
+      - name: Install pinned Edge Beta for both rendering hosts
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'edge-beta.msi'
+          Invoke-WebRequest 'https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/3751a255-17f0-4ce8-a1f2-a8a0f5e8f77e/MicrosoftEdgeBetaEnterpriseX64.msi' -OutFile $installer
+          if ((Get-FileHash $installer -Algorithm SHA256).Hash -ne '4E14083E81749BEF5D6E3DE166741DDDB057F6824406755BEDEA2B5EC01184A2') { throw 'Installer hash mismatch' }
+          $signature = Get-AuthenticodeSignature $installer
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Invalid Microsoft signature' }
+          $install = Start-Process msiexec.exe -ArgumentList @('/i', $installer, '/qn', '/norestart') -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -notin @(0, 3010)) { throw "Installation failed: $($install.ExitCode)" }
+          $edge = @("${env:ProgramFiles(x86)}/Microsoft/Edge Beta/Application/msedge.exe", "$env:ProgramFiles/Microsoft/Edge Beta/Application/msedge.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$edge -or (Get-Item $edge).VersionInfo.ProductVersion -ne '154.0.4258.12') { throw 'Pinned Edge Beta not found' }
+          "BENCH_EDGE=$edge" >> $env:GITHUB_ENV
+          'BENCH_ENGINE_VERSION=154.0.4258.12' >> $env:GITHUB_ENV
       - name: Install backend from this checkout without model runtime
         run: |
           & ./install.ps1 --local --no-torch --skip-autostart
