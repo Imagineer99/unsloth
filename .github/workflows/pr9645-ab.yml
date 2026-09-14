@@ -1,0 +1,61 @@
+# Disposable staging test. Green means the regression was reproduced, not that the PR is safe.
+name: PR 9645 current-main A-B rendering regression
+on:
+  push:
+    branches: [fix/pr9645-runner-ab-20260914]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  reproduce:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      BROWSERS: ${{ matrix.os == 'windows-latest' && 'chromium,firefox,webkit,chrome,msedge' || 'chromium,firefox,webkit' }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 24.14.0
+      - name: Install locked application and harness dependencies
+        run: |
+          npm ci --ignore-scripts --prefix studio/frontend
+          npm ci --ignore-scripts --prefix .github/scripts/pr9645-ab
+      - name: Install browser engines and Linux shared libraries
+        working-directory: .github/scripts/pr9645-ab
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Install branded browsers on Windows
+        if: runner.os == 'Windows'
+        working-directory: .github/scripts/pr9645-ab
+        run: npx playwright install chrome msedge
+      - name: Verify pins and build identical A-B harnesses
+        run: node .github/scripts/pr9645-ab/build.mjs
+      - name: A — current main must render every link correctly
+        run: node .github/scripts/pr9645-ab/run.mjs base
+      - name: B — assert the same correct behavior on merged PR
+        id: negative
+        continue-on-error: true
+        run: node .github/scripts/pr9645-ab/run.mjs pr
+      - name: Require the exact regression, not a setup failure
+        env:
+          NEGATIVE_OUTCOME: ${{ steps.negative.outcome }}
+        run: |
+          test "$NEGATIVE_OUTCOME" = failure
+          node .github/scripts/pr9645-ab/verify.mjs
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: pr9645-ab-${{ matrix.os }}
+          path: .github/scripts/pr9645-ab/results/
+          if-no-files-found: warn
+          retention-days: 14
