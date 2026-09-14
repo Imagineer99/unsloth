@@ -65,7 +65,19 @@ jobs:
       - name: Install measurement tools
         run: python -m pip install playwright==1.56.0 psutil==7.1.0
       - name: Repeated headed desktop and Edge measurements
-        run: python .github/scripts/desktop_web_overhead.py --rounds 3 --seconds 30
+        run: |
+          # Runtime 150+ ignores environment-supplied debugging switches for
+          # elevated hosts. Scope the supported machine policy to our test exe.
+          $policy = 'HKLM:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $policy -Force | Out-Null
+          New-ItemProperty -Path $policy -Name 'unsloth-studio.exe' -Value '--remote-debugging-port=9222' -PropertyType String -Force | Out-Null
+          try {
+            python .github/scripts/desktop_web_overhead.py --rounds 3 --seconds 30
+            $benchmarkExit = $LASTEXITCODE
+          } finally {
+            Remove-ItemProperty -Path $policy -Name 'unsloth-studio.exe'
+          }
+          exit $benchmarkExit
       - name: Upload samples and visual evidence
         if: always()
         uses: actions/upload-artifact@v4
