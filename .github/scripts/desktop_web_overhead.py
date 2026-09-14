@@ -178,8 +178,11 @@ def trial(pw, mode, index, seconds, tokens):
         start = time.monotonic()
         if mode == 'desktop':
             env = dict(os.environ, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS='--remote-debugging-port=9222',
-                       WEBVIEW2_RELEASE_CHANNELS='1')
-            env.pop('WEBVIEW2_BROWSER_EXECUTABLE_FOLDER', None)
+                       WEBVIEW2_BROWSER_EXECUTABLE_FOLDER=str(EDGE.parent / ENGINE_VERSION))
+            env.pop('WEBVIEW2_RELEASE_CHANNELS', None)
+            runtime = Path(env['WEBVIEW2_BROWSER_EXECUTABLE_FOLDER'])
+            if not (runtime / 'msedgewebview2.exe').is_file():
+                raise RuntimeError(f'Missing preview WebView2 executable in {runtime}')
             spawn([str(APP)], tree, label, env)
             browser = attach(pw, 9222)
             engine = verify_engine(browser, label)
@@ -252,6 +255,14 @@ def trial(pw, mode, index, seconds, tokens):
         print(f'PASS {label}', flush=True)
         return result, tokens
     except Exception:
+        diagnostics = []
+        for process in tree.live():
+            try:
+                diagnostics.append({'pid': process.pid, 'name': process.name(),
+                                    'executable': process.exe()})
+            except psutil.NoSuchProcess:
+                pass
+        (OUT / f'{label}-processes.json').write_text(json.dumps(diagnostics, indent=2))
         if page:
             try:
                 page.screenshot(path=str(OUT / f'{label}-failed.png'))
