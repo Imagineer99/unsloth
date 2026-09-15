@@ -1,0 +1,100 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 10980 targeted A-B and Safari diagnostics"
+
+on:
+  push:
+    branches:
+      - "fix/pr10980-targeted-validation-*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Pinned queue A-B"
+    if: github.repository == 'Imagineer99/unsloth'
+    runs-on: "ubuntu-latest"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: "24.14.0"
+
+      - name: "Prepare pinned base and head"
+        shell: bash
+        run: |
+          git fetch --no-tags https://github.com/unslothai/unsloth.git 1811677f024a88b6cbe6d36e7d3d91b27c2c0190 564e9d2ff48fb343cc701a501ad04fc56df3efb7
+          mkdir -p temp
+          git worktree add --detach temp/base 1811677f024a88b6cbe6d36e7d3d91b27c2c0190
+          git worktree add --detach temp/head 564e9d2ff48fb343cc701a501ad04fc56df3efb7
+          cmp temp/base/studio/frontend/package-lock.json temp/head/studio/frontend/package-lock.json
+
+      - name: "Install identical locked frontend dependencies"
+        shell: bash
+        run: |
+          npm ci --prefix temp/base/studio/frontend --ignore-scripts --no-fund --no-audit --cache temp/npm-cache
+          npm ci --prefix temp/head/studio/frontend --ignore-scripts --no-fund --no-audit --cache temp/npm-cache
+
+      - name: "A/B loading, provider selection, and failure recovery"
+        shell: bash
+        run: |
+          node --experimental-strip-types .github/scripts/pr10980-ab.mjs temp/base temp/head temp/pr10980-results
+
+      - name: Retain A-B report even when the regression fails
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr10980-ab-results
+          path: temp/pr10980-results
+          retention-days: 7
+          if-no-files-found: warn
+
+  safari:
+    name: Native Safari startup and unchanged interactions
+    if: github.repository == 'Imagineer99/unsloth'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: 564e9d2ff48fb343cc701a501ad04fc56df3efb7
+          path: temp/head
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '24.14.0'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Install isolated diagnostic dependencies
+        shell: bash
+        run: |
+          mkdir -p temp/tmp
+          echo "TMPDIR=$GITHUB_WORKSPACE/temp/tmp" >> "$GITHUB_ENV"
+          npm ci --prefix temp/head/studio/frontend --ignore-scripts --no-fund --no-audit --cache temp/npm-cache
+          python -m venv temp/safari-venv
+          temp/safari-venv/bin/python -m pip install --cache-dir temp/pip-cache selenium==4.49.0
+      - name: Diagnose cold startup and execute native Safari suite
+        shell: bash
+        run: |
+          sudo safaridriver --enable
+          temp/safari-venv/bin/python .github/scripts/pr10980-safari-diagnostic.py --repo temp/head
+      - name: Retain startup diagnostics and Safari reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr10980-native-safari
+          path: temp/head/temp/queue-validation/compatibility
+          retention-days: 7
+          if-no-files-found: warn
