@@ -356,7 +356,8 @@ def _local_gguf_entry(
 # base model and fetch weights this resolver promises never to download.
 _ADAPTER_MARKERS = ("adapter_config.json", "adapter_model.safetensors", "adapter_model.bin")
 # The multimodal sub-configs the repo's own vision detector reads, which is what tells a served VLM apart from a plain
-# seq2seq wearing the same architecture suffix.
+# seq2seq wearing the same architecture suffix. Presence of any one of these is the proof; nothing here is read for
+# its value, so a renamed spelling is a miss and not a wrong answer.
 _MULTIMODAL_CONFIG_KEYS = (
     "vision_config",
     "img_processor",
@@ -364,6 +365,37 @@ _MULTIMODAL_CONFIG_KEYS = (
     "projector_config",
     "audio_config",
 )
+# transformers 5 spellings of the same proof, kept APART from the tuple above because they are read for their VALUE.
+#
+# A visual checkpoint declares its placeholder token ids at the top level, and a conversion can ship them with no
+# vision sub-config at all: the checkpoint reported in #10951 is a language-only MLX conversion of a VLM that kept
+# ``Qwen3_5MoeForConditionalGeneration`` in architectures and carries image_token_id, video_token_id and the
+# vision_start/end pair, while its vision tower and vision_config are gone. Without these the auto-switch reads it as
+# a plain seq2seq and 404s an installed model.
+#
+# Presence is not the test here, because these are scalars rather than sub-configs and the key survives its value: a
+# serialiser that writes every field of a dataclass emits ``"image_token_id": null`` for a model that has none, and a
+# T5-shaped config that happens to carry the field would then be admitted by a key that says nothing. The tuple above
+# keeps its presence test unchanged, so no config that was accepted before is re-examined; only the four new keys have
+# to mean something.
+_VISUAL_TOKEN_ID_KEYS = (
+    "image_token_id",
+    "video_token_id",
+    "vision_start_token_id",
+    "vision_end_token_id",
+)
+# text_config is deliberately NOT in the tuple above, and audio_token_id is deliberately not either.
+#
+# text_config: transformers 5 nests one in text-only configs too, so on its own it is not evidence of a second
+# modality. ClvpConfig (``ClvpModelForConditionalGeneration``, a voice model with no chat serving path here) and the
+# Gemma 4 assistant configs serialise text_config and no modality key at all, so accepting it alone would open this
+# gate to exactly what the gate exists to close. It counts only beside one of the keys above, and those keys already
+# decide that case, so the pairing needs no branch of its own; test_multimodal_config_keys.py holds the rule.
+#
+# audio_token_id: the audio families are admitted by name below rather than by marker, because the MLX worker refuses
+# ASR and TTS outright and only some model types have a conditional audio serving path at all. A generic audio marker
+# would bypass that allowlist and advertise HiggsAudioV2 and VibeVoiceAsr as chat models, and would serve csm on an
+# MLX host where the worker rejects it.
 _SUPPORTED_CONDITIONAL_AUDIO_MODEL_TYPES = frozenset({"csm", "whisper"})
 
 
@@ -450,12 +482,41 @@ def _is_generative_chat_config(config: dict) -> bool:
     if not any(name.endswith("ForConditionalGeneration") for name in names):
         return False
     # ForConditionalGeneration is overloaded: T5 and BART wear it too, and the serving path has no AutoModelForSeq2SeqLM
-    # branch, so require a multimodal sub-config.
+    # branch, so require proof of a second modality. A nested text_config is not that proof on its own; see the
+    # _MULTIMODAL_CONFIG_KEYS comment.
     if any(key in config for key in _MULTIMODAL_CONFIG_KEYS):
+        return True
+    # A real placeholder token id, and only on a model type the audio allowlist below does not own. Ordered after that
+    # allowlist's own families deliberately: a csm or whisper config that also carries a visual token id must still go
+    # through the audio branch, or a visual marker becomes a way around the MLX refusal that branch applies. Every
+    # other input reaches the same answer it did before.
+    if not _model_type_is_audio(config.get("model_type")) and any(
+        _is_placeholder_token_id(config.get(key)) for key in _VISUAL_TOKEN_ID_KEYS
+    ):
         return True
     # whisper is the audio model rather than wearing one, so it carries no such sub-config. the MLX worker refuses ASR
     # and TTS outright, so only a Transformers host serves these.
     return not _host_serves_mlx() and _model_type_is_audio(config.get("model_type"))
+
+
+def _is_placeholder_token_id(value) -> bool:
+    """Whether *value* is a token id a tokenizer could actually emit.
+
+    A vocabulary index: a non-negative int. ``bool`` is excluded by hand because it is an ``int`` subclass, so
+    ``"image_token_id": true`` would otherwise read as token 1. ``None`` is the case this exists for -- a serialiser
+    that writes every field of a dataclass emits the key for a model that has no such token -- and a string, a dict or
+    a negative sentinel are equally not a proof of a second modality.
+
+    A list or tuple counts when it is non-empty and every element qualifies: several transformers 5 configs carry a
+    list of placeholder ids for a model with more than one image slot.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return value >= 0
+    if isinstance(value, (list, tuple)):
+        return bool(value) and all(_is_placeholder_token_id(item) for item in value)
+    return False
 
 
 def _model_type_is_audio(model_type) -> bool:
