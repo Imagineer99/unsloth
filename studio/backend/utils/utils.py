@@ -5,6 +5,8 @@
 
 import os
 import structlog
+import urllib.parse
+import urllib.request
 import threading
 from contextvars import ContextVar
 import time
@@ -115,6 +117,47 @@ def hf_proxy_usable_by_urllib(proxy: Optional[str]) -> bool:
 def hf_proxy_configured() -> bool:
     """True when egress goes through a proxy: it resolves the hub host, so local DNS proves nothing about reachability and must not declare the hub offline."""
     return hf_proxy_for_endpoint() is not None
+
+
+class AuthSafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Redirect policy for requests carrying a Hub token over urllib.
+
+    urllib's default ``HTTPRedirectHandler`` forwards the request headers to the
+    redirect target, so a mirror answering ``/resolve/`` with a cross-host 302 —
+    or an HTTPS-to-HTTP downgrade — would hand the user's token to a host the
+    operator never configured. Pass this to ``build_opener`` (which replaces
+    the default redirect handler): the Authorization header is dropped as soon
+    as scheme, host or port changes, and a TLS downgrade is not followed at all.
+    Refusing one means returning None, which urllib turns into an ``HTTPError``
+    for the 3xx rather than handing the 3xx back as a response; every probe here
+    catches ``HTTPError`` and reads a non-401/403/404 as "reachable", so the
+    refusal fails open.
+    """
+
+    @staticmethod
+    def _origin(url):
+        parts = urllib.parse.urlsplit(url)
+        scheme = parts.scheme.lower()
+        port = parts.port or (443 if scheme == "https" else 80)
+        return scheme, (parts.hostname or "").lower(), port
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        old = self._origin(req.full_url)
+        new = self._origin(newurl)
+        if old[0] == "https" and new[0] == "http":
+            return None  # no TLS downgrade, whatever the target is
+        if new != old:
+            req.headers.pop("Authorization", None)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def auth_safe_open(req, timeout):
+    """``urlopen`` through :class:`AuthSafeRedirectHandler` — the single call seam.
+
+    Tests patch THIS (not ``urllib.request.urlopen``) so the redirect policy
+    cannot be bypassed by a refactor that swaps the opener under them.
+    """
+    return urllib.request.build_opener(AuthSafeRedirectHandler()).open(req, timeout = timeout)
 
 
 def call_with_deadline(
