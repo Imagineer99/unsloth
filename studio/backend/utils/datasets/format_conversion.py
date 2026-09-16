@@ -21,6 +21,17 @@ def _quiet_bar_kwargs() -> dict:
         return {}
 
 
+def _normalize_role_alias(role) -> str:
+    """The form a ShareGPT role is matched in: stripped and lowercased.
+
+    Same rule as `unsloth_zoo.dataset_utils.standardize_data_formats` and the Studio
+    dataset preview, so the three cannot disagree about what a run will see.
+    """
+    if role is None:
+        return ""
+    return str(role).strip().lower()
+
+
 def standardize_chat_format(
     dataset,
     tokenizer = None,
@@ -107,13 +118,18 @@ def standardize_chat_format(
     else:
         raise ValueError(f"Could not infer role/content keys for chat column '{chat_column}'")
 
+    # Keyed on the normalised alias, because the roles in the wild are "Human", "GPT" and
+    # " user " and an exact match sends those straight through to the chat template, which
+    # then either rejects the role or renders a different conversation. `standardize_data_formats`
+    # in unsloth_zoo compares `role.strip().lower()` for the same reason, and the Studio
+    # dataset preview does too, so all three agree on what a run will see.
     aliases_mapping = {}
     for x in aliases_for_system:
-        aliases_mapping[x] = "system"
+        aliases_mapping[_normalize_role_alias(x)] = "system"
     for x in aliases_for_user:
-        aliases_mapping[x] = "user"
+        aliases_mapping[_normalize_role_alias(x)] = "user"
     for x in aliases_for_assistant:
-        aliases_mapping[x] = "assistant"
+        aliases_mapping[_normalize_role_alias(x)] = "assistant"
 
     def _standardize_dataset(examples):
         convos = examples[chat_column]
@@ -131,12 +147,29 @@ def standardize_chat_format(
                 # Use the inferred keys first, falling back per-message so mixed ShareGPT/ChatML rows keep valid turns.
                 original_role = message.get(role_key)
                 original_content = message.get(content_key)
-                if original_role is None:
+                # Blank counts as absent for the ROLE, so the fallback key is consulted for
+                # {"role": "", "from": "gpt"} exactly as the preview's
+                # `message.get("role") or message.get("from")` consults it. Keying this on
+                # `is None` instead labelled that turn "user" and trained an assistant
+                # response as a user one, while the preview showed it correctly. Content is
+                # deliberately left on `is None`: an empty message is a legitimate value,
+                # not a missing one.
+                if not _normalize_role_alias(original_role):
                     original_role = message.get("role") or message.get("from") or ""
                 if original_content is None:
                     original_content = message.get("content") or message.get("value") or ""
 
-                standard_role = aliases_mapping.get(original_role, original_role)
+                # Unknown even after normalising: left exactly as written, which is what this
+                # line has always done. Only the matching is normalised. A role that is
+                # missing, empty or nothing but whitespace is "user", the same default the
+                # preview applies, because an empty role reaches the chat template as one and
+                # most templates reject it.
+                normalized_role = _normalize_role_alias(original_role)
+                standard_role = (
+                    aliases_mapping.get(normalized_role, original_role)
+                    if normalized_role
+                    else "user"
+                )
 
                 if is_vlm:
                     original_content = [{"type": "text", "text": original_content}]
