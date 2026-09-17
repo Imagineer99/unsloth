@@ -33,9 +33,13 @@ from core.inference.diffusion_families import (
 )
 from core.inference.sd_cpp_backend import (
     _install_allowed,
+    _managed_tree_in_use,
     _server_binary_runnable,
     ensure_sd_cpp_binary,
     ensure_sd_server_binary,
+    note_unlaunchable_accelerator_build,
+    preferred_accelerator,
+    usable_or_recorded_failure,
 )
 from core.inference.sd_cpp_engine import (
     ENGINE_DIFFUSERS,
@@ -223,27 +227,72 @@ def select_and_activate_engine(
     binary = None
     server_binary = None
     if policy_eligible and fam_ok:
+        # One accelerator for both ensures, and the PREFERRED one: a host that has already been shown it cannot run
+        # the build for its own accelerator (a generic ROCm prebuilt against a card whose hipBLAS kernels it does not
+        # carry, #9278 and #8814) would otherwise install and probe that same build on every selection, then decline
+        # native because the binary will not start. Resolved once so the server and the CLI cannot disagree.
+        install_accelerator = preferred_accelerator(_install_accelerator_for(backend))
         # Probe the resident sd-server FIRST (the backend prefers it): a server-only install must still route to
         # native and should not pay an sd-cli download. Install the accelerator-matched build so a forced-native GPU
         # load gets the GPU server.
-        server_binary = ensure_sd_server_binary(
-            allow_install = _install_allowed(),
-            accelerator = _install_accelerator_for(backend),
+        # Checked against the record, because the ensure does not promise the accelerator it
+        # was given: offline, with installs disabled, or after a failed download it returns
+        # whatever usable build is already in the managed tree, which on a host that recorded
+        # a ROCm crash and cannot fetch Vulkan is the ROCm build. It answers the runnability
+        # probes below perfectly well and only dies mid-render, so without this the router
+        # selects native and the backend then runs the very build the record condemned. Only
+        # a SUBSTITUTE is refused: with the Vulkan fallback switched off the requested
+        # accelerator is ROCm again on purpose, and that opt-out means run it anyway.
+        # ...unless the substitute is only a substitute because an install cannot run RIGHT
+        # NOW. A resident sd-server that recorded a mid-render failure is still executing out
+        # of the managed tree, and an accelerator upgrade replaces the binaries in it, so both
+        # ensures decline and hand back the very ROCm build the record condemns. Refusing it
+        # here made `native_available` false and sent the first reload after the failure to
+        # diffusers -- downloading unrelated assets, and reaching the Vulkan rung only on some
+        # later load, after that switch happened to unload the server. The load path is the
+        # one that CAN do this: it stops the server and then runs the deferred install through
+        # `_upgrade_server_after_teardown`. So while the tree is busy the native selection is
+        # kept and the upgrade happens behind it.
+        # Only where the replacement can actually happen. With installing switched off, or
+        # on a host that cannot fetch the Vulkan bundle, `_upgrade_server_after_teardown`
+        # hands back the same ROCm path and the load would start the known-failing build
+        # again -- so the bypass is limited to the case where there is an install to wait
+        # for, and everywhere else the condemned substitute is refused exactly as before.
+        upgrade_is_deferred = _managed_tree_in_use() and _install_allowed()
+
+        def _accept(candidate):
+            if candidate and upgrade_is_deferred:
+                return candidate
+            return usable_or_recorded_failure(candidate, install_accelerator)
+
+        server_binary = _accept(
+            ensure_sd_server_binary(
+                allow_install = _install_allowed(),
+                accelerator = install_accelerator,
+            )
         )
         if server_binary and not _server_binary_runnable(server_binary):
             logger.warning(
                 "sd-server at %s is present but not runnable; not using it", server_binary
             )
+            # Counted before it is discarded: this router runs BEFORE the backend's load, so
+            # the two recorders inside `_run_load` never see a build the selection already
+            # rejected -- every forced-native request reinstalled the same ROCm build, failed
+            # the same probe, and the Vulkan rung below it was never reached.
+            note_unlaunchable_accelerator_build(server_binary)
             server_binary = None
         # sd-cli is the one-shot fallback: always LOCATE an existing binary, but auto-INSTALL only when there is no
         # usable server. Probe runnability first, else a present but non-runnable binary passes as available and fails
         # inside the background load.
-        binary = ensure_sd_cpp_binary(
-            allow_install = _install_allowed() and server_binary is None,
-            accelerator = _install_accelerator_for(backend),
+        binary = _accept(
+            ensure_sd_cpp_binary(
+                allow_install = _install_allowed() and server_binary is None,
+                accelerator = install_accelerator,
+            )
         )
         if binary and SdCppEngine(binary = binary).version() is None:
             logger.warning("sd-cli at %s is present but not runnable; not using it", binary)
+            note_unlaunchable_accelerator_build(binary)
             binary = None
 
     native_available = bool(binary or server_binary) and policy_eligible and fam_ok
@@ -271,11 +320,28 @@ def native_binary_installed() -> bool:
     Separated from the prediction because the two answers differ where it matters: prediction
     counts an absent binary as available whenever installing one is allowed, and a caller that
     must know whether selection could still fall back to diffusers needs the unassumed answer.
+
+    Through the SAME preferred accelerator and the same recorded-failure filter selection uses,
+    because the two are read together: the prediction decides which planner stages the download
+    and selection decides what actually loads. A record that condemns this host's accelerator
+    makes selection refuse a binary that is still on disk and still answers its runnability
+    probe, so counting that binary as available here predicted native while the load went to
+    diffusers -- and an offline load then had none of the diffusers assets, because the planner
+    for that engine was never run.
     """
-    server_binary = ensure_sd_server_binary(allow_install = False)
+    install_accelerator = preferred_accelerator(
+        _install_accelerator_for(resolve_diffusion_device_target().backend)
+    )
+    server_binary = usable_or_recorded_failure(
+        ensure_sd_server_binary(allow_install = False, accelerator = install_accelerator),
+        install_accelerator,
+    )
     if server_binary and _server_binary_runnable(server_binary):
         return True
-    binary = ensure_sd_cpp_binary(allow_install = False)
+    binary = usable_or_recorded_failure(
+        ensure_sd_cpp_binary(allow_install = False, accelerator = install_accelerator),
+        install_accelerator,
+    )
     return bool(binary and SdCppEngine(binary = binary).version() is not None)
 
 
