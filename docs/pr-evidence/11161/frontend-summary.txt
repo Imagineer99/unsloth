@@ -1,0 +1,24 @@
+ℹ tests 7751
+ℹ suites 0
+ℹ pass 7750
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 94838.690597
+
+✖ failing tests:
+
+test at tests/pasted-text-attachment.test.ts:774:1
+✖ every locale keeps the shortcut in the threshold description (3.108703ms)
+  AssertionError [ERR_ASSERTION]: ar.ts keeps {shortcut}
+      at TestContext.<anonymous> (file://<review-root>/head/studio/frontend/tests/pasted-text-attachment.test.ts:786:12)
+      at async Test.run (node:internal/test_runner/test:1125:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:787:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }

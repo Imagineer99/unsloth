@@ -1,0 +1,4 @@
+2026-09-17 02:10:38 [debug    ] llama admission queued: mode=chat_passthrough_stream path=/v1/chat/completions completion_id=chatcmpl-concurrent-bob pool=1/1 free=0 queued=1 wait_ms=None
+2026-09-17 02:10:39 [debug    ] llama admission granted-after-wait: mode=chat_passthrough_stream path=/v1/chat/completions completion_id=chatcmpl-concurrent-bob pool=1/1 free=0 queued=0 wait_ms=129
+2026-09-17 02:10:43 [error    ] openai passthrough stream stalled mid-response: The model did not produce a first token in time.
+2026-09-17 02:10:43 [error    ] openai passthrough stream stalled mid-response: The model stopped producing tokens mid-response.

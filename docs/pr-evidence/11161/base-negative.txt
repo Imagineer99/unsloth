@@ -1,0 +1,50 @@
+FFFFF                                                                    [100%]
+=================================== FAILURES ===================================
+___________ test_monitor_usage_relays_live_progress_and_decode_phase ___________
+tests/test_api_monitor.py:1583: in test_monitor_usage_relays_live_progress_and_decode_phase
+    assert row["running_phase"] == "token_generation"
+           ^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'running_phase'
+______________ test_tool_only_stream_leaves_prefill_phase[delta0] ______________
+tests/test_api_monitor.py:1617: in test_tool_only_stream_leaves_prefill_phase
+    assert monitor.get(entry_id)["running_phase"] == "token_generation"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'running_phase'
+______________ test_tool_only_stream_leaves_prefill_phase[delta1] ______________
+tests/test_api_monitor.py:1617: in test_tool_only_stream_leaves_prefill_phase
+    assert monitor.get(entry_id)["running_phase"] == "token_generation"
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'running_phase'
+__________________ test_streaming_response_exposes_monitor_id __________________
+tests/test_api_monitor.py:1621: in test_streaming_response_exposes_monitor_id
+    response = inference_route._sse_streaming_response(
+E   TypeError: _sse_streaming_response() got an unexpected keyword argument 'monitor_id'
+_ TestApiMonitorProviderAndCompletionStreams.test_passthrough_prompt_progress_reaches_monitor_and_response_header _
+tests/test_openai_tool_passthrough.py:8489: in test_passthrough_prompt_progress_reaches_monitor_and_response_header
+    asyncio.run(_run())
+/usr/lib/python3.12/asyncio/runners.py:194: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/usr/lib/python3.12/asyncio/base_events.py:687: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests/test_openai_tool_passthrough.py:8480: in _run
+    assert result.upstream_bodies[0]["return_progress"] is True
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'return_progress'
+=============================== warnings summary ===============================
+../../../venv312/lib/python3.12/site-packages/starlette/testclient.py:53
+  <review-root>/venv312/lib/python3.12/site-packages/starlette/testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_api_monitor.py::test_monitor_usage_relays_live_progress_and_decode_phase
+FAILED tests/test_api_monitor.py::test_tool_only_stream_leaves_prefill_phase[delta0]
+FAILED tests/test_api_monitor.py::test_tool_only_stream_leaves_prefill_phase[delta1]
+FAILED tests/test_api_monitor.py::test_streaming_response_exposes_monitor_id
+FAILED tests/test_openai_tool_passthrough.py::TestApiMonitorProviderAndCompletionStreams::test_passthrough_prompt_progress_reaches_monitor_and_response_header
+5 failed, 528 deselected, 1 warning in 4.05s

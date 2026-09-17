@@ -1,0 +1,10 @@
+# Non-ML imports needed by the production Studio route module.
+# Install alongside the pinned source's studio/backend/requirements/studio.txt.
+aiofiles==25.1.0
+sqlalchemy==2.0.54
+psutil==7.2.2
+pyyaml==6.0.3
+python-multipart==0.0.32
+httpx==0.28.1
+jinja2==3.1.6
+requests==2.34.2

@@ -1,0 +1,77 @@
+# Prepared locally with pr-repro-ci; no remote execution has been authorized yet.
+name: PR 11161 targeted A-B
+
+on:
+  push:
+    branches: [fix/pr11161-validation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stream-monitor:
+    name: ${{ matrix.os }} / ${{ matrix.revision.side }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        revision:
+          - side: before
+            sha: 38d4a4869ad3173ba7cad99682f5c8726e72f14d
+          - side: after
+            sha: c7ed763b79d163eb295b65e2b343b856821920e7
+    steps:
+      - name: Check out the reviewed harness
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+          persist-credentials: false
+      - name: Check out the exact implementation
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: ${{ matrix.revision.sha }}
+          path: source
+          persist-credentials: false
+      - name: Python 3.12
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.12'
+      - name: Verify source identity before installing
+        shell: python
+        env:
+          EXPECTED_SHA: ${{ matrix.revision.sha }}
+        run: |
+          import os, subprocess
+          actual = subprocess.check_output(['git', '-C', 'source', 'rev-parse', 'HEAD'], text=True).strip()
+          assert actual == os.environ['EXPECTED_SHA'], actual
+      - name: Install CPU-only route dependencies
+        run: >-
+          python -m pip install
+          -r source/studio/backend/requirements/studio.txt
+          -r harness/.github/scripts/pr11161/requirements.txt
+      - name: Record resolved dependencies
+        shell: python
+        run: |
+          import pathlib, subprocess, sys
+          out = pathlib.Path('evidence')
+          out.mkdir(exist_ok=True)
+          (out / 'dependencies.txt').write_text(subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'], text=True))
+      - name: Assert the expected A-B behavior
+        run: >-
+          python harness/.github/scripts/pr11161/run.py
+          --repo source --side ${{ matrix.revision.side }} --out evidence
+      - name: Retain fixture-only evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr11161-${{ matrix.os }}-${{ matrix.revision.side }}
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            evidence/facts.json
+            evidence/server.log
+            evidence/dependencies.txt
