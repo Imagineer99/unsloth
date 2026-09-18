@@ -488,6 +488,32 @@ def _ensure_hub_repo_private(hf_api, repo_id):
         ) from exception
 
 
+def _open_hub_repo(hf_api, repo_id, private):
+    """Create or reuse the repo we are about to upload into, private before anything lands.
+
+    Call this immediately before the upload, not earlier: it is what turns a failure after
+    this point into an empty repo.
+    """
+    repo_url = hf_api.create_repo(repo_id, private = private, exist_ok = True)
+    repo_id = getattr(repo_url, "repo_id", repo_id)
+    if private:
+        _ensure_hub_repo_private(hf_api, repo_id)
+    return repo_id
+
+
+def _tighten_existing_hub_repo(hf_api, repo_id, private):
+    """The privacy gate for a push that creates its own repo.
+
+    ``push_to_hub`` creates the repo itself, and Unsloth's wrapper writes the model card
+    only when it finds the repo ABSENT (`upload_to_huggingface` calls create_repo with
+    `exist_ok=False` and swallows the conflict along with the card). Creating the repo here
+    first would silently cost every fresh push its model card, so only an already-existing
+    repo is tightened; a fresh one is created private by the push itself.
+    """
+    if private and hf_api.repo_exists(repo_id):
+        _ensure_hub_repo_private(hf_api, repo_id)
+
+
 class ExportBackend:
     def __init__(self):
         self.inference_backend = get_inference_backend()
@@ -1627,17 +1653,18 @@ class ExportBackend:
 
                 logger.info(f"Pushing LoRA adapter to Hub: {repo_id}")
 
+                # Needs a local save_directory so the conversion is not re-run.
+                if gguf and not (output_path and Path(output_path).is_dir()):
+                    return (
+                        False,
+                        "GGUF LoRA Hub upload requires a local save directory; set one and retry.",
+                        None,
+                    )
+
+                hf_api = HfApi(token = hf_token)
+
                 if gguf:
-                    # Needs a local save_directory so the conversion is not re-run.
-                    if not (output_path and Path(output_path).is_dir()):
-                        return (
-                            False,
-                            "GGUF LoRA Hub upload requires a local save directory; set one and "
-                            "retry.",
-                            None,
-                        )
-                    hf_api = HfApi(token = hf_token)
-                    hf_api.create_repo(repo_id, private = private, exist_ok = True)
+                    repo_id = _open_hub_repo(hf_api, repo_id, private)
                     hf_api.upload_folder(
                         folder_path = output_path,
                         repo_id = repo_id,
@@ -1645,16 +1672,18 @@ class ExportBackend:
                     )
                 elif _IS_MLX:
                     with tempfile.TemporaryDirectory() as tmp_dir:
+                        # Serialise first: opening the repo before this would leave an empty
+                        # one behind whenever the adapter or tokenizer fails to write.
                         self.current_model.save_lora_adapters(tmp_dir)
                         self.current_tokenizer.save_pretrained(tmp_dir)
-                        hf_api = HfApi(token = hf_token)
-                        hf_api.create_repo(repo_id, private = private, exist_ok = True)
+                        repo_id = _open_hub_repo(hf_api, repo_id, private)
                         hf_api.upload_folder(
                             folder_path = tmp_dir,
                             repo_id = repo_id,
                             repo_type = "model",
                         )
                 else:
+                    _tighten_existing_hub_repo(hf_api, repo_id, private)
                     self.current_model.push_to_hub(repo_id, token = hf_token, private = private)
                     self.current_tokenizer.push_to_hub(repo_id, token = hf_token, private = private)
                 logger.info(f"Adapter pushed successfully to {repo_id}")
