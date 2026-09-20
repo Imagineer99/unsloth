@@ -28,4 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -r studio/backend/requirements/studio.txt pytest pytest-asyncio pytest-timeout python-multipart
-      - run: PYTHONPATH=studio/backend python -m pytest studio/backend/tests -q || true
+      - name: the test this PR changes, run directly
+        run: pwsh -NoProfile -File tests/studio/test_uv_safe_requirements_path.ps1
+      - name: and through its pytest wrapper, which is how CI reaches it
+        run: python -m pytest tests/python/test_uv_requirements_path_space.py -q
