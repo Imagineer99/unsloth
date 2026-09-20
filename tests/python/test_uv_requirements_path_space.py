@@ -146,9 +146,16 @@ def test_an_8dot3_alias_is_only_used_once_it_resolves():
     text = INSTALL_PS1.read_text(encoding = "utf-8")
     body = text[text.index(f"function {HELPER}") :]
     body = body[: body.index("\n    function ")]
-    assert re.search(r"-and \(Test-Path -LiteralPath \$short -PathType Leaf\)", body), (
+    # [^)]* so the assertion pins the CHECK, not the argument list: the guard also has to carry
+    # -ErrorAction SilentlyContinue, because under the installer's "Stop" a bare Test-Path in an
+    # ACL-denied directory throws instead of returning false (install.ps1:3277).
+    assert re.search(r"-and \(Test-Path -LiteralPath \$short -PathType Leaf\b[^)]*\)", body), (
         f"{HELPER} accepts an 8.3 short path on 'contains no space' alone, so an alias that "
         "does not resolve is handed to uv and later to Remove-Item"
+    )
+    assert re.search(r"Test-Path -LiteralPath \$short[^)]*-ErrorAction SilentlyContinue\)", body), (
+        f"{HELPER} queries the filesystem without -ErrorAction SilentlyContinue, so an unreadable "
+        "directory aborts the install instead of rejecting the alias"
     )
 
 
@@ -161,7 +168,9 @@ def test_get_uv_safe_path_also_requires_the_alias_to_resolve():
     created it handed uv a path that does not exist. Both copies must validate it, and they are
     byte-identical bodies, so both are checked here.
     """
-    guard = r"-and \(Test-Path -LiteralPath \$short\)"
+    # Same shape as above: the alias must be checked, and checked without letting an unreadable
+    # directory turn the rejection into a terminating error.
+    guard = r"-and \(Test-Path -LiteralPath \$short\b[^)]*-ErrorAction SilentlyContinue\)"
     for path in (INSTALL_PS1, REPO_ROOT / "studio" / "setup.ps1"):
         text = path.read_text(encoding = "utf-8")
         start = text.index("function Get-UvSafePath")
