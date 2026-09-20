@@ -5629,7 +5629,11 @@ function Get-UvSafePath {
         } else {
             $fso.GetFile($Path).ShortPath
         }
-        if ($short -and -not $short.Contains(" ")) { return $short }
+        # Space-free is not sufficient: a volume with 8.3 creation disabled can still hand
+        # back a name that does not resolve, and uv then cannot open the file this points
+        # at (#11290). Returning $Path instead keeps the spaced path, which is the failure
+        # the callers already handle.
+        if ($short -and -not $short.Contains(" ") -and (Test-Path -LiteralPath $short)) { return $short }
     } catch {}
     return $Path
 }
