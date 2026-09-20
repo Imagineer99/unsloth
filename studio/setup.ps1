@@ -5633,7 +5633,7 @@ function Get-UvSafePath {
         # back a name that does not resolve, and uv then cannot open the file this points
         # at (#11290). Returning $Path instead keeps the spaced path, which is the failure
         # the callers already handle.
-        if ($short -and -not $short.Contains(" ") -and (Test-Path -LiteralPath $short)) { return $short }
+        if ($short -and -not $short.Contains(" ") -and (Test-Path -LiteralPath $short -ErrorAction SilentlyContinue)) { return $short }
     } catch {}
     return $Path
 }
