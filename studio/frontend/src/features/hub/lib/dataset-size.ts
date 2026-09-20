@@ -272,6 +272,12 @@ const SNAPSHOT_WEIGHT_FILE_RE =
 const SNAPSHOT_NON_BIN_WEIGHT_FILE_RE =
   /\.(safetensors|pt|pth|ckpt|h5|msgpack|npz)$/i;
 const SNAPSHOT_BIN_WEIGHT_PREFIX_RE = /^(model|pytorch_model|adapter_model).*\.bin$/i;
+// [0-9] rather than \d, to stay identical to the backend's SHARDED_SAFETENSORS_RE in
+// studio/backend/hub/utils/snapshot_filters.py, where \d would also match non-ASCII digits.
+const SHARDED_SAFETENSORS_RE = /^model[-_][0-9]+-of-[0-9]+\.safetensors$/;
+const SAFETENSORS_INDEX = "model.safetensors.index.json";
+const DUPLICATE_WEIGHT_FORMAT_RE =
+  /^(?:(?:original|metal|coreml)\/|(?:pytorch_model.*\.bin|tf_model.*\.h5|flax_model.*\.msgpack)$|(?:pytorch_model\.bin|tf_model\.h5|flax_model\.msgpack)\.index\.json$|rust_model\.ot$)/s;
 
 function basename(path: string): string {
   return path.split("/").pop() ?? path;
@@ -288,9 +294,22 @@ function shipsTransformersWeights(siblings: ModelSibling[]): boolean {
   });
 }
 
+// Numbered shards are not loadable on their own: transformers resolves them through
+// model.safetensors.index.json, so one shard is not evidence a checkpoint is there.
+// Mirrors repo_ships_root_safetensors in snapshot_filters.py.
+function shipsRootSafetensors(siblings: ModelSibling[]): boolean {
+  const names = siblings.map((s) => s.rfilename ?? "");
+  if (names.some((n) => n === "model.safetensors")) return true;
+  return (
+    names.includes(SAFETENSORS_INDEX) &&
+    names.some((n) => SHARDED_SAFETENSORS_RE.test(n))
+  );
+}
+
 function isSnapshotIgnored(
   filename: string,
   skipConsolidated: boolean,
+  skipDuplicateFormats: boolean,
 ): boolean {
   const lower = filename.toLowerCase();
   return (
@@ -300,7 +319,8 @@ function isSnapshotIgnored(
     lower.startsWith("openvino/") ||
     lower.startsWith("mlx/") ||
     lower.endsWith(".bin.index.json.bak") ||
-    (skipConsolidated && lower.startsWith("consolidated"))
+    (skipConsolidated && lower.startsWith("consolidated")) ||
+    (skipDuplicateFormats && DUPLICATE_WEIGHT_FORMAT_RE.test(filename))
   );
 }
 
@@ -334,12 +354,18 @@ export function fetchModelSize(
       const data = (await res.json()) as ModelInfoApiResponse;
       const siblings = data.siblings ?? [];
       const skipConsolidated = shipsTransformersWeights(siblings);
+      const skipDuplicateFormats = shipsRootSafetensors(siblings);
       let total = 0;
       let weights = 0;
       for (const s of siblings) {
         if (typeof s.size !== "number") continue;
         const filename = s.rfilename ?? "";
-        if (filename && isSnapshotIgnored(filename, skipConsolidated)) continue;
+        if (
+          filename &&
+          isSnapshotIgnored(filename, skipConsolidated, skipDuplicateFormats)
+        ) {
+          continue;
+        }
         total += s.size;
         if (filename && SNAPSHOT_WEIGHT_FILE_RE.test(filename)) {
           weights += s.size;
