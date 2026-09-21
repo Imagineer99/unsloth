@@ -92,8 +92,9 @@ test("hydration replaces and persists the stale Qwen3.8 default snapshot", async
     params: {
       ...state.params,
       checkpoint: QWEN38,
+      temperature: 1,
       minP: 0,
-      presencePenalty: 1.5,
+      presencePenalty: 0,
     },
     paramsByModel: {},
     ...BUILTIN_DEFAULT,
@@ -104,15 +105,17 @@ test("hydration replaces and persists the stale Qwen3.8 default snapshot", async
   await useChatRuntimeStore.getState().hydratePersistedSettings();
 
   const hydrated = useChatRuntimeStore.getState();
+  assert.equal(hydrated.params.temperature, 1);
   assert.equal(hydrated.params.minP, 0);
-  assert.equal(hydrated.params.presencePenalty, 1.5);
+  assert.equal(hydrated.params.presencePenalty, 0);
+  assert.equal(hydrated.paramsByModel[QWEN38]?.temperature, 1);
   assert.equal(hydrated.paramsByModel[QWEN38]?.minP, 0);
-  assert.equal(hydrated.paramsByModel[QWEN38]?.presencePenalty, 1.5);
+  assert.equal(hydrated.paramsByModel[QWEN38]?.presencePenalty, 0);
 
   await sleep(600);
   assert.deepEqual(modelPut(), {
     inferenceParamsByModel: {
-      [QWEN38]: { minP: 0, presencePenalty: 1.5 },
+      [QWEN38]: { temperature: 1, minP: 0 },
     },
   });
 });
@@ -144,16 +147,18 @@ test("active-model adoption retries a migration deferred during hydration", asyn
     {
       ...active.params,
       checkpoint: QWEN38,
+      temperature: 1,
       minP: 0,
-      presencePenalty: 1.5,
+      presencePenalty: 0,
     },
     { fromModelDefaults: true },
   );
   await sleep(50);
 
   const migrated = useChatRuntimeStore.getState();
+  assert.equal(migrated.paramsByModel[QWEN38]?.temperature, 1);
   assert.equal(migrated.paramsByModel[QWEN38]?.minP, 0);
-  assert.equal(migrated.paramsByModel[QWEN38]?.presencePenalty, 1.5);
+  assert.equal(migrated.paramsByModel[QWEN38]?.presencePenalty, 0);
   assert.equal(
     settingsHttp.puts.some((put) => put.inferenceParams !== undefined),
     false,
@@ -334,9 +339,10 @@ test("returning from a custom preset retries the guarded migration", async () =>
   await sleep(50);
 
   const state = useChatRuntimeStore.getState();
+  assert.equal(state.params.temperature, 1);
   assert.equal(state.params.minP, 0);
-  assert.equal(state.params.presencePenalty, 1.5);
-  assert.equal(state.paramsByModel[QWEN38]?.presencePenalty, 1.5);
+  assert.equal(state.params.presencePenalty, 0);
+  assert.equal(state.paramsByModel[QWEN38]?.presencePenalty, 0);
   assert.equal(hasModelPut(), true);
 });
 
@@ -371,9 +377,10 @@ test("restoring the final modified field retries after the parameter edit", asyn
   await sleep(50);
 
   const state = useChatRuntimeStore.getState();
+  assert.equal(state.params.temperature, 1);
   assert.equal(state.params.minP, 0);
-  assert.equal(state.params.presencePenalty, 1.5);
-  assert.equal(state.paramsByModel[QWEN38]?.presencePenalty, 1.5);
+  assert.equal(state.params.presencePenalty, 0);
+  assert.equal(state.paramsByModel[QWEN38]?.presencePenalty, 0);
   assert.equal(hasModelPut(), true);
 });
 
@@ -435,7 +442,7 @@ test("resident-model adoption migrates a deferred global-only snapshot", async (
 
   const state = useChatRuntimeStore.getState();
   state.setParams(
-    { ...state.params, minP: 0, presencePenalty: 1.5 },
+    { ...state.params, temperature: 1, minP: 0, presencePenalty: 0 },
     {
       fromModelDefaults: true,
       migrateOwnedGlobalQwenDefaults: true,
@@ -447,9 +454,9 @@ test("resident-model adoption migrates a deferred global-only snapshot", async (
     (put) => put.inferenceParams !== undefined,
   );
   assert.deepEqual(globalPut?.inferenceParams, {
+    temperature: 1,
     minPMode: "custom",
     minP: 0,
-    presencePenalty: 1.5,
   });
 });
 
@@ -490,7 +497,7 @@ test("resident-model adoption does not claim a global beside model memory", asyn
   assert.equal(persisted.inferenceParams?.presencePenalty, 0);
   assert.equal(
     persisted.inferenceParamsByModel?.[QWEN38]?.presencePenalty,
-    1.5,
+    0,
   );
 });
 
@@ -661,25 +668,25 @@ test("local migration preserves an active thread's sampling override", async () 
   const initial = useChatRuntimeStore.getState();
   initial.setActiveThreadId("thread-with-sampling");
   initial.applyThreadScopedSettings("thread-with-sampling", {
-    presencePenalty: 0,
+    presencePenalty: 0.9,
     reasoningEnabled: false,
   });
 
   const active = useChatRuntimeStore.getState();
   active.setParams(
-    { ...active.params, minP: 0, presencePenalty: 1.5 },
+    { ...active.params, temperature: 1, minP: 0, presencePenalty: 0 },
     { fromModelDefaults: true },
   );
   await sleep(50);
 
   const migrated = useChatRuntimeStore.getState();
-  assert.equal(migrated.params.presencePenalty, 0);
-  assert.equal(migrated.paramsByModel[QWEN38]?.presencePenalty, 1.5);
-  assert.equal(migrated.paramsByModel[QWEN38]?.temperature, 0.6);
+  assert.equal(migrated.params.presencePenalty, 0.9);
+  assert.equal(migrated.paramsByModel[QWEN38]?.presencePenalty, 0);
+  assert.equal(migrated.paramsByModel[QWEN38]?.temperature, 1);
   assert.equal(migrated.paramsByModel[QWEN38]?.topP, 0.95);
   migrated.applyThreadScopedSettings(null, {});
   assert.equal(useChatRuntimeStore.getState().params.minP, 0);
-  assert.equal(useChatRuntimeStore.getState().params.presencePenalty, 1.5);
+  assert.equal(useChatRuntimeStore.getState().params.presencePenalty, 0);
   migrated.setActiveThreadId(null);
 });
 
@@ -704,8 +711,9 @@ test("hydration migrates the authoritative global when model memory is off", asy
 
   const hydrated = useChatRuntimeStore.getState();
   assert.equal(hydrated.rememberParamsPerModel, false);
+  assert.equal(hydrated.params.temperature, 1);
   assert.equal(hydrated.params.minP, 0);
-  assert.equal(hydrated.params.presencePenalty, 1.5);
+  assert.equal(hydrated.params.presencePenalty, 0);
   assert.deepEqual(
     settingsHttp.puts.find(
       (put) =>
@@ -714,9 +722,9 @@ test("hydration migrates the authoritative global when model memory is off", asy
     ),
     {
       inferenceParamsByModel: {
-        [QWEN38]: { minP: 0, presencePenalty: 1.5 },
+        [QWEN38]: { temperature: 1, minP: 0 },
       },
-      inferenceParams: { minP: 0, presencePenalty: 1.5 },
+      inferenceParams: { temperature: 1, minP: 0 },
     },
   );
 });
@@ -745,8 +753,9 @@ test("a first user model load during hydration does not claim prior globals", as
     {
       ...loading.params,
       checkpoint: QWEN38,
+      temperature: 1,
       minP: 0,
-      presencePenalty: 1.5,
+      presencePenalty: 0,
     },
     { fromModelDefaults: true },
   );
@@ -756,8 +765,9 @@ test("a first user model load during hydration does not claim prior globals", as
   settingsHttp.release = null;
 
   const hydrated = useChatRuntimeStore.getState();
+  assert.equal(hydrated.params.temperature, 1);
   assert.equal(hydrated.params.minP, 0);
-  assert.equal(hydrated.params.presencePenalty, 1.5);
+  assert.equal(hydrated.params.presencePenalty, 0);
   assert.equal(
     settingsHttp.puts.some((put) => put.inferenceParams !== undefined),
     false,
@@ -788,14 +798,15 @@ test("a normalized migration patch stays within the loaded context", async () =>
 
   const active = useChatRuntimeStore.getState();
   active.setParams(
-    { ...active.params, minP: 0, presencePenalty: 1.5 },
+    { ...active.params, temperature: 1, minP: 0, presencePenalty: 0 },
     { fromModelDefaults: true },
   );
   await sleep(50);
 
   const migrated = useChatRuntimeStore.getState();
   assert.equal(migrated.params.maxTokens, 4096);
-  assert.equal(migrated.paramsByModel[QWEN38]?.presencePenalty, 1.5);
+  assert.equal(migrated.paramsByModel[QWEN38]?.temperature, 1);
+  assert.equal(migrated.paramsByModel[QWEN38]?.presencePenalty, 0);
 });
 
 test("deferred adoption migrates the authoritative global when memory is off", async () => {
@@ -954,12 +965,12 @@ test("routine model-default refreshes skip migration reads without a candidate",
     params: {
       ...state.params,
       checkpoint: QWEN38,
-      temperature: 0.6,
+      temperature: 1,
       topP: 0.95,
       topK: 20,
       minP: 0,
       repetitionPenalty: 1,
-      presencePenalty: 1.5,
+      presencePenalty: 0,
     },
     paramsByModel: {},
     ...BUILTIN_DEFAULT,
