@@ -1,11 +1,13 @@
-# PR #11702 Playwright evidence
+# PR #11702: fresh Playwright comparison
 
-Unmodified screenshots of the same saved conversation, before and after the inline compaction notice fix. See meta.json for capture provenance and limitations, and facts.json for Playwright DOM counts.
+BEFORE: merge base `ebf2f2a5d4c78407bce5a38988d38198c094ef2a`. AFTER: PR head `b9296795ed1861d6238d67104c26749b74048c51`.
 
-## BEFORE: 0 inline notices
+Separate installations reopen independent copies of the same recorded real-model conversation. First tool reply notice counts: **0 → 1**, retained after reload. This is a fresh rendering comparison, not a fresh inference run. See [metadata](meta.json) and [DOM facts](facts.json).
+
+## BEFORE — first tool reply has no notice
 
 ![Before](before.png)
 
-## AFTER: 1 inline notice
+## AFTER — first tool reply shows the notice
 
 ![After](after.png)

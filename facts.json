@@ -1,12 +1,24 @@
 [
   {
     "label": "before",
-    "notices": []
+    "sha": "ebf2f2a5d4c78407bce5a38988d38198c094ef2a",
+    "backend_port": 50569,
+    "frontend_port": 44017,
+    "messages_sha256": "cc68c30c72328c93ded0e4e758ddaaa8b8017b3cf11059a19b094c6f0185f907",
+    "first_reply_notice_count": 0,
+    "total_notice_count": 5,
+    "page_errors": [],
+    "first_reply_notice_count_after_reload": 0
   },
   {
     "label": "after",
-    "notices": [
-      "This conversation got long, so it was compacted. Older messages were dropped from the model's context to make room. They are saved and searchable, and the parts relevant to each question are brought back automatically. (6 messages dropped here, 1 earlier passage recalled.)"
-    ]
+    "sha": "b9296795ed1861d6238d67104c26749b74048c51",
+    "backend_port": 44419,
+    "frontend_port": 52199,
+    "messages_sha256": "cc68c30c72328c93ded0e4e758ddaaa8b8017b3cf11059a19b094c6f0185f907",
+    "first_reply_notice_count": 1,
+    "total_notice_count": 6,
+    "page_errors": [],
+    "first_reply_notice_count_after_reload": 1
   }
 ]

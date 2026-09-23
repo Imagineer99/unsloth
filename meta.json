@@ -1,27 +1,40 @@
 {
+  "captured_at_utc": "2026-09-23T16:12:53.497706+00:00",
   "pr": "https://github.com/unslothai/unsloth/pull/11702",
-  "scene": "same persisted assistant tool loop, reopened and scrolled to the first assistant message",
-  "expect": "Inline compaction notice count changes from zero to one.",
+  "merge_base": "ebf2f2a5d4c78407bce5a38988d38198c094ef2a",
+  "head": "b9296795ed1861d6238d67104c26749b74048c51",
+  "scene": "Reopen recorded chat; scroll to top; inspect the first assistant tool reply; reload and assert again.",
+  "expect": "First assistant reply compaction notice: BEFORE 0, AFTER 1; same counts after reload.",
   "verified": true,
-  "capture_before": "999dd8500fa845cd766d3d1b3bd408c1fe0ee647",
-  "capture_after": "same base plus the uncommitted production fix subsequently committed as a84105e44d9d01b8435a2bc2faabdc2e04ccc39f",
-  "pr_head_at_publication": "b9296795ed1861d6238d67104c26749b74048c51",
-  "model": "Qwen3.8-27B UD-IQ3_XXS",
-  "context_length": 4096,
-  "code_enabled": true,
-  "frontend_ports": {
-    "before": 5173,
-    "after": 5174
-  },
-  "viewport": {
-    "width": 1440,
-    "height": 1000
-  },
-  "isolation": "Separate frontend processes; same backend and unchanged saved conversation, deliberately shared to isolate rendering.",
-  "limits": "Historical pre-rebase screenshots, not a fresh merge-base/head run. Exact 2-bit/4-bit quantizations untested. Tool turn was stopped at the harness timeout. Validates notice rendering, not game completion.",
+  "facts": [
+    {
+      "label": "before",
+      "sha": "ebf2f2a5d4c78407bce5a38988d38198c094ef2a",
+      "backend_port": 50569,
+      "frontend_port": 44017,
+      "messages_sha256": "cc68c30c72328c93ded0e4e758ddaaa8b8017b3cf11059a19b094c6f0185f907",
+      "first_reply_notice_count": 0,
+      "total_notice_count": 5,
+      "page_errors": [],
+      "first_reply_notice_count_after_reload": 0
+    },
+    {
+      "label": "after",
+      "sha": "b9296795ed1861d6238d67104c26749b74048c51",
+      "backend_port": 44419,
+      "frontend_port": 52199,
+      "messages_sha256": "cc68c30c72328c93ded0e4e758ddaaa8b8017b3cf11059a19b094c6f0185f907",
+      "first_reply_notice_count": 1,
+      "total_notice_count": 6,
+      "page_errors": [],
+      "first_reply_notice_count_after_reload": 1
+    }
+  ],
+  "isolation": "Separate clean detached worktrees, backend processes, frontend processes, Studio homes and Vite caches. Each Studio home received an independent SQLite backup of the same recorded conversation. Existing local Python and Node dependency installations were reused by both sides.",
+  "data_provenance": "Real Qwen3.8-27B UD-IQ3_XXS conversation originally generated with Code enabled at 4096 tokens. Saved messages and metadata were not rewritten.",
+  "limits": "Fresh rendering/reload comparison of the exact PR merge base/head using recorded conversation data; no new model inference in this comparison. No model is loaded, hence Select model in the screenshots. The original generation was stopped at its timeout; this does not verify game completion.",
   "sha256": {
-    "before.png": "01695831b51d64cdba6456565081f6877c8ce58a6e166b86ab0a8e6e37c7a96a",
-    "after.png": "6a4398122638a0354a0e60c578f4251039cb9755bb5de7e6a704cd0969258272",
-    "facts.json": "572b9b2e9fbcafd70d92253134e0c9be7bee6b176b27ebe3dfd8166c117152f0"
+    "before.png": "baf819925b1728e962d885a29c78e188d29b653ada477618ad2842a0cf24806e",
+    "after.png": "72099e7b289efc09e95a21d811db7f5c34c1c876ee13adf3fe1fcce7ea57d8bf"
   }
 }
