@@ -1,0 +1,27 @@
+{
+  "pr": "https://github.com/unslothai/unsloth/pull/11702",
+  "scene": "same persisted assistant tool loop, reopened and scrolled to the first assistant message",
+  "expect": "Inline compaction notice count changes from zero to one.",
+  "verified": true,
+  "capture_before": "999dd8500fa845cd766d3d1b3bd408c1fe0ee647",
+  "capture_after": "same base plus the uncommitted production fix subsequently committed as a84105e44d9d01b8435a2bc2faabdc2e04ccc39f",
+  "pr_head_at_publication": "b9296795ed1861d6238d67104c26749b74048c51",
+  "model": "Qwen3.8-27B UD-IQ3_XXS",
+  "context_length": 4096,
+  "code_enabled": true,
+  "frontend_ports": {
+    "before": 5173,
+    "after": 5174
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 1000
+  },
+  "isolation": "Separate frontend processes; same backend and unchanged saved conversation, deliberately shared to isolate rendering.",
+  "limits": "Historical pre-rebase screenshots, not a fresh merge-base/head run. Exact 2-bit/4-bit quantizations untested. Tool turn was stopped at the harness timeout. Validates notice rendering, not game completion.",
+  "sha256": {
+    "before.png": "01695831b51d64cdba6456565081f6877c8ce58a6e166b86ab0a8e6e37c7a96a",
+    "after.png": "6a4398122638a0354a0e60c578f4251039cb9755bb5de7e6a704cd0969258272",
+    "facts.json": "572b9b2e9fbcafd70d92253134e0c9be7bee6b176b27ebe3dfd8166c117152f0"
+  }
+}
