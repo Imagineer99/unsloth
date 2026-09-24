@@ -1,0 +1,9 @@
+{
+  "scene": "http-dictate-main-compare",
+  "before": "f9bffe265889379126785d129700345a11f38b60",
+  "after": "9482694959cbc1df5cf5d32982f2c4ce56b2e6c9",
+  "expect": "On insecure non-loopback HTTP, Dictate displays secure-connection guidance BEFORE and a recording dialog with Whisper Tiny/English AFTER, in Main and Compare. AFTER appends a controlled transcript exactly once without submitting and rejects cancelled or navigated-away results. Localhost retains live recording on both revisions.",
+  "fixtures": "Only STT status/load/unload/transcription responses are controlled; a valid generated WAV is selected through the browser file chooser. Real production frontend and backend/auth/navigation.",
+  "hardware": "No inference, no downloaded model, no GPU required.",
+  "publication": "Local artifacts only pending explicit approval."
+}
