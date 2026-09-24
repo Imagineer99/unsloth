@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 import asyncio,io,json,pathlib,re,secrets,socket,wave,httpx,os,hashlib
 from playwright.async_api import async_playwright,expect,Error
+from urllib.parse import urlsplit
 ROOT=pathlib.Path(os.environ.get('PR11075_ROOT',pathlib.Path(__file__).resolve().parent)).resolve()
 OUT=ROOT/'ui-evidence'
 PIN={'before':'f9bffe265889379126785d129700345a11f38b60','after':'9482694959cbc1df5cf5d32982f2c4ce56b2e6c9'}
@@ -28,22 +29,32 @@ async def main():
    with httpx.Client(trust_env=False) as c:
     tree=pathlib.Path(meta['tree'])
     index=(tree/'studio/frontend/dist/index.html').read_text()
-    asset=re.search(r'src="([^"]+\.js)"',index).group(1)
+    asset=re.search(r'<script\b[^>]*\btype="module"[^>]*\bsrc="([^"]+\.js)"',index).group(1)
     local=(tree/'studio/frontend/dist'/asset.lstrip('/')).read_bytes()
     served=c.get('http://127.0.0.1:'+str(meta['port'])+asset);served.raise_for_status()
     assert hashlib.sha256(local).digest()==hashlib.sha256(served.content).digest()
+    meta['entry_asset']=asset
     meta['asset_sha256']=hashlib.sha256(local).hexdigest()
+    chat_files=[f for f in (tree/'studio/frontend/dist/assets').glob('chat-*.js') if re.fullmatch(r'chat-[A-Za-z0-9_-]{8}\.js',f.name)]
+    assert len(chat_files)==1
+    chat_file=chat_files[0]
+    chat_asset='/assets/'+chat_file.name
+    chat_response=c.get('http://127.0.0.1:'+str(meta['port'])+chat_asset);chat_response.raise_for_status()
+    assert hashlib.sha256(chat_file.read_bytes()).digest()==hashlib.sha256(chat_response.content).digest()
+    meta['chat_asset']=chat_asset
+    meta['chat_asset_sha256']=hashlib.sha256(chat_response.content).hexdigest()
    data=auth(meta)
    with httpx.Client(trust_env=False) as c:
     r=c.post('http://127.0.0.1:'+str(meta['port'])+'/api/chat/threads',headers={'Authorization':'Bearer '+data['access_token']},json={'id':'dictate-evidence-destination','title':'Evidence destination','modelType':'base','modelId':'','createdAt':1700000000000})
     r.raise_for_status()
-   facts['sides'][side]={'sha':meta['sha'],'port':meta['port'],'home':meta['home'],'asset_sha256':meta['asset_sha256'],'surfaces':{}}
+   facts['sides'][side]={'sha':meta['sha'],'port':meta['port'],'home':meta['home'],'entry_asset':meta['entry_asset'],'asset_sha256':meta['asset_sha256'],'chat_asset':meta['chat_asset'],'chat_asset_sha256':meta['chat_asset_sha256'],'surfaces':{}}
    for surface in ['main','compare']:
     ctx=await browser.new_context(viewport={'width':1200,'height':900},locale='en-GB',color_scheme='light')
     await ctx.add_init_script("localStorage.setItem('unsloth_auth_token',"+json.dumps(data['access_token'])+");localStorage.setItem('unsloth_auth_refresh_token',"+json.dumps(data['refresh_token'])+");localStorage.setItem('unsloth_voice_settings',JSON.stringify({state:{dictationEngine:'model',sttModel:'tiny',dictationLanguage:'en',sttDevice:'cpu'},version:1}));")
     page=await ctx.new_page();errors=[];requests=[];inference=[];mode={'value':'success','gate':asyncio.Event()}
     page.on('pageerror',lambda e:errors.append(str(e)))
-    page.on('request',lambda r:inference.append(r.url) if re.search(r'/api/inference/(chat|generate)|/v1/chat/completions',r.url) else None)
+    submit_paths={'/api/inference/chat-runs','/api/inference/chat/completions','/api/inference/generate/stream','/v1/chat/completions'}
+    page.on('request',lambda r:inference.append(urlsplit(r.url).path) if r.method=='POST' and urlsplit(r.url).path in submit_paths else None)
     engine={'available':True,'loaded_model':'tiny','loading':False,'device':'cpu','keep_alive_seconds':300,'default_model':'tiny','models':['tiny'],'downloaded_models':['tiny'],'download':{'downloading':False,'model':None,'error':None,'bytes_done':None,'bytes_total':None}}
     async def audio_route(route):
      url=route.request.url
@@ -127,6 +138,7 @@ async def main():
       await expect(editor).to_have_value(before)
       assert 'LATE TRANSCRIPT' not in await editor.input_value()
       facts['checks'].append(side+'/'+surface+': '+action+' fences delayed response')
+     assert not inference,inference
      sf['transcription_requests']=len(requests);sf['chat_submission_requests']=len(inference)
     facts['sides'][side]['surfaces'][surface]=sf
     # Same real frontend/live adapter on localhost; Chromium supplies a synthetic microphone.
@@ -151,6 +163,7 @@ async def main():
     print('PASS',side,surface,flush=True)
    (OUT/'meta.json').write_text(json.dumps(facts,indent=2))
   await browser.close()
+ assert facts['sides']['before']['chat_asset_sha256']!=facts['sides']['after']['chat_asset_sha256']
  facts['verified']=True
  facts['differences']={'main':{'dialog_visible':[False,True],'secure_connection_error':[True,False]},'compare':{'dialog_visible':[False,True],'secure_connection_error':[True,False]}}
  (OUT/'meta.json').write_text(json.dumps(facts,indent=2))
