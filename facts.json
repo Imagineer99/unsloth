@@ -1,0 +1,235 @@
+{
+  "pr": "https://github.com/unslothai/unsloth/pull/11838",
+  "base_sha": "df946e0864d2ccf05dfb00193fb79c80d7e48996",
+  "head_sha": "49efe3134a1dcdc29cdc28f5b0b1e23f12d3b401",
+  "scene": "attach-docx-to-empty-chat",
+  "expect": "BEFORE: exact was-not-persisted toast, no chat row creation and no upload POST. AFTER: chat row created before upload POST, document chip reaches completed, no attachment error.",
+  "isolation": "Separate live Studio backend processes, databases, Vite source roots and browser contexts. Real persistence, upload, DOCX parsing and indexing in the ordinary A/B.",
+  "results": [
+    {
+      "browser": "chromium",
+      "side": "before",
+      "scenario": "new-chat-docx",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "new-chat-docx",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "saved-and-dedup",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "temporary",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "batch",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "delayed-save",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "navigate-during-save",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "deleted",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "project",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "before",
+      "scenario": "new-chat-docx",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "new-chat-docx",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "saved-and-dedup",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "temporary",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "batch",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "delayed-save",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "navigate-during-save",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "deleted",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "project",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "before",
+      "scenario": "new-chat-docx",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "new-chat-docx",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "saved-and-dedup",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "temporary",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "batch",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "delayed-save",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "navigate-during-save",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "deleted",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "project",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "before",
+      "scenario": "browser-drop",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "browser-drop",
+      "passed": true
+    },
+    {
+      "browser": "chromium",
+      "side": "after",
+      "scenario": "transient-save-failure",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "before",
+      "scenario": "browser-drop",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "browser-drop",
+      "passed": true
+    },
+    {
+      "browser": "firefox",
+      "side": "after",
+      "scenario": "transient-save-failure",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "before",
+      "scenario": "browser-drop",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "browser-drop",
+      "passed": true
+    },
+    {
+      "browser": "webkit",
+      "side": "after",
+      "scenario": "transient-save-failure",
+      "passed": true
+    }
+  ],
+  "screenshots": {
+    "before": "1bcfb18ea5569cbd5950bc8a7246d853f27a4e132a6eb3c8fd02ca50b109ab0c",
+    "after": "da3765f7fcbb7ecf545dcb95057d6f95c8299b2dfb4a0a64d23b9df1799513d4"
+  },
+  "limits": [
+    "Windows/Tauri OS drop not exercised; native-intent handler has component coverage.",
+    "Browser DataTransfer drops exercise a separate ordinary file attachment path.",
+    "No chat generation test."
+  ]
+}
