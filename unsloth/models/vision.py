@@ -94,6 +94,7 @@ from .loader_utils import (
     _exclude_rope_inv_freq_from_ddp,
     _get_fp8_mode_and_check_settings,
     _restore_dropped_fp8_scales,
+    _prepare_compressed_tensors_model,
     planner_class_mismatch_reason,
     planner_model_class,
     planner_quantization_kwargs,
@@ -1781,6 +1782,7 @@ class FastBaseModel:
                     cache_dir = kwargs.get("cache_dir"),
                     variant = kwargs.get("variant"),
                 )
+                _prepare_compressed_tensors_model(model)
                 if hasattr(model, "generate"):
                     model.fast_generate = make_fast_generate_wrapper(model.generate)
                     model.fast_generate_batches = error_out_no_vllm
