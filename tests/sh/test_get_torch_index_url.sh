@@ -204,6 +204,16 @@ run_func() {
     fi
 }
 
+# Captures stderr only (run_func discards it).
+run_func_stderr() {
+    _mock_dir="$1"
+    if [ "$_mock_dir" = "none" ]; then
+        PATH="$_TOOLS_DIR" bash -c "unset CUDA_VISIBLE_DEVICES; _ARCH=x86_64; . '$_FUNC_FILE'; get_torch_index_url" 2>&1 >/dev/null
+    else
+        PATH="$_mock_dir:$_TOOLS_DIR" bash -c "unset CUDA_VISIBLE_DEVICES; _ARCH=x86_64; . '$_FUNC_FILE'; get_torch_index_url" 2>&1 >/dev/null
+    fi
+}
+
 echo "=== test_get_torch_index_url ==="
 
 # 1) No nvidia-smi available -> cpu
@@ -697,6 +707,50 @@ assert_eq "url override path slash trimmed, query kept" "https://mirror.example.
 # 50) A #fragment ending in "/" is likewise preserved.
 _result=$(UNSLOTH_TORCH_INDEX_URL="https://mirror.example.com/whl/cu128#anchor/" run_func "none")
 assert_eq "url override preserves fragment slash" "https://mirror.example.com/whl/cu128#anchor/" "$_result"
+
+# 51) A host newer than the newest leaf is told it was capped (#7264, #10657).
+_dir=$(make_mock_amd_smi "8.0")
+_result=$(run_func_stderr "$_dir")
+assert_contains "ROCm 8.0 cap is explained on stderr" "$_result" "No PyTorch build is validated for ROCm rocm8.0"
+assert_contains "ROCm 8.0 cap names the leaf installed instead" "$_result" "installing the closest validated build, rocm7.2"
+assert_contains "ROCm 8.0 cap says the wheels carry their own runtime" "$_result" "carry their own ROCm runtime"
+rm -rf "$_dir"
+
+# 52) Two-digit minor: 7.14 is capped, not read as 7.1.
+_dir=$(make_mock_amd_smi "7.14")
+_result=$(run_func "$_dir")
+assert_eq "ROCm 7.14 -> rocm7.2 (capped)" "https://download.pytorch.org/whl/rocm7.2" "$_result"
+_result=$(run_func_stderr "$_dir")
+assert_contains "ROCm 7.14 cap is explained on stderr" "$_result" "No PyTorch build is validated for ROCm rocm7.14"
+rm -rf "$_dir"
+
+# 53) A validated version stays silent.
+_dir=$(make_mock_amd_smi "7.2")
+_result=$(run_func_stderr "$_dir")
+assert_not_contains "ROCm 7.2 prints no cap note" "$_result" "No PyTorch build is validated"
+rm -rf "$_dir"
+
+# 54) Below the newest leaf: rocm6.3 is served as itself.
+_dir=$(make_mock_amd_smi "6.3")
+_result=$(run_func_stderr "$_dir")
+assert_not_contains "ROCm 6.3 prints no cap note" "$_result" "No PyTorch build is validated"
+rm -rf "$_dir"
+
+# 55) 6.5+ clips to rocm6.4.
+_dir=$(make_mock_amd_smi "6.5")
+_result=$(run_func "$_dir")
+assert_eq "ROCm 6.5 -> rocm6.4 (clipped)" "https://download.pytorch.org/whl/rocm6.4" "$_result"
+_result=$(run_func_stderr "$_dir")
+assert_contains "ROCm 6.5 clip is explained on stderr" "$_result" "No PyTorch build is validated for ROCm rocm6.5"
+rm -rf "$_dir"
+
+# 56) bash 3.2 (macOS /bin/sh) ends $(...) at a bare `pattern)`, aborting the whole script: every
+# arm of the captured case needs its leading (.
+_bare_arms=$(sed -n '/_rocm_index=\$(case "\$_rocm_tag" in/,/^[[:space:]]*esac)/p' "$INSTALL_SH" \
+    | grep -v '^[[:space:]]*esac)' | grep -E '^[[:space:]]*[^([:space:]#][^[:space:]]*\)' || true)
+_n_arms=$(sed -n '/_rocm_index=\$(case "\$_rocm_tag" in/,/^[[:space:]]*esac)/p' "$INSTALL_SH" | grep -cE '^[[:space:]]*\(' || true)
+assert_eq "captured ROCm case has no bare pattern arms" "" "$_bare_arms"
+assert_eq "captured ROCm case arms found" "yes" "$([ "${_n_arms:-0}" -ge 10 ] && echo yes)"
 
 rm -f "$_FUNC_FILE"
 rm -rf "$_FAKE_SMI_DIR"

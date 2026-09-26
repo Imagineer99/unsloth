@@ -5723,20 +5723,30 @@ get_torch_index_url() {
                     echo "$_base/cpu"; return ;;
             esac
             # Normalise to major.minor; 6.5+ clips to rocm6.4, 7.3+ caps to rocm7.2.
-            case "$_rocm_tag" in
-                rocm6.0|rocm6.0.*) echo "$_base/rocm6.0" ;;
-                rocm6.1|rocm6.1.*) echo "$_base/rocm6.1" ;;
-                rocm6.2|rocm6.2.*) echo "$_base/rocm6.2" ;;
-                rocm6.3|rocm6.3.*) echo "$_base/rocm6.3" ;;
-                rocm6.4|rocm6.4.*) echo "$_base/rocm6.4" ;;
-                rocm7.0|rocm7.0.*) echo "$_base/rocm7.0" ;;
-                rocm7.1|rocm7.1.*) echo "$_base/rocm7.1" ;;
-                rocm7.2|rocm7.2.*) echo "$_base/rocm7.2" ;;
-                rocm6.*)
+            # Captured so the cap can be named below. Leading ( on every pattern: bash 3.2 (macOS /bin/sh) misparses a bare
+            # pattern) inside $(...) as the end of the substitution and aborts the whole script.
+            _rocm_index=$(case "$_rocm_tag" in
+                (rocm6.0|rocm6.0.*) echo "$_base/rocm6.0" ;;
+                (rocm6.1|rocm6.1.*) echo "$_base/rocm6.1" ;;
+                (rocm6.2|rocm6.2.*) echo "$_base/rocm6.2" ;;
+                (rocm6.3|rocm6.3.*) echo "$_base/rocm6.3" ;;
+                (rocm6.4|rocm6.4.*) echo "$_base/rocm6.4" ;;
+                (rocm7.0|rocm7.0.*) echo "$_base/rocm7.0" ;;
+                (rocm7.1|rocm7.1.*) echo "$_base/rocm7.1" ;;
+                (rocm7.2|rocm7.2.*) echo "$_base/rocm7.2" ;;
+                (rocm6.*)
                     echo "$_base/rocm6.4" ;;
-                *)
+                (*)
                     echo "$_base/rocm7.2" ;;
-            esac
+            esac)
+            # A silent cap reads as failed detection (#7264, #9932, #10657). No UNSLOTH_TORCH_INDEX_FAMILY
+            # hint: newer leaves carry nothing inside _TORCH_CEILING, so pinning one fails to resolve.
+            _rocm_leaf=${_rocm_index##*/}
+            if [ "$_rocm_tag" != "$_rocm_leaf" ]; then
+                echo "[INFO] No PyTorch build is validated for ROCm $_rocm_tag; installing the closest validated build, $_rocm_leaf." >&2
+                echo "[INFO] Those wheels carry their own ROCm runtime and run on a newer host ROCm, so this is expected and needs no fix." >&2
+            fi
+            echo "$_rocm_index"
             return
         fi
         # AMD GPU confirmed (rocminfo/amd-smi or the KFD topology fallback) but no ROCm/HIP install was found to read the version from. This is the common fresh-install case: the GPU is real, but with no ROCm userspace the correct PyTorch build cannot be selected, so warn with an actionable fix rather than silently installing CPU PyTorch. The version only picks between the generic rocmX.Y leaves, so an arch with its own repo.amd.com/rocm/whl/gfx* index does not need one (#8731).
@@ -6103,6 +6113,8 @@ get_radeon_wheel_url() {
 _RADEON_LISTING=""
 _RADEON_PYTAG=""
 _RADEON_BASE_URL=""
+# Sticky across the X.Y.Z and X.Y attempts: one HTTP answer proves the host is up.
+_RADEON_HOST_ANSWERED=false
 
 _radeon_fetch_listing() {
     _RADEON_BASE_URL="$1"
@@ -6110,11 +6122,16 @@ _radeon_fetch_listing() {
 import sys
 print('cp{}{}'.format(sys.version_info.major, sys.version_info.minor))
 " 2>/dev/null) || return 1
+    _radeon_fetch_rc=0
     if command -v curl >/dev/null 2>&1; then
-        _RADEON_LISTING=$(curl -fsSL --max-time 20 "$_RADEON_BASE_URL" 2>/dev/null)
+        _RADEON_LISTING=$(curl -fsSL --max-time 20 "$_RADEON_BASE_URL" 2>/dev/null) || _radeon_fetch_rc=$?
     elif command -v wget >/dev/null 2>&1; then
-        _RADEON_LISTING=$(wget -qO- --timeout=20 "$_RADEON_BASE_URL" 2>/dev/null)
+        _RADEON_LISTING=$(wget -qO- --timeout=20 "$_RADEON_BASE_URL" 2>/dev/null) || _radeon_fetch_rc=$?
     fi
+    # curl 22 (-f, HTTP >= 400) / wget 8: the host answered. DNS, TLS and timeouts exit otherwise.
+    case "$_radeon_fetch_rc" in
+        22|8) _RADEON_HOST_ANSWERED=true ;;
+    esac
     [ -n "$_RADEON_LISTING" ] || return 1
 }
 
@@ -7763,8 +7780,14 @@ elif [ -n "$TORCH_INDEX_URL" ]; then
                             "$_torch_whl" "$_tv_whl" "$_ta_whl"
                     fi
                 fi
+            elif [ "$_RADEON_HOST_ANSWERED" = true ]; then
+                # Not a WARN: AMD publishes only some releases here (#7264, #10657).
+                _radeon_rel=${_radeon_url%/}
+                _radeon_rel=${_radeon_rel##*/}
+                substep "repo.radeon.com publishes no $_radeon_rel wheels; installing from $(_strip_index_url_credentials "$TORCH_INDEX_URL") instead..."
+                _install_torch_default_index
             else
-                substep "[WARN] Radeon repo unavailable; falling back to ROCm index ($(_strip_index_url_credentials "$TORCH_INDEX_URL"))" "$C_WARN"
+                substep "[WARN] Radeon repo unreachable; falling back to ROCm index ($(_strip_index_url_credentials "$TORCH_INDEX_URL"))" "$C_WARN"
                 _install_torch_default_index
             fi
         else
