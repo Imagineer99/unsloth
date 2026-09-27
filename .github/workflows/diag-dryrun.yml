@@ -105,6 +105,8 @@ jobs:
       - name: Build the stand-in NVIDIA binaries
         shell: powershell
         run: |
+          # The build's self-check expects the stand-ins' defaults; the job-wide spoof values apply after it.
+          Remove-Item Env:FAKE_CUDA, Env:FAKE_CC, Env:FAKE_GPU_COUNT, Env:FAKE_GPU_NAME -ErrorAction SilentlyContinue
           & "$env:GITHUB_WORKSPACE\scripts\windows_diag\ci\fakes\build_fakes.ps1" -OutDir "$env:RUNNER_TEMP\fakes"
           $global:LASTEXITCODE = 0
       - name: Plant the spoof
