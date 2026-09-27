@@ -105,28 +105,40 @@ def judge_probe(d, cells):
     m = d.get("machine") or {}
     for r in d.get("probe") or []:
         state, shell = r.get("state"), r.get("shell")
-        if not m.get("nvidia_smi"):
+        # Ground truth: nvidia-smi, or on a spoofed staging host without one, what the planted
+        # stand-in libraries were told to report.
+        if m.get("nvidia_smi"):
+            want_cuda, want_cc, truth = majmin(m.get("smi_cuda")), sorted(set(m.get("smi_cc") or [])), "nvidia-smi"
+        elif m.get("expect_cuda"):
+            want_cuda, want_cc, truth = majmin(m.get("expect_cuda")), sorted(set(m.get("expect_cc") or [])), "spoof"
+        else:
             cells.append(cell("probe", state, shell, "VOID", "no NVIDIA GPU (nvidia-smi) on this host"))
             continue
         if not r.get("available"):
             cells.append(cell("probe", state, shell, "N/A", r.get("error") or "probe function absent in this state"))
             continue
-        want_cuda, want_cc = majmin(m.get("smi_cuda")), sorted(set(m.get("smi_cc") or []))
         got_cuda, got_cc = majmin(r.get("cuda")), sorted(set(r.get("cc") or []))
-        detail = f"probe cuda={got_cuda} cc={got_cc}; nvidia-smi cuda={want_cuda} cc={want_cc}"
+        detail = f"probe cuda={got_cuda} cc={got_cc}; {truth} cuda={want_cuda} cc={want_cc}"
         ok = got_cuda == want_cuda and got_cc == want_cc
         verdict = "SAME" if ok else ("REGRESSION" if state in HEADS else "INFO")
         cells.append(cell("probe", state, shell, verdict, detail))
 
 
 def judge_presence(d, cells):
-    nvidia = bool((d.get("machine") or {}).get("nvidia_smi"))
+    m = d.get("machine") or {}
+    # The scan reads WMI for a healthy VEN_10DE adapter, so that is its ground truth; older result
+    # files without the count fall back to nvidia-smi.
+    adapters = m.get("nvidia_ven_adapters")
+    nvidia = bool(adapters) if adapters is not None else bool(m.get("nvidia_smi"))
     for r in d.get("presence") or []:
         state, shell = r.get("state"), r.get("shell")
         if not r.get("available"):
             cells.append(cell("presence", state, shell, "N/A", r.get("error") or "presence scan absent in this state"))
         elif not nvidia:
-            cells.append(cell("presence", state, shell, "VOID", f"no NVIDIA GPU on this host (scan said {r.get('nvidia_present')})"))
+            if r.get("nvidia_present"):
+                cells.append(cell("presence", state, shell, "REGRESSION", "the scan claims an NVIDIA adapter WMI does not list"))
+            else:
+                cells.append(cell("presence", state, shell, "VOID", "no NVIDIA PCI adapter in WMI on this host (scan agreed)"))
         elif r.get("nvidia_present") is False:
             cells.append(cell("presence", state, shell, "REGRESSION", "NVIDIA host but the adapter scan found no NVIDIA adapter"))
         else:
@@ -202,7 +214,9 @@ def harness_findings(d) -> list[str]:
 
 def not_proven(d, cells) -> list[str]:
     m, mode, out = d.get("machine") or {}, d.get("mode"), []
-    if not m.get("nvidia_smi"):
+    if m.get("spoof"):
+        out.append(f"GPU SPOOFED ({m.get('spoof')}): stand-in NVIDIA binaries, no real driver; routes and probe parsing are exercised, real CUDA is not")
+    elif not m.get("nvidia_smi"):
         out.append("no NVIDIA GPU (nvidia-smi) on this host: GPU probe/presence cells are VOID")
     if mode != "full" and not d.get("full"):
         out.append("full pass not run: real install, torch/GPU, Studio health, update, shortcuts, uninstall")

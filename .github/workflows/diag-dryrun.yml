@@ -77,3 +77,86 @@ jobs:
         with:
           name: diag-full
           path: out
+
+  # Spoofed GPU: stand-in nvidia-smi / nvml.dll / nvcuda.dll (ci/fakes) answer the installer and the
+  # probe. Routes, probe parsing and the full install path are exercised; real CUDA is not.
+  spoof:
+    name: spoof / ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: x64-rtx5090-smi-and-libs, os: windows-latest, smi: "1", libs: "1", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-SkipTests" }
+          - { name: x64-rtx5090-libs-only, os: windows-latest, smi: "0", libs: "1", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-SkipTests" }
+          - { name: arm64-gb10-smi, os: windows-11-arm, smi: "1", libs: "0", cuda: "13.0", cc: "12.1", gpu: "NVIDIA GB10", args: "-SkipTests" }
+          - { name: x64-rtx5090-smi-full, os: windows-latest, smi: "1", libs: "0", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-Full" }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 300
+    env:
+      FAKE_CUDA: ${{ matrix.cuda }}
+      FAKE_CC: ${{ matrix.cc }}
+      FAKE_GPU_COUNT: "1"
+      FAKE_GPU_NAME: ${{ matrix.gpu }}
+      UNSLOTH_DIAG_SPOOF: ${{ matrix.name }}
+      UNSLOTH_DIAG_EXPECT_CUDA: ${{ matrix.cuda }}
+      UNSLOTH_DIAG_EXPECT_CC: ${{ matrix.cc }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Build the stand-in NVIDIA binaries
+        shell: powershell
+        run: |
+          & "$env:GITHUB_WORKSPACE\scripts\windows_diag\ci\fakes\build_fakes.ps1" -OutDir "$env:RUNNER_TEMP\fakes"
+          $global:LASTEXITCODE = 0
+      - name: Plant the spoof
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $fakes = "$env:RUNNER_TEMP\fakes"
+          $log = "$env:RUNNER_TEMP\fakelog.txt"
+          Add-Content -LiteralPath $env:GITHUB_ENV -Value "FAKE_LOG=$log" -Encoding utf8
+          $existing = @(Get-Command nvidia-smi -All -ErrorAction SilentlyContinue)
+          if ($existing.Count -gt 0) { throw "an nvidia-smi is already reachable: $($existing.Source -join ', ')" }
+          if ('${{ matrix.smi }}' -eq '1') { Add-Content -LiteralPath $env:GITHUB_PATH -Value "$fakes\smi" -Encoding utf8 }
+          if ('${{ matrix.libs }}' -eq '1') {
+            $sys32 = Join-Path $env:SystemRoot 'System32'
+            $nvsmi = Join-Path $env:ProgramFiles 'NVIDIA Corporation\NVSMI'
+            New-Item -ItemType Directory -Force -Path $nvsmi | Out-Null
+            foreach ($pair in @(@("$fakes\lib\fake_nvml.dll", "$sys32\nvml.dll"), @("$fakes\lib\fake_nvml.dll", "$nvsmi\nvml.dll"), @("$fakes\lib\fake_nvcuda.dll", "$sys32\nvcuda.dll"))) {
+              if (Test-Path -LiteralPath $pair[1]) { throw "$($pair[1]) already exists; refusing to replace a real driver file" }
+              Copy-Item -LiteralPath $pair[0] -Destination $pair[1]
+              Write-Host "planted $($pair[1])"
+            }
+          }
+      - name: Plant a fake install and snapshot user state
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase before -Plant
+      - name: Diagnostic ${{ matrix.args }} under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          Write-Host "nvidia-smi reachable: $((Get-Command nvidia-smi -All -ErrorAction SilentlyContinue | ForEach-Object Source) -join ', ')"
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows_diag\unsloth-win-diag.ps1 -AllowAdmin -NoDesktopCopy ${{ matrix.args }}
+          Write-Host "diag exit $LASTEXITCODE"
+          exit 0
+      - name: Zero net change
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase after
+      - name: The spoof was actually consulted
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP\fakelog.txt"
+          if (-not (Test-Path $log)) { Write-Host 'VOID: no call ever reached a stand-in binary'; exit 1 }
+          $lines = @(Get-Content $log | Where-Object { $_.Trim() })
+          $lines | ForEach-Object { ($_.Trim() -split '\s+')[0] } | Group-Object | ForEach-Object { Write-Host "$($_.Name): $($_.Count) calls" }
+          if ($lines.Count -eq 0) { Write-Host 'VOID: fake log is empty'; exit 1 }
+      - name: Collect
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Get-ChildItem "$env:LOCALAPPDATA\unsloth-diag" -Recurse -Filter 'unsloth-diag-*.zip' | Copy-Item -Destination out
+          Copy-Item "$env:RUNNER_TEMP\diag_snapshot_*.json", "$env:RUNNER_TEMP\fakelog.txt", "$env:RUNNER_TEMP\fakes\build.json" out -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: diag-spoof-${{ matrix.name }}
+          path: out

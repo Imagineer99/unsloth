@@ -755,7 +755,7 @@ function Get-Inventory {
     $inv.existing_installs = $installs
     $inv.studio_processes = @(Get-StudioProcesses)
     $envNames = @()
-    foreach ($k in @(Get-ChildItem Env: | Where-Object { $_.Name -match '^(UNSLOTH_|UV_|HF_|CUDA|TORCH|PIP_)' })) {
+    foreach ($k in @(Get-ChildItem Env: | Where-Object { $_.Name -match '^(UNSLOTH_|UV_|HF_|CUDA|TORCH|PIP_|FAKE_)' })) {
         $v = [string]$k.Value
         if ($k.Name -match '(?i)token|key|secret|password') { $v = '<redacted>' }
         $envNames += "$($k.Name)=$v"
@@ -1464,7 +1464,8 @@ function New-SummaryMarkdown {
     $m = $R.machine
     $L.Add("Machine: $($m.os_caption) build $($m.os_build), OS arch $($m.os_arch), PowerShell process arch $($m.ps_arch), elevated $($m.elevated)")
     $L.Add("GPUs: $(@($m.gpus) -join '; ')")
-    $L.Add("nvidia-smi: $($m.nvidia_smi), CUDA $($m.smi_cuda), compute capability $(@($m.smi_cc) -join ',')")
+    $L.Add("nvidia-smi: $($m.nvidia_smi), CUDA $($m.smi_cuda), compute capability $(@($m.smi_cc) -join ','); NVIDIA PCI adapters in WMI: $($m.nvidia_ven_adapters)")
+    if ($m.spoof) { $L.Add("SPOOFED GPU ($($m.spoof)): stand-in NVIDIA binaries report CUDA $($m.expect_cuda), compute capability $(@($m.expect_cc) -join ',')") }
     $L.Add('')
     $L.Add('| state | sha | verified |'); $L.Add('|---|---|---|')
     foreach ($k in $R.states.Keys) { $L.Add("| $k | $($R.states[$k].sha.Substring(0, 12)) | $($R.states[$k].verified) |") }
@@ -1488,9 +1489,11 @@ function New-SummaryMarkdown {
         foreach ($p in $R.probe) {
             $pres = @($R.presence | Where-Object { $_.state -eq $p.state -and $_.shell -eq $p.shell } | Select-Object -First 1)
             $match = '-'
-            if ($m.nvidia_smi -and $p.cuda) {
-                $ccOk = ((@($p.cc) | Sort-Object) -join ',') -eq ((@($m.smi_cc) | Sort-Object) -join ',')
-                $match = [string](($p.cuda -eq $m.smi_cuda) -and $ccOk)
+            $wantCuda = $m.smi_cuda; $wantCc = @($m.smi_cc)
+            if (-not $m.nvidia_smi -and $m.expect_cuda) { $wantCuda = $m.expect_cuda; $wantCc = @($m.expect_cc) }
+            if ($wantCuda -and $p.cuda) {
+                $ccOk = ((@($p.cc) | Sort-Object -Unique) -join ',') -eq ((@($wantCc) | Sort-Object -Unique) -join ',')
+                $match = [string](($p.cuda -eq $wantCuda) -and $ccOk)
             }
             $presVal = '-'
             if ($pres.Count -gt 0 -and $pres[0].available) { $presVal = [string]$pres[0].nvidia_present }
@@ -1626,6 +1629,11 @@ try {
         os_caption = $inv.os.caption; os_build = "$($inv.os.build).$($inv.os.ubr)"; os_arch = $inv.os.host_arch; ps_arch = $inv.os.ps_process_arch
         gpus = @($inv.gpus | ForEach-Object { $_.name }); nvidia_smi = [bool]($inv.nvidia_smi.path -and $inv.nvidia_smi.cc.Count -gt 0)
         smi_cuda = $inv.nvidia_smi.banner_cuda; smi_cc = @($inv.nvidia_smi.cc); elevated = $inv.elevated
+        nvidia_ven_adapters = @($inv.gpus | Where-Object { $_.nvidia_ven -and "$($_.config_error)" -eq '0' }).Count
+        # Set only by the staging dry run that plants stand-in NVIDIA binaries: what they report.
+        spoof = $env:UNSLOTH_DIAG_SPOOF
+        expect_cuda = $env:UNSLOTH_DIAG_EXPECT_CUDA
+        expect_cc = @("$env:UNSLOTH_DIAG_EXPECT_CC".Split(',') | Where-Object { $_ })
     }
 
     $shells = @('powershell')

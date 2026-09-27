@@ -128,6 +128,7 @@ def test_probe_mismatch_is_regression():
 def test_no_nvidia_host_voids_gpu_cells():
     d = doc()
     d["machine"]["nvidia_smi"] = False
+    d["presence"][0]["nvidia_present"] = False
     assert verdicts(d, "probe") == ["VOID"]
     assert verdicts(d, "presence") == ["VOID"]
 
@@ -222,3 +223,27 @@ def test_render_lists_unproven_areas():
     cells, harness = analyze.analyze(d)
     md = analyze.render(d, cells, harness)
     assert "full pass not run" in md and "no NVIDIA GPU" in md and "not elevated" in md
+
+
+def test_spoofed_host_without_smi_uses_the_spoof_as_probe_truth():
+    d = doc()
+    d["machine"].update({"nvidia_smi": False, "smi_cuda": None, "smi_cc": [], "spoof": "x64-libs-only",
+                         "expect_cuda": "13.0", "expect_cc": ["12.0"], "nvidia_ven_adapters": 0})
+    for r in d["probe"]:
+        r.update({"available": True, "cuda": "13.0", "cc": ["12.0"]})
+    assert set(verdicts(d, "probe")) == {"SAME"}
+    d["probe"][-1]["cc"] = ["8.9"]
+    assert "REGRESSION" in verdicts(d, "probe")
+
+
+def test_presence_is_judged_against_wmi_adapters_not_smi():
+    d = doc()
+    d["machine"]["nvidia_ven_adapters"] = 0
+    for r in d["presence"]:
+        r.update({"available": True, "nvidia_present": False})
+    assert set(verdicts(d, "presence")) == {"VOID"}
+    d["presence"][-1]["nvidia_present"] = True
+    assert "REGRESSION" in verdicts(d, "presence")
+    d["machine"]["nvidia_ven_adapters"] = 1
+    d["presence"][-1]["nvidia_present"] = False
+    assert "REGRESSION" in verdicts(d, "presence")
