@@ -116,13 +116,42 @@ def test_base_pass_head_fail_and_timeout():
     assert verdicts(d, "tests") == ["REGRESSION"]
 
 
-def test_probe_mismatch_is_regression():
+def with_base_probe(d, **base):
+    row = {"state": "base", "shell": "powershell", "available": True, "cuda": "12.9", "cc": ["12.0"]}
+    row.update(base)
+    d["probe"].insert(0, row)
+    return d
+
+
+def head_verdicts(d, area):
+    cells, _ = analyze.analyze(d)
+    return [c["verdict"] for c in cells if c["area"] == area and c["state"] != "base"]
+
+
+def test_probe_mismatch_is_regression_when_base_reads_the_libraries():
+    d = with_base_probe(doc())
+    d["probe"][-1]["cc"] = ["8.9"]
+    assert head_verdicts(d, "probe") == ["REGRESSION"]
+    d = with_base_probe(doc())
+    d["probe"][-1]["cuda"] = "12.9.1"
+    assert head_verdicts(d, "probe") == ["SAME"]
+
+
+def test_probe_mismatch_shared_with_base_is_not_a_regression():
+    # Windows on ARM staging: no stand-in libraries, so neither arm reads anything.
+    d = with_base_probe(doc(), cuda=None, cc=[])
+    d["probe"][-1].update({"cuda": None, "cc": []})
+    assert head_verdicts(d, "probe") == ["SAME"]
+    d = doc()  # no base row at all: nothing to be worse than
+    d["probe"][-1]["cc"] = ["8.9"]
+    assert head_verdicts(d, "probe") == ["SAME"]
+
+
+def test_nvidia_arm64_index_counts_as_a_gpu_route():
     d = doc()
-    d["probe"][0]["cc"] = ["8.9"]
-    assert verdicts(d, "probe") == ["REGRESSION"]
-    d = doc()
-    d["probe"][0]["cuda"] = "12.9.1"
-    assert verdicts(d, "probe") == ["SAME"]
+    d["decisions"][0]["family"] = "nvidia-arm64"
+    d["decisions"][1]["family"] = "cpu"
+    assert verdicts(d, "decisions") == ["REGRESSION"]
 
 
 def test_no_nvidia_host_voids_gpu_cells():
@@ -229,6 +258,7 @@ def test_spoofed_host_without_smi_uses_the_spoof_as_probe_truth():
     d = doc()
     d["machine"].update({"nvidia_smi": False, "smi_cuda": None, "smi_cc": [], "spoof": "x64-libs-only",
                          "expect_cuda": "13.0", "expect_cc": ["12.0"], "nvidia_ven_adapters": 0})
+    with_base_probe(d)
     for r in d["probe"]:
         r.update({"available": True, "cuda": "13.0", "cc": ["12.0"]})
     assert set(verdicts(d, "probe")) == {"SAME"}

@@ -1008,6 +1008,8 @@ function Initialize-State {
 function ConvertTo-Family {
     param([string]$Url)
     if (-not $Url) { return $null }
+    # Windows on ARM with NVIDIA installs NVIDIA's native ARM64 build from its own index.
+    if ($Url -match '(?i)^https?://pypi\.nvidia\.com/') { return 'nvidia-arm64' }
     $leaf = ((($Url -split '[?#]', 2)[0].TrimEnd('/') -split '/')[-1]).ToLowerInvariant()
     if ($leaf -match '^cu\d+$' -or $leaf -eq 'cpu' -or $leaf -eq 'xpu') { return $leaf }
     if ($leaf -match '^rocm' -or $leaf -match '^gfx[0-9]') { return 'rocm' }
@@ -1612,7 +1614,20 @@ function New-OutputZip {
     $machine = ($env:COMPUTERNAME -replace '[^A-Za-z0-9_-]', '')
     $zip = Join-Path $script:Work "unsloth-diag-$machine-$($script:Mode)-$($script:Stamp).zip"
     if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
-    [System.IO.Compression.ZipFile]::CreateFromDirectory($script:Out, $zip)
+    # Entries are added one by one with forward slashes: Windows PowerShell 5.1's
+    # CreateFromDirectory writes backslash names, which other unzip tools turn into flat files.
+    Add-Type -AssemblyName System.IO.Compression
+    $root = $script:Out.TrimEnd('\') + '\'
+    $fs = [System.IO.File]::Open($zip, [System.IO.FileMode]::CreateNew)
+    try {
+        $za = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            foreach ($f in @(Get-ChildItem -LiteralPath $script:Out -Recurse -File)) {
+                $rel = $f.FullName.Substring($root.Length).Replace('\', '/')
+                [void][System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile($za, $f.FullName, $rel)
+            }
+        } finally { $za.Dispose() }
+    } finally { $fs.Dispose() }
     return $zip
 }
 

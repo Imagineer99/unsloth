@@ -14,7 +14,7 @@ import zipfile
 from pathlib import Path
 
 HEADS = ("stack", "presence", "combined")
-GPU_FAMILY = re.compile(r"^(cu\d+|rocm.*|xpu)$", re.I)
+GPU_FAMILY = re.compile(r"^(cu\d+|rocm.*|xpu|nvidia-arm64)$", re.I)
 
 
 def load(path: Path) -> dict:
@@ -103,6 +103,7 @@ def judge_tests(d, cells):
 
 def judge_probe(d, cells):
     m = d.get("machine") or {}
+    base_rows = index(d.get("probe"), "state", "shell")
     for r in d.get("probe") or []:
         state, shell = r.get("state"), r.get("shell")
         # Ground truth: nvidia-smi, or on a spoofed staging host without one, what the planted
@@ -120,7 +121,18 @@ def judge_probe(d, cells):
         got_cuda, got_cc = majmin(r.get("cuda")), sorted(set(r.get("cc") or []))
         detail = f"probe cuda={got_cuda} cc={got_cc}; {truth} cuda={want_cuda} cc={want_cc}"
         ok = got_cuda == want_cuda and got_cc == want_cc
-        verdict = "SAME" if ok else ("REGRESSION" if state in HEADS else "INFO")
+        if ok:
+            verdict = "SAME"
+        elif state not in HEADS:
+            verdict = "INFO"
+        else:
+            # Head is only worse than base when base read the libraries correctly on this host.
+            base = base_rows.get(("base", shell))
+            base_ok = bool(base) and base.get("available") and majmin(base.get("cuda")) == want_cuda and sorted(set(base.get("cc") or [])) == want_cc
+            if base_ok:
+                verdict = "REGRESSION"
+            else:
+                verdict, detail = "SAME", detail + " (base does not read them either: no usable driver library on this host)"
         cells.append(cell("probe", state, shell, verdict, detail))
 
 
