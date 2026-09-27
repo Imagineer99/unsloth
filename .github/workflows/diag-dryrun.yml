@@ -1,0 +1,79 @@
+name: windows-diag-dryrun
+
+on:
+  push:
+    branches: [diag-tool]
+  workflow_dispatch:
+
+concurrency:
+  group: diag-dryrun-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quick:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            args: ""
+          - os: windows-11-arm
+            args: "-SkipTests"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Plant a fake install and snapshot user state
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase before -Plant
+      - name: Quick pass under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows_diag\unsloth-win-diag.ps1 -AllowAdmin -NoDesktopCopy ${{ matrix.args }}
+          Write-Host "diag exit $LASTEXITCODE"
+          exit 0
+      - name: Zero net change
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase after
+      - name: Collect
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Get-ChildItem "$env:LOCALAPPDATA\unsloth-diag" -Recurse -Filter 'unsloth-diag-*.zip' | Copy-Item -Destination out
+          Copy-Item "$env:RUNNER_TEMP\diag_snapshot_*.json" out -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: diag-quick-${{ matrix.os }}
+          path: out
+
+  full:
+    runs-on: windows-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Plant a fake install and snapshot user state
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase before -Plant
+      - name: Full pass under Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          powershell -NoProfile -ExecutionPolicy Bypass -File scripts\windows_diag\unsloth-win-diag.ps1 -Full -AllowAdmin -NoDesktopCopy
+          Write-Host "diag exit $LASTEXITCODE"
+          exit 0
+      - name: Zero net change and the planted install restored
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase after
+      - name: Collect
+        if: always()
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force out | Out-Null
+          Get-ChildItem "$env:LOCALAPPDATA\unsloth-diag" -Recurse -Filter 'unsloth-diag-*.zip' | Copy-Item -Destination out
+          Copy-Item "$env:RUNNER_TEMP\diag_snapshot_*.json" out -ErrorAction SilentlyContinue
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: diag-full
+          path: out

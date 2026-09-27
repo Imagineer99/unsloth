@@ -1,0 +1,224 @@
+import copy
+import json
+import sys
+import zipfile
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts" / "windows_diag"))
+import analyze  # noqa: E402
+
+BASE_DOC = {
+    "schema": 1,
+    "tool_version": "t",
+    "mode": "quick",
+    "machine": {"os_caption": "Windows 11 Pro", "os_build": "26100", "os_arch": "AMD64", "ps_arch": "AMD64",
+                "gpus": ["NVIDIA GeForce RTX 5090"], "nvidia_smi": True, "smi_cuda": "12.9", "smi_cc": ["12.0"],
+                "elevated": False},
+    "states": {"base": {"sha": "c807acbf44da", "verified": True}, "combined": {"sha": "3468c0037ec2", "verified": True}},
+    "decisions": [
+        {"state": "base", "shell": "powershell", "reached": True, "family": "cu128"},
+        {"state": "combined", "shell": "powershell", "reached": True, "family": "cu128"},
+    ],
+    "tests": [
+        {"state": "base", "shell": "pwsh", "kind": "ps1", "file": "a.ps1", "present": True, "passed": True},
+        {"state": "combined", "shell": "pwsh", "kind": "ps1", "file": "a.ps1", "present": True, "passed": True},
+    ],
+    "probe": [{"state": "combined", "shell": "powershell", "available": True, "cuda": "12.9", "cc": ["12.0"]}],
+    "presence": [{"state": "combined", "shell": "powershell", "available": True, "nvidia_present": True}],
+    "smoke": [
+        {"state": "base", "shell": "powershell", "parse_errors": 0, "help_exit": 0},
+        {"state": "combined", "shell": "powershell", "parse_errors": 0, "help_exit": 0},
+    ],
+    "full": [],
+    "restore": {"ok": True, "conflicts": [], "parked": {"was_parked": False, "restored": False}},
+    "errors": [],
+}
+
+
+def doc(**over):
+    d = copy.deepcopy(BASE_DOC)
+    d.update(over)
+    return d
+
+
+def verdicts(d, area):
+    cells, _ = analyze.analyze(d)
+    return [c["verdict"] for c in cells if c["area"] == area]
+
+
+def run(tmp_path, d):
+    p = tmp_path / "results.json"
+    p.write_text(json.dumps(d))
+    return analyze.main([str(p)])
+
+
+def test_all_same_exits_zero(tmp_path):
+    cells, harness = analyze.analyze(doc())
+    assert harness == []
+    assert {c["verdict"] for c in cells} == {"SAME"}
+    assert run(tmp_path, doc()) == 0
+
+
+def test_decision_gpu_to_cpu_is_regression(tmp_path):
+    d = doc()
+    d["decisions"][1]["family"] = "cpu"
+    assert verdicts(d, "decisions") == ["REGRESSION"]
+    assert run(tmp_path, d) == 1
+
+
+def test_decision_cpu_to_gpu_is_expected_widen(tmp_path):
+    d = doc()
+    d["decisions"][0]["family"] = "cpu"
+    assert verdicts(d, "decisions") == ["EXPECTED_WIDEN"]
+    assert run(tmp_path, d) == 0
+
+
+def test_decision_gpu_family_change_is_regression():
+    d = doc()
+    d["decisions"][1]["family"] = "cu126"
+    assert verdicts(d, "decisions") == ["REGRESSION"]
+
+
+def test_decision_not_reached_is_void():
+    d = doc()
+    d["decisions"][1]["reached"] = False
+    assert verdicts(d, "decisions") == ["VOID"]
+    d = doc()
+    d["decisions"] = d["decisions"][1:]
+    assert verdicts(d, "decisions") == ["VOID"]
+
+
+def test_head_only_failing_test_is_regression():
+    d = doc()
+    d["tests"] = [{"state": "combined", "shell": "pwsh", "kind": "ps1", "file": "new.ps1", "present": True,
+                   "passed": False, "failed_checks": ["x"]}]
+    assert verdicts(d, "tests") == ["REGRESSION"]
+
+
+def test_both_failing_is_same_preexisting():
+    d = doc()
+    for r in d["tests"]:
+        r["passed"] = False
+    cells, _ = analyze.analyze(d)
+    t = [c for c in cells if c["area"] == "tests"]
+    assert [c["verdict"] for c in t] == ["SAME"]
+    assert "pre-existing" in t[0]["detail"]
+
+
+def test_base_pass_head_fail_and_timeout():
+    d = doc()
+    d["tests"][1]["passed"] = False
+    assert verdicts(d, "tests") == ["REGRESSION"]
+    d = doc()
+    d["tests"][1]["timed_out"] = True
+    assert verdicts(d, "tests") == ["REGRESSION"]
+
+
+def test_probe_mismatch_is_regression():
+    d = doc()
+    d["probe"][0]["cc"] = ["8.9"]
+    assert verdicts(d, "probe") == ["REGRESSION"]
+    d = doc()
+    d["probe"][0]["cuda"] = "12.9.1"
+    assert verdicts(d, "probe") == ["SAME"]
+
+
+def test_no_nvidia_host_voids_gpu_cells():
+    d = doc()
+    d["machine"]["nvidia_smi"] = False
+    assert verdicts(d, "probe") == ["VOID"]
+    assert verdicts(d, "presence") == ["VOID"]
+
+
+def test_presence_false_on_nvidia_is_regression():
+    d = doc()
+    d["presence"][0]["nvidia_present"] = False
+    assert verdicts(d, "presence") == ["REGRESSION"]
+
+
+def test_smoke_head_only_break_is_regression():
+    d = doc()
+    d["smoke"][1]["parse_errors"] = 2
+    assert verdicts(d, "smoke") == ["REGRESSION"]
+
+
+def test_restore_failure_exits_three(tmp_path):
+    d = doc()
+    d["restore"]["ok"] = False
+    d["restore"]["failures"] = ["shortcut could not be put back"]
+    _, harness = analyze.analyze(d)
+    assert any("could not put back" in h for h in harness)
+    assert run(tmp_path, d) == 3
+
+
+def test_foreign_restore_conflict_is_a_note_not_a_finding(tmp_path):
+    d = doc()
+    d["restore"]["conflicts"] = ["user environment OneDrive changed during the run; left in place"]
+    cells, harness = analyze.analyze(d)
+    assert harness == []
+    assert "left in place" in analyze.render(d, cells, harness)
+    assert run(tmp_path, d) == 0
+
+
+def test_unrestored_park_and_unverified_state_are_harness_findings():
+    d = doc()
+    d["restore"]["parked"] = {"was_parked": True, "restored": False}
+    d["states"]["combined"]["verified"] = False
+    _, harness = analyze.analyze(d)
+    assert len(harness) == 2
+
+
+def test_regression_beats_harness_exit(tmp_path):
+    d = doc()
+    d["restore"]["ok"] = False
+    d["decisions"][1]["family"] = "cpu"
+    assert run(tmp_path, d) == 1
+
+
+def full_row(state, matmul = True):
+    return {"state": state, "install_exit": 0, "family": "cu128",
+            "torch": {"version": "2.9.0", "cuda_available": True, "device": "RTX 5090", "matmul_ok": matmul},
+            "health_ok": True, "update_exit": 0, "shortcuts": {"ok": True, "count": 2, "dangling": 0},
+            "shortcuts_removed": True}
+
+
+def test_full_matmul_regression(tmp_path):
+    d = doc(mode = "full", full = [full_row("base"), full_row("combined", matmul = False)])
+    cells, _ = analyze.analyze(d)
+    bad = [c for c in cells if c["verdict"] == "REGRESSION"]
+    assert len(bad) == 1 and bad[0]["detail"].startswith("matmul")
+    assert run(tmp_path, d) == 1
+
+
+def test_full_without_base_is_void():
+    d = doc(mode = "full", full = [full_row("combined")])
+    assert set(verdicts(d, "full")) == {"VOID"}
+
+
+@pytest.mark.parametrize("kind", ["zip", "dir"])
+def test_zip_and_directory_inputs(tmp_path, kind):
+    d = doc()
+    d["decisions"][1]["family"] = "cpu"
+    if kind == "zip":
+        src = tmp_path / "unsloth-diag-box-1.zip"
+        with zipfile.ZipFile(src, "w") as z:
+            z.writestr("unsloth-diag-box-1/results.json", json.dumps(d))
+            z.writestr("unsloth-diag-box-1/transcripts/x/results.json", json.dumps(doc()))
+    else:
+        src = tmp_path / "out"
+        (src / "inner").mkdir(parents = True)
+        (src / "inner" / "results.json").write_text(json.dumps(d))
+    out, js = tmp_path / "s.md", tmp_path / "s.json"
+    assert analyze.main([str(src), "--out", str(out), "--json", str(js)]) == 1
+    assert "| combined | powershell | REGRESSION |" in out.read_text()
+    assert json.loads(js.read_text())["cells"]
+
+
+def test_render_lists_unproven_areas():
+    d = doc()
+    d["machine"]["nvidia_smi"] = False
+    cells, harness = analyze.analyze(d)
+    md = analyze.render(d, cells, harness)
+    assert "full pass not run" in md and "no NVIDIA GPU" in md and "not elevated" in md

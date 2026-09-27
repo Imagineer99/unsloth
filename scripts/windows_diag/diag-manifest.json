@@ -1,0 +1,50 @@
+{
+  "schema": 1,
+  "created": "2026-09-27",
+  "states": {
+    "base": {
+      "repo": "unslothai/unsloth",
+      "sha": "c807acbf44da1d4a0ecf465a579c31ab0c6a5f69",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/c807acbf44da1d4a0ecf465a579c31ab0c6a5f69",
+      "files": {
+        "install.ps1": "ccefc629f7d80e9fe126058962aff73e7dee0308a2e18e0ce154ce8945a0a2e1",
+        "studio/setup.ps1": "2818d55498e55de253b8c6cf7bf53ac08483104b86f5bd068bdd90a86b06980d",
+        "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
+        "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
+      }
+    },
+    "stack": {
+      "repo": "unslothai/unsloth",
+      "sha": "8294a9b882bf6c85759780204a2d718454cd0f3f",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/8294a9b882bf6c85759780204a2d718454cd0f3f",
+      "files": {
+        "install.ps1": "55b5793d326d7194712f672bab064c9c1f70aa9f55f573f817133953e7628d58",
+        "studio/setup.ps1": "3217c24b1861d07ede6216653e1db340641d77d7e1085952d572ad1bc582f8d8",
+        "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
+        "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
+      }
+    },
+    "presence": {
+      "repo": "danielhanchen/unsloth-staging-2",
+      "sha": "eebda7d997cc7a26562ee1084644974e50ae23d2",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/eebda7d997cc7a26562ee1084644974e50ae23d2",
+      "files": {
+        "install.ps1": "331340bda9ce8f4909e6a5818d55fdca5527747d2fb192f4adc140bd38de1a78",
+        "studio/setup.ps1": "0747e4ad5495fd90021696dcaa9dbf78cfffa21138c950b48d171bd7b00f24f6",
+        "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
+        "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
+      }
+    },
+    "combined": {
+      "repo": "danielhanchen/unsloth-staging-2",
+      "sha": "3468c0037ec27958bc768252aa7733e183b88a19",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/3468c0037ec27958bc768252aa7733e183b88a19",
+      "files": {
+        "install.ps1": "68711941b1318bf9cba4ad6584c50b3cffa1b82dd02afef0dab524ffaf4cd41a",
+        "studio/setup.ps1": "27bc378fd0ffe38f7e821b52472df3280e5ff702231957260e6ea58f13f4322f",
+        "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
+        "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
+      }
+    }
+  }
+}
