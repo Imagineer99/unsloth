@@ -234,7 +234,7 @@ function Start-HiddenChild {
     $saved = @{}
     foreach ($k in @($Env.Keys)) { $saved[$k] = [Environment]::GetEnvironmentVariable($k, 'Process'); Set-ProcessEnv $k $Env[$k] }
     try {
-        $proc = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') -ArgumentList "/d /c `"$wrapper`"" `
+        $proc = Start-Process -FilePath (Join-Path $env:SystemRoot 'System32\cmd.exe') -ArgumentList "/d /s /c `"`"$wrapper`"`"" `
             -WorkingDirectory $WorkDir -WindowStyle Hidden -PassThru
     } finally {
         foreach ($k in @($saved.Keys)) { Set-ProcessEnv $k $saved[$k] }
@@ -305,24 +305,15 @@ function Get-QuotedExe {
 
 # ---------------------------------------------------------------- journal and restore
 
-function ConvertFrom-RegValue {
-    param($Key, [string]$Name)
-    $kind = $Key.GetValueKind($Name)
-    $data = $Key.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-    switch ($kind.ToString()) {
-        'Binary' { $data = [Convert]::ToBase64String([byte[]]$data) }
-        'MultiString' { $data = @($data) }
-        'DWord' { $data = [int64]$data }
-        'QWord' { $data = [int64]$data }
-        default { $data = [string]$data }
-    }
-    return [ordered]@{ kind = $kind.ToString(); data = $data }
-}
+# The journal is persisted with Export-Clixml, not JSON: it keeps registry data types exactly
+# (byte arrays, 64-bit integers, date-shaped strings) and allows the empty "(Default)" value name,
+# which ConvertFrom-Json refuses in both shells. A JSON copy goes into the zip for reading only.
 
 function ConvertTo-RegData {
     param($Value)
     switch ([string]$Value.kind) {
-        'Binary' { return , [Convert]::FromBase64String([string]$Value.data) }
+        'Binary' { return , [byte[]]@($Value.data) }
+        'None' { return , [byte[]]@($Value.data) }
         'MultiString' { return , [string[]]@($Value.data) }
         'DWord' { return [int]$Value.data }
         'QWord' { return [int64]$Value.data }
@@ -336,22 +327,52 @@ function Get-RegTree {
     if (-not $k) { return [ordered]@{ exists = $false; values = [ordered]@{}; subkeys = [ordered]@{} } }
     try {
         $vals = [ordered]@{}
-        foreach ($n in $k.GetValueNames()) { $vals[$n] = ConvertFrom-RegValue $k $n }
+        foreach ($n in $k.GetValueNames()) {
+            $vals[$n] = [ordered]@{
+                kind = $k.GetValueKind($n).ToString()
+                data = $k.GetValue($n, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+            }
+        }
         $subs = [ordered]@{}
         foreach ($s in $k.GetSubKeyNames()) { $subs[$s] = Get-RegTree "$SubKey\$s" }
         return [ordered]@{ exists = $true; values = $vals; subkeys = $subs }
     } finally { $k.Close() }
 }
 
-function Write-RegTree {
+function Get-RegValueText {
+    param($Value)
+    if ($null -eq $Value) { return '<absent>' }
+    return "$([string]$Value.kind)=" + ((@($Value.data) | ForEach-Object { [string]$_ }) -join [string][char]1)
+}
+
+# A stable text form of a key tree, for comparing a live tree with a journalled one.
+function Get-RegTreeText {
+    param($Tree)
+    if (-not $Tree -or -not $Tree.exists) { return '<absent>' }
+    $lines = @()
+    foreach ($n in (@($Tree.values.Keys) | Sort-Object)) { $lines += "v[$n]" + (Get-RegValueText $Tree.values[$n]) }
+    foreach ($s in (@($Tree.subkeys.Keys) | Sort-Object)) { $lines += "k[$s]{" + (Get-RegTreeText $Tree.subkeys[$s]) + '}' }
+    return ($lines -join "`n")
+}
+
+# Brings a live key to the journalled tree in place: values are overwritten first and extras
+# removed after, so a failure part way never leaves the key emptier than it was.
+function Sync-RegTree {
     param([string]$SubKey, $Tree)
+    if (-not $Tree.exists) {
+        [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($SubKey, $false)
+        return
+    }
     $k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($SubKey)
     try {
-        foreach ($p in $Tree.values.PSObject.Properties) {
-            $k.SetValue($p.Name, (ConvertTo-RegData $p.Value), [Microsoft.Win32.RegistryValueKind]([string]$p.Value.kind))
+        foreach ($n in @($Tree.values.Keys)) {
+            $v = $Tree.values[$n]
+            $k.SetValue($n, (ConvertTo-RegData $v), [Microsoft.Win32.RegistryValueKind]([string]$v.kind))
         }
+        foreach ($n in @($k.GetValueNames())) { if (-not $Tree.values.Contains($n)) { $k.DeleteValue($n, $false) } }
+        foreach ($s in @($k.GetSubKeyNames())) { if (-not $Tree.subkeys.Contains($s)) { $k.DeleteSubKeyTree($s, $false) } }
     } finally { $k.Close() }
-    foreach ($p in $Tree.subkeys.PSObject.Properties) { Write-RegTree "$SubKey\$($p.Name)" $p.Value }
+    foreach ($s in @($Tree.subkeys.Keys)) { Sync-RegTree "$SubKey\$s" $Tree.subkeys[$s] }
 }
 
 function Get-ShortcutPaths {
@@ -366,13 +387,26 @@ function Get-FileSha {
     try { return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() } catch { return $null }
 }
 
-# The journal is plain JSON so -Recover can finish from it in a fresh process. Values that the
-# harness is allowed to put back are written from the snapshot; anything else that moved is
-# reported, never overwritten.
+# Folders the installer or uninstaller create or remove. The full pass parks the ones that exist,
+# so an existing Studio install, its launcher and the desktop app's data are never touched.
+function Get-GuardedDirs {
+    $dirs = @()
+    if ($env:SystemDrive) { $dirs += (Join-Path ($env:SystemDrive + '\') 'tc') }
+    if ($env:USERPROFILE) { $dirs += (Join-Path $env:USERPROFILE '.unsloth') }
+    if ($env:LOCALAPPDATA) { $dirs += (Join-Path $env:LOCALAPPDATA 'Unsloth Studio'); $dirs += (Join-Path $env:LOCALAPPDATA 'ai.unsloth.studio') }
+    if ($env:APPDATA) { $dirs += (Join-Path $env:APPDATA 'ai.unsloth.studio') }
+    return $dirs
+}
+
+function Get-ParkableDirs {
+    return @(Get-GuardedDirs | Where-Object { [System.IO.Path]::GetFileName($_) -ne 'tc' })
+}
+
 function New-Journal {
     $j = [ordered]@{
-        schema = 1
+        schema = 2
         created = (Get-Date).ToString('o')
+        mode = $script:Mode
         work = $script:Work
         restored = $false
         environment = (Get-RegTree 'Environment')
@@ -400,24 +434,30 @@ function New-Journal {
     return $j
 }
 
-function Get-GuardedDirs {
-    $dirs = @()
-    if ($env:SystemDrive) { $dirs += (Join-Path ($env:SystemDrive + '\') 'tc') }
-    if ($env:LOCALAPPDATA) { $dirs += (Join-Path $env:LOCALAPPDATA 'Unsloth Studio') }
-    if ($env:USERPROFILE) { $dirs += (Join-Path $env:USERPROFILE '.unsloth') }
-    return $dirs
+function Save-Journal {
+    $script:Journal | Export-Clixml -LiteralPath $script:JournalPath -Depth 30
 }
 
-function Save-Journal {
-    Write-JsonFile -Path $script:JournalPath -Object $script:Journal
+function Read-Journal {
+    param([string]$Path = $script:JournalPath)
+    return (Import-Clixml -LiteralPath $Path)
+}
+
+# The journal must read back identical before anything is changed; a machine whose state it
+# cannot represent is refused instead of half-restored later.
+function Assert-JournalReadable {
+    $back = Read-Journal
+    foreach ($k in @('environment', 'unsloth_key', 'astral_key')) {
+        if ((Get-RegTreeText $back[$k]) -ne (Get-RegTreeText $script:Journal[$k])) { throw "the journal does not round-trip HKCU $k; nothing was changed" }
+    }
 }
 
 function Test-OurPathEntry {
-    param([string]$Entry)
+    param([string]$Entry, $Journal)
     $e = [Environment]::ExpandEnvironmentVariables($Entry).Trim().Trim('"').TrimEnd('\')
     if (-not $e) { return $false }
     $roots = @()
-    if ($script:Work) { $roots += $script:Work }
+    if ($Journal -and $Journal.work) { $roots += [string]$Journal.work }
     if ($env:USERPROFILE) { $roots += (Join-Path $env:USERPROFILE '.unsloth'); $roots += (Join-Path $env:USERPROFILE '.local\bin') }
     if ($env:LOCALAPPDATA) { $roots += (Join-Path $env:LOCALAPPDATA 'Unsloth Studio') }
     foreach ($r in $roots) {
@@ -429,70 +469,64 @@ function Test-OurPathEntry {
 
 function Get-PathKey { param([string]$p) return [Environment]::ExpandEnvironmentVariables($p).Trim().Trim('"').TrimEnd('\').ToLowerInvariant() }
 
-function Get-JournalValue {
-    param($Tree, [string]$Name)
-    if (-not $Tree -or -not $Tree.values) { return $null }
-    $p = $Tree.values.PSObject.Properties[$Name]
-    if ($p) { return $p.Value }
-    return $null
-}
-
-function Test-SameRegValue {
-    param($A, $B)
-    if ($null -eq $A -and $null -eq $B) { return $true }
-    if ($null -eq $A -or $null -eq $B) { return $false }
-    return ([string]$A.kind -eq [string]$B.kind) -and ((@($A.data) -join "`n") -ceq (@($B.data) -join "`n"))
-}
-
-# Environment names the installer (or this harness) writes, so the snapshot value is put back.
+# Environment names the installer or setup.ps1 write, so the snapshot value is put back.
 function Test-OwnedEnvName {
     param([string]$Name)
-    if ($Name -in @('TORCHINDUCTOR_CACHE_DIR')) { return $true }
-    if ($Name -like 'UnslothPathRefresh_*') { return $true }
-    if ($Name -like 'UNSLOTH_*') { return $true }
+    if ($Name -in @('TORCHINDUCTOR_CACHE_DIR', 'CUDA_PATH', 'CudaToolkitDir')) { return $true }
+    foreach ($p in @('UnslothPathRefresh_*', 'UnslothDiagRefresh_*', 'UNSLOTH_*', 'CUDA_PATH_V*')) { if ($Name -like $p) { return $true } }
     return $false
 }
 
+function Split-PathValue {
+    param($Value)
+    if ($null -eq $Value) { return @() }
+    return @(([string]$Value.data).Split(';') | Where-Object { $_ })
+}
+
+# In the full pass the installer is the only thing that runs, so every change to the user
+# environment is taken as the run's own and put back (setup.ps1 also writes CUDA_PATH and puts
+# the CUDA and CMake bin folders on PATH). In the other passes only known names are restored.
 function Restore-EnvironmentKey {
     param($Journal, $Report)
+    $claimAll = ([string]$Journal.mode -eq 'full')
     $snap = $Journal.environment
     $cur = Get-RegTree 'Environment'
-    $names = @()
-    foreach ($p in $snap.values.PSObject.Properties) { $names += $p.Name }
-    foreach ($n in $cur.values.Keys) { if ($names -notcontains $n) { $names += $n } }
+    $names = @(@($snap.values.Keys) + @($cur.values.Keys) | Sort-Object -Unique)
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
     try {
         foreach ($n in $names) {
-            $was = Get-JournalValue $snap $n
-            $now = $null
-            if ($cur.values.Contains($n)) { $now = [pscustomobject]$cur.values[$n] }
-            if (Test-SameRegValue $was $now) { continue }
+            $was = $null; if ($snap.values.Contains($n)) { $was = $snap.values[$n] }
+            $now = $null; if ($cur.values.Contains($n)) { $now = $cur.values[$n] }
+            if ((Get-RegValueText $was) -ceq (Get-RegValueText $now)) { continue }
             if ($n -ieq 'Path') {
-                $wasEntries = @(); if ($was) { $wasEntries = @(([string]$was.data).Split(';') | Where-Object { $_ }) }
-                $nowEntries = @(); if ($now) { $nowEntries = @(([string]$now.data).Split(';') | Where-Object { $_ }) }
+                $wasEntries = Split-PathValue $was
+                $nowEntries = Split-PathValue $now
                 $wasKeys = @($wasEntries | ForEach-Object { Get-PathKey $_ })
                 $nowKeys = @($nowEntries | ForEach-Object { Get-PathKey $_ })
                 $added = @($nowEntries | Where-Object { $wasKeys -notcontains (Get-PathKey $_) })
                 $removed = @($wasEntries | Where-Object { $nowKeys -notcontains (Get-PathKey $_) })
-                $ours = @($added | Where-Object { Test-OurPathEntry $_ })
-                $foreign = @($added | Where-Object { -not (Test-OurPathEntry $_) })
-                foreach ($a in $ours) { $Report.changes += "user PATH gained $a (removed again)" }
-                if ($removed.Count -eq 0 -and $foreign.Count -eq 0) {
+                $foreignAdded = @($added | Where-Object { -not $claimAll -and -not (Test-OurPathEntry $_ $Journal) })
+                $foreignRemoved = @($removed | Where-Object { -not $claimAll -and -not (Test-OurPathEntry $_ $Journal) })
+                foreach ($a in @($added | Where-Object { $foreignAdded -notcontains $_ })) { $Report.changes += "user PATH gained $a (removed again)" }
+                foreach ($r in @($removed | Where-Object { $foreignRemoved -notcontains $_ })) { $Report.changes += "user PATH lost $r (put back)" }
+                if ($foreignAdded.Count -eq 0 -and $foreignRemoved.Count -eq 0) {
                     if ($was) { $key.SetValue('Path', (ConvertTo-RegData $was), [Microsoft.Win32.RegistryValueKind]([string]$was.kind)) }
                     else { $key.DeleteValue('Path', $false) }
                 } else {
-                    $keep = @($nowEntries | Where-Object { -not (Test-OurPathEntry $_) -or ($wasKeys -contains (Get-PathKey $_)) })
-                    $kind = 'ExpandString'; if ($now) { $kind = [string]$now.kind }
-                    $key.SetValue('Path', ($keep -join ';'), [Microsoft.Win32.RegistryValueKind]$kind)
-                    foreach ($f in $foreign) { $Report.conflicts += "user PATH gained $f during the run, not from this harness; left in place" }
-                    foreach ($r in $removed) { $Report.conflicts += "user PATH lost $r during the run; not re-added" }
+                    # Start from the journalled list, keep what something else did, drop only ours.
+                    $foreignRemovedKeys = @($foreignRemoved | ForEach-Object { Get-PathKey $_ })
+                    $new = @($wasEntries | Where-Object { $foreignRemovedKeys -notcontains (Get-PathKey $_) }) + $foreignAdded
+                    $kind = 'ExpandString'; if ($was) { $kind = [string]$was.kind } elseif ($now) { $kind = [string]$now.kind }
+                    $key.SetValue('Path', ($new -join ';'), [Microsoft.Win32.RegistryValueKind]$kind)
+                    foreach ($f in $foreignAdded) { $Report.conflicts += "user PATH gained $f during the run, not from this harness; kept" }
+                    foreach ($r in $foreignRemoved) { $Report.conflicts += "user PATH lost $r during the run, not from this harness; not re-added" }
                 }
                 continue
             }
-            if (Test-OwnedEnvName $n) {
+            if ($claimAll -or (Test-OwnedEnvName $n)) {
                 if ($was) { $key.SetValue($n, (ConvertTo-RegData $was), [Microsoft.Win32.RegistryValueKind]([string]$was.kind)) }
                 else { $key.DeleteValue($n, $false) }
-                $Report.changes += "user environment $n was changed by the run (put back)"
+                if ($n -notlike 'Unsloth*Refresh_*') { $Report.changes += "user environment $n was changed by the run (put back)" }
             } else {
                 $Report.conflicts += "user environment $n changed during the run and is not one the installer writes; left in place"
             }
@@ -509,20 +543,39 @@ function Restore-EnvironmentKey {
 function Restore-OwnedKey {
     param([string]$SubKey, $Snapshot, $Report)
     $cur = Get-RegTree $SubKey
-    $same = (($cur | ConvertTo-Json -Depth 12 -Compress) -eq ($Snapshot | ConvertTo-Json -Depth 12 -Compress))
-    if ($same) { return }
-    if (-not $Snapshot.exists -and -not $cur.exists) { return }
+    if ((Get-RegTreeText $cur) -ceq (Get-RegTreeText $Snapshot)) { return }
     try {
-        if ($cur.exists) { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree($SubKey, $false) }
-        if ($Snapshot.exists) { Write-RegTree $SubKey $Snapshot }
+        Sync-RegTree $SubKey $Snapshot
         $Report.changes += "HKCU\$SubKey was changed by the run (put back)"
     } catch {
         $Report.failures += "HKCU\$SubKey could not be put back: $($_.Exception.Message)"
     }
 }
 
+# Something created after the journal: deleted during a normal run (it is the run's own), but
+# under -Recover it may be a real install made since, so it is set aside rather than deleted.
+function Remove-OrSetAside {
+    param([string]$Path, [switch]$Recovering, $Report, [string]$What)
+    if ($Recovering) {
+        $aside = "$Path.diag-orphan-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        try {
+            Rename-Item -LiteralPath $Path -NewName ([System.IO.Path]::GetFileName($aside)) -ErrorAction Stop
+            $Report.changes += "$What $Path appeared after the journal; moved aside to $aside (delete it if it is not yours)"
+            return $true
+        } catch { $Report.failures += "could not move $Path aside: $($_.Exception.Message)"; return $false }
+    }
+    $item = Get-Item -LiteralPath $Path -Force
+    if (-not $item.PSIsContainer) {
+        try { [System.IO.File]::Delete($Path); $Report.changes += "$What $Path was created by the run (removed)"; return $true }
+        catch { $Report.failures += "could not remove ${Path}: $($_.Exception.Message)"; return $false }
+    }
+    if (Remove-TreeNoFollow -Path $Path -Allowed @($Path)) { $Report.changes += "$What $Path was created by the run (removed)"; return $true }
+    $Report.failures += "could not remove $Path"
+    return $false
+}
+
 function Restore-Shortcuts {
-    param($Journal, $Report)
+    param($Journal, $Report, [switch]$Recovering)
     foreach ($s in @($Journal.shortcuts)) {
         $p = [string]$s.path
         $exists = Test-Path -LiteralPath $p
@@ -534,14 +587,13 @@ function Restore-Shortcuts {
                 } catch { $Report.failures += "shortcut $p could not be put back: $($_.Exception.Message)" }
             }
         } elseif ($exists) {
-            try { [System.IO.File]::Delete($p); $Report.changes += "shortcut $p was created by the run (removed)" }
-            catch { $Report.failures += "shortcut $p could not be removed: $($_.Exception.Message)" }
+            [void](Remove-OrSetAside -Path $p -Recovering:$Recovering -Report $Report -What 'shortcut')
         }
     }
 }
 
 function Restore-Dirs {
-    param($Journal, $Report)
+    param($Journal, $Report, [switch]$Recovering)
     # Unpark first: whatever now sits at the original path was created after parking, by this run.
     $parked = $null
     if (@($Journal.parked).Count -gt 0) { $parked = [ordered]@{ was_parked = $true; restored = $true } }
@@ -552,8 +604,7 @@ function Restore-Dirs {
             $Report.failures += "parked folder $moved is missing"; $parked.restored = $false; continue
         }
         if (Test-Path -LiteralPath $orig) {
-            if (-not (Remove-TreeNoFollow -Path $orig -Allowed @($orig))) { $parked.restored = $false; $Report.failures += "could not clear $orig before unparking"; continue }
-            $Report.changes += "$orig was created by the run (removed before unparking)"
+            if (-not (Remove-OrSetAside -Path $orig -Recovering:$Recovering -Report $Report -What 'folder')) { $parked.restored = $false; continue }
         }
         try {
             Rename-Item -LiteralPath $moved -NewName ([System.IO.Path]::GetFileName($orig)) -ErrorAction Stop
@@ -562,35 +613,43 @@ function Restore-Dirs {
         }
     }
     $parkedOrigs = @(@($Journal.parked) | ForEach-Object { [string]$_.original })
-    foreach ($p in $Journal.dirs.PSObject.Properties) {
-        if ($p.Value) { continue }
-        if ($parkedOrigs -contains $p.Name) { continue }
-        if (Test-Path -LiteralPath $p.Name) {
-            if (Remove-TreeNoFollow -Path $p.Name -Allowed @($p.Name)) { $Report.changes += "$($p.Name) was created by the run (removed)" }
-            else { $Report.failures += "could not remove $($p.Name)" }
-        }
+    foreach ($d in @($Journal.dirs.Keys)) {
+        if ($Journal.dirs[$d]) { continue }
+        if ($parkedOrigs -contains $d) { continue }
+        if (Test-Path -LiteralPath $d) { [void](Remove-OrSetAside -Path $d -Recovering:$Recovering -Report $Report -What 'folder') }
     }
     return $parked
 }
 
 function Invoke-Restore {
-    param([string]$When)
-    $j = Get-Content -LiteralPath $script:JournalPath -Raw | ConvertFrom-Json
+    param([string]$When, [switch]$Recovering, [switch]$KeepParked)
+    $j = Read-Journal
     $report = [ordered]@{ ok = $true; when = $When; changes = @(); conflicts = @(); failures = @(); parked = $null }
     try { Restore-EnvironmentKey $j $report } catch { $report.failures += "environment restore failed: $($_.Exception.Message)" }
     Restore-OwnedKey 'Software\Unsloth' $j.unsloth_key $report
     Restore-OwnedKey 'Software\Python\Astral' $j.astral_key $report
-    try { Restore-Shortcuts $j $report } catch { $report.failures += "shortcut restore failed: $($_.Exception.Message)" }
-    try { $report.parked = Restore-Dirs $j $report } catch { $report.failures += "folder restore failed: $($_.Exception.Message)" }
+    try { Restore-Shortcuts $j $report -Recovering:$Recovering } catch { $report.failures += "shortcut restore failed: $($_.Exception.Message)" }
+    if ($KeepParked) {
+        # Between full-pass states: clear what the install left at the parked locations, keep the parking.
+        foreach ($pk in @($j.parked)) {
+            $orig = [string]$pk.original
+            if (Test-Path -LiteralPath $orig) { [void](Remove-OrSetAside -Path $orig -Report $report -What 'folder') }
+        }
+        foreach ($d in @($j.dirs.Keys)) {
+            if (-not $j.dirs[$d] -and (Test-Path -LiteralPath $d)) { [void](Remove-OrSetAside -Path $d -Report $report -What 'folder') }
+        }
+    } else {
+        try { $report.parked = Restore-Dirs $j $report -Recovering:$Recovering } catch { $report.failures += "folder restore failed: $($_.Exception.Message)" }
+    }
     if ($report.failures.Count -gt 0) { $report.ok = $false }
     return $report
 }
 
 function Complete-Journal {
-    $j = Get-Content -LiteralPath $script:JournalPath -Raw | ConvertFrom-Json
+    $j = Read-Journal
     $j.restored = $true
     $j.parked = @()
-    Write-JsonFile -Path $script:JournalPath -Object $j
+    $j | Export-Clixml -LiteralPath $script:JournalPath -Depth 30
     $ptr = Join-Path $script:DiagRoot 'ACTIVE_JOURNAL.txt'
     if (Test-Path -LiteralPath $ptr) { Remove-Item -LiteralPath $ptr -Force }
 }
@@ -1304,7 +1363,7 @@ function Test-FullPreflight {
 }
 
 function Invoke-Park {
-    foreach ($d in @((Join-Path $env:USERPROFILE '.unsloth'), (Join-Path $env:LOCALAPPDATA 'Unsloth Studio'))) {
+    foreach ($d in @(Get-ParkableDirs)) {
         if (-not (Test-Path -LiteralPath $d)) { continue }
         $item = Get-Item -LiteralPath $d -Force
         if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) { throw "$d is a link; refusing to park it" }
@@ -1564,10 +1623,14 @@ function Invoke-RecoverMode {
     if (-not (Test-Path -LiteralPath $ptr)) { Write-Diag 'nothing to recover: no interrupted run is recorded' 'Green'; return 0 }
     $script:JournalPath = (Get-Content -LiteralPath $ptr -Raw).Trim()
     if (-not (Test-Path -LiteralPath $script:JournalPath)) { Write-Diag "the recorded journal $script:JournalPath is gone" 'Red'; return 1 }
-    $j = Get-Content -LiteralPath $script:JournalPath -Raw | ConvertFrom-Json
+    $j = Read-Journal
     $script:Work = [string]$j.work
+    $age = (Get-Date) - (Get-Item -LiteralPath $script:JournalPath).LastWriteTime
+    if ($age.TotalHours -gt 6) {
+        Write-Diag ("the interrupted run is {0:N0} hours old; anything Unsloth-related created since then is moved aside as *.diag-orphan-*, not deleted" -f $age.TotalHours) 'Yellow'
+    }
     $script:Results = [ordered]@{ errors = @() }
-    $rep = Invoke-Restore 'recover'
+    $rep = Invoke-Restore 'recover' -Recovering
     foreach ($c in @($rep.changes)) { Write-Diag "put back: $c" }
     foreach ($c in @($rep.conflicts)) { Write-Diag "left in place (not ours): $c" 'Yellow' }
     foreach ($c in @($rep.failures)) { Write-Diag "COULD NOT PUT BACK: $c" 'Red' }
@@ -1600,7 +1663,7 @@ $script:Out = Join-Path $script:Work 'out'
 $script:RunDir = Join-Path $script:Work 'run'
 foreach ($d in @($script:Work, $script:Out, $script:RunDir)) { [void][System.IO.Directory]::CreateDirectory($d) }
 $script:LogPath = Join-Path $script:Out 'diag.log'
-$script:JournalPath = Join-Path $script:Work 'journal.json'
+$script:JournalPath = Join-Path $script:Work 'journal.xml'
 $script:StateDirs = @{}
 $script:CurrentChild = $null
 $script:PytestPython = $null
@@ -1620,6 +1683,7 @@ try {
     Write-Diag "work dir: $script:Work"
     $script:Journal = New-Journal
     Save-Journal
+    Assert-JournalReadable
     [System.IO.File]::WriteAllText($ptrFile, $script:JournalPath, $Utf8NoBom)
 
     Write-Diag 'collecting the machine inventory (read-only)'
@@ -1681,17 +1745,10 @@ try {
                 finally {
                     if ($script:CurrentChild) { Stop-Tree $script:CurrentChild; $script:CurrentChild = $null }
                     # Between states only the install is undone; the parked folders stay parked until the end.
-                    $j = Get-Content -LiteralPath $script:JournalPath -Raw | ConvertFrom-Json
-                    $rep = [ordered]@{ ok = $true; changes = @(); conflicts = @(); failures = @() }
-                    try { Restore-EnvironmentKey $j $rep } catch { $rep.failures += $_.Exception.Message }
-                    Restore-OwnedKey 'Software\Unsloth' $j.unsloth_key $rep
-                    Restore-Shortcuts $j $rep
-                    $left = Join-Path $env:USERPROFILE '.unsloth'
-                    if (Test-Path -LiteralPath $left) { [void](Remove-TreeNoFollow -Path $left -Allowed @($left)) }
-                    $leftLauncher = Join-Path $env:LOCALAPPDATA 'Unsloth Studio'
-                    if (Test-Path -LiteralPath $leftLauncher) { [void](Remove-TreeNoFollow -Path $leftLauncher -Allowed @($leftLauncher)) }
+                    $rep = [ordered]@{ changes = @(); conflicts = @(); failures = @() }
+                    try { $rep = Invoke-Restore 'between states' -KeepParked } catch { $rep.failures += "restore between states failed: $($_.Exception.Message)" }
                     $row = @($script:Results.full | Where-Object { $_.state -eq $s } | Select-Object -Last 1)
-                    if ($row.Count -gt 0) { $row[0]['restore_changes'] = @($rep.changes); $row[0]['restore_conflicts'] = @($rep.conflicts + $rep.failures) }
+                    if ($row.Count -gt 0) { $row[0]['restore_changes'] = @($rep.changes); $row[0]['restore_conflicts'] = @(@($rep.conflicts) + @($rep.failures)) }
                 }
             }
         }
@@ -1708,7 +1765,7 @@ try {
             if ($rep.ok) { Complete-Journal }
             else { Write-Diag 'restore could not put everything back; the journal is kept, run -Recover.' 'Yellow' }
         } catch { Add-DiagError "final restore failed: $($_.Exception.Message); run with -Recover" }
-        try { Copy-Item -LiteralPath $script:JournalPath -Destination (Join-Path $script:Out 'journal.json') -Force } catch { }
+        try { Write-JsonFile -Path (Join-Path $script:Out 'journal.json') -Object (Read-Journal) } catch { }
     }
     try {
         Write-JsonFile -Path (Join-Path $script:Out 'results.json') -Object $script:Results

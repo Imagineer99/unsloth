@@ -73,9 +73,12 @@ console, and the test files that cover elevated behaviour.
   changed one of them during the run, it is left alone and listed in the summary.
 - The quick and elevated passes install nothing outside the work folder and never touch an existing
   Unsloth install.
-- The full pass needs the normal install location, so an existing `%USERPROFILE%\.unsloth` (and
-  `%LOCALAPPDATA%\Unsloth Studio`) is renamed to `*.diag-parked-<time>` for the duration and renamed
-  back at the end. It refuses to start while Unsloth Studio or the desktop app is running.
+- The full pass needs the normal install location, so an existing `%USERPROFILE%\.unsloth`,
+  `%LOCALAPPDATA%\Unsloth Studio` and the desktop app's data (`ai.unsloth.studio` under
+  `%LOCALAPPDATA%` and `%APPDATA%`) are renamed to `*.diag-parked-<time>` for the duration and
+  renamed back at the end. It refuses to start while Unsloth Studio or the desktop app is running.
+  During the full pass every change to your user environment variables (including PATH and
+  `CUDA_PATH`, which setup can write) is treated as the run's own and put back afterwards.
 - If git, the VC++ runtime or Windows long paths are missing, the full pass would make the installer
   set those up machine-wide, so it stops and says which one instead. Add `-AllowMachineInstalls` if
   that is fine on this machine.
@@ -84,8 +87,9 @@ console, and the test files that cover elevated behaviour.
 - Your user name and profile path are replaced with placeholders in everything that goes in the zip.
 
 If a run is interrupted (closed window, reboot), run the script again with `-Recover`. It finishes the
-restore from the journal, including un-parking an existing install. A new run refuses to start until
-that is done.
+restore from the journal, including un-parking an existing install. Anything Unsloth-related created
+since the interrupted run is moved aside as `*.diag-orphan-<time>` rather than deleted, in case it is
+a real install made in between. A new run refuses to start until recovery is done.
 
 ## Not covered
 

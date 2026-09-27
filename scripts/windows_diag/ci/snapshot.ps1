@@ -40,6 +40,7 @@ $desktop = [Environment]::GetFolderPath('Desktop')
 $startMenu = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs'
 $unslothHome = Join-Path $env:USERPROFILE '.unsloth'
 $launcher = Join-Path $env:LOCALAPPDATA 'Unsloth Studio'
+$appData = @((Join-Path $env:LOCALAPPDATA 'ai.unsloth.studio'), (Join-Path $env:APPDATA 'ai.unsloth.studio'))
 
 if ($Plant) {
     $token = [guid]::NewGuid().ToString('N')
@@ -57,6 +58,20 @@ if ($Plant) {
     }
     $k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Unsloth')
     $k.SetValue('DiagMarker', $token, [Microsoft.Win32.RegistryValueKind]::String); $k.Close()
+    # What a real machine carries: the Studio shim on the user PATH (the uninstaller removes it),
+    # a uv-registered Python whose key holds a "(Default)" value, and the desktop app's data.
+    $shim = Join-Path $unslothHome 'studio\bin'
+    New-Item -ItemType Directory -Force -Path $shim | Out-Null
+    $envKey = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment')
+    $path = [string]$envKey.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+    $envKey.SetValue('Path', (@($shim) + @($path.Split(';') | Where-Object { $_ }) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString); $envKey.Close()
+    $a = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Python\Astral\CPython3.13.99\InstallPath')
+    $a.SetValue('', 'C:\diag-fake-python', [Microsoft.Win32.RegistryValueKind]::String)
+    $a.SetValue('ExecutablePath', 'C:\diag-fake-python\python.exe', [Microsoft.Win32.RegistryValueKind]::String); $a.Close()
+    foreach ($d in $appData) {
+        New-Item -ItemType Directory -Force -Path $d | Out-Null
+        Set-Content -LiteralPath (Join-Path $d 'diag_marker.txt') -Value $token
+    }
 }
 
 $snap = [ordered]@{
@@ -65,11 +80,14 @@ $snap = [ordered]@{
     astral_key = (Get-RegDump 'Software\Python\Astral')
     unsloth_home = (Get-TreeDigest $unslothHome)
     launcher = (Get-TreeDigest $launcher)
+    app_local = (Get-TreeDigest $appData[0])
+    app_roaming = (Get-TreeDigest $appData[1])
     desktop_lnk = (Get-TreeDigest (Join-Path $desktop 'Unsloth Studio.lnk'))
     start_lnk = (Get-TreeDigest (Join-Path $startMenu 'Unsloth Studio.lnk'))
     tc = (Test-Path -LiteralPath 'C:\tc')
     parked = @(Get-ChildItem -LiteralPath $env:USERPROFILE -Force -Filter '.unsloth.diag-parked-*' -ErrorAction SilentlyContinue | ForEach-Object Name) +
-             @(Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Force -Filter 'Unsloth Studio.diag-parked-*' -ErrorAction SilentlyContinue | ForEach-Object Name)
+             @(Get-ChildItem -LiteralPath $env:LOCALAPPDATA -Force -Filter '*.diag-parked-*' -ErrorAction SilentlyContinue | ForEach-Object Name) +
+             @(Get-ChildItem -LiteralPath $env:APPDATA -Force -Filter '*.diag-parked-*' -ErrorAction SilentlyContinue | ForEach-Object Name)
     active_journal = (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'unsloth-diag\ACTIVE_JOURNAL.txt'))
 }
 # Get-TreeDigest of a single file returns nothing useful through -Recurse; hash it directly.
