@@ -12,6 +12,7 @@ mp.Queue, and exits on shutdown or unload. Pattern follows core/training/worker.
 
 from __future__ import annotations
 
+import functools
 import base64
 import inspect
 import json
@@ -509,9 +510,38 @@ def _worker_reclaimable_gpu_gb(config: dict) -> dict[str, float] | None:
         return None
 
 
+def _drop_a_rejected_token(config: dict) -> None:
+    """The Hub rejected this load's token while anonymous reads worked (an expired or revoked
+    token 401s even public repos): load the rest anonymously, weights included."""
+    from hub.utils.hf_tokens import saved_token_rejected
+
+    token = _config_hf_token(config)
+    if token is not False and saved_token_rejected(token):
+        config["anonymous_hf_access"] = True
+        _apply_worker_hf_token_environment(config)
+        logger.warning(
+            "Hugging Face rejected the token for %s; loading it without the token.",
+            config.get("model_name"),
+        )
+
+
+def _in_token_rejection_scope(handler):
+    """Run one load in its own rejected-token scope, so a verdict never outlives it."""
+
+    @functools.wraps(handler)
+    def scoped(*args, **kwargs):
+        from hub.utils.hf_tokens import token_rejection_scope
+        with token_rejection_scope():
+            return handler(*args, **kwargs)
+
+    return scoped
+
+
+@_in_token_rejection_scope
 def _handle_load(backend, config: dict, resp_queue: Any) -> None:
     try:
         mc = _build_model_config(config)
+        _drop_a_rejected_token(config)
 
         hf_token = _config_hf_token(config)
         load_in_4bit = _resolve_lora_4bit(mc, config.get("load_in_4bit", True))
