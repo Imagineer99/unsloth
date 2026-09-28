@@ -23,7 +23,9 @@ Invoke-WebRequest https://raw.githubusercontent.com/danielhanchen/unsloth-stagin
 powershell -NoProfile -ExecutionPolicy Bypass -File $d
 ```
 
-That is the quick pass (roughly 30-60 minutes, a few hundred MB of downloads). When it finishes it
+That is the quick pass: about 10-20 minutes on a desktop CPU and roughly 250 MB of downloads (the
+four pinned versions, uv, and a private Python). The repo tests run several at a time (half the
+logical processors, 2 to 6); `-Parallel 1` runs them one at a time, `-Parallel 8` pushes harder. When it finishes it
 prints the path of `unsloth-diag-<machine>-quick-<time>.zip` and puts a copy on the Desktop. Send
 that zip back.
 
@@ -37,15 +39,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -File $d -Full
 powershell -NoProfile -ExecutionPolicy Bypass -File "$env:USERPROFILE\Downloads\unsloth-win-diag.ps1" -Elevated
 ```
 
-Each pass makes its own zip. `-SkipTests` shortens the quick pass to about 15 minutes by leaving out
-the repo test suites.
+Each pass makes its own zip. `-SkipTests` leaves out the repo test suites and finishes in about
+5 minutes. `summary.md` inside the zip starts with a timing line for each phase.
+
+## What each machine should show
+
+| machine | torch route | llama.cpp bundle |
+|---|---|---|
+| x64, integrated GPU only (Intel or AMD) | CPU (Intel Arc/Meteor Lake with a working driver: XPU) | Vulkan |
+| x64, RTX 5090 | CUDA (cu128 or newer, compute capability 12.0) | CUDA |
+| Windows on ARM, DGX Spark / GB10 | NVIDIA's ARM64 CUDA build, compute capability 12.1 | ARM64 CUDA if published, else ARM64 CPU |
+| Strix Halo (Radeon 8060S, gfx1151) | ROCm for gfx1151 | Vulkan when the AMD Vulkan driver is present (faster than HIP on gfx1151), else HIP |
+
+Every row is compared against `base` (current `main`); the same answer on every state is the
+expected result. A head state may only widen (find a GPU where base found none), never narrow.
+
+This script is Windows only. On a Linux install of the same hardware the PRs change nothing
+(they touch `install.ps1` and `studio/setup.ps1`, not `install.sh`), so there is nothing to compare.
 
 ## What each pass checks
 
 Quick (standard user):
 - which GPU route and PyTorch build each version picks on this machine, under Windows PowerShell 5.1
-  and PowerShell 7. The installer runs with the PyTorch download pointed at a dead address and is
+  and PowerShell 7 (one run at a time, since each run's seconds are measured). The installer runs with the PyTorch download pointed at a dead address and is
   stopped at the first "installing PyTorch" line, so no wheels are downloaded
+- which llama.cpp bundle (CUDA, ROCm/HIP, Vulkan or CPU) GGUF chat would get, from the installer's
+  own resolver with nothing downloaded
 - the NVIDIA driver-library probe (CUDA version and compute capability) against `nvidia-smi`
 - the NVIDIA adapter presence check from #11166
 - a parse check of `install.ps1`, `studio/setup.ps1` and `scripts/uninstall.ps1` under both shells

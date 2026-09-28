@@ -28,6 +28,8 @@ param(
     [int]$DecisionTimeoutSec = 600,
     [int]$TestTimeoutSec = 300,
     [int]$FullInstallTimeoutSec = 5400,
+    # Test files run this many at a time; 0 picks half the logical processors (2 to 6), 1 is serial.
+    [int]$Parallel = 0,
     [switch]$NoDesktopCopy,
     [switch]$KeepWorkDir,
     # Hosted CI runners are administrators with UAC off; this lets the quick/full pass run there.
@@ -37,7 +39,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Off
 $ProgressPreference = 'SilentlyContinue'
-$ToolVersion = '1.0.0'
+$ToolVersion = '1.1.0'
 
 $EmbeddedManifest = @'
 {
@@ -46,44 +48,44 @@ $EmbeddedManifest = @'
   "states": {
     "base": {
       "repo": "unslothai/unsloth",
-      "sha": "c807acbf44da1d4a0ecf465a579c31ab0c6a5f69",
-      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/c807acbf44da1d4a0ecf465a579c31ab0c6a5f69",
+      "sha": "0d2905f182a5aafa15b6393811ca39d8862b9f9f",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/0d2905f182a5aafa15b6393811ca39d8862b9f9f",
       "files": {
-        "install.ps1": "ccefc629f7d80e9fe126058962aff73e7dee0308a2e18e0ce154ce8945a0a2e1",
-        "studio/setup.ps1": "2818d55498e55de253b8c6cf7bf53ac08483104b86f5bd068bdd90a86b06980d",
+        "install.ps1": "ec1ca2413b495cba4078f3cd75a18452fbb62b89433bca785cbd61f3bdfb8b83",
+        "studio/setup.ps1": "d621434c1689d144de1bbf6eac26e4f6422660d972495ee895aa385e2379d376",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
     },
     "stack": {
       "repo": "unslothai/unsloth",
-      "sha": "8294a9b882bf6c85759780204a2d718454cd0f3f",
-      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/8294a9b882bf6c85759780204a2d718454cd0f3f",
+      "sha": "c6564c89a76f44525e34c95f1bc8a172c4e6da07",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/c6564c89a76f44525e34c95f1bc8a172c4e6da07",
       "files": {
-        "install.ps1": "55b5793d326d7194712f672bab064c9c1f70aa9f55f573f817133953e7628d58",
-        "studio/setup.ps1": "3217c24b1861d07ede6216653e1db340641d77d7e1085952d572ad1bc582f8d8",
+        "install.ps1": "0ac28f56c53fc0e47169fa1adf11bd09d8c3a518c82d95598412837a482e54fc",
+        "studio/setup.ps1": "557fa33a0f8f03ac56360db8fa22636f542cfa18bb4c582c3946798de2114734",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
     },
     "presence": {
       "repo": "danielhanchen/unsloth-staging-2",
-      "sha": "eebda7d997cc7a26562ee1084644974e50ae23d2",
-      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/eebda7d997cc7a26562ee1084644974e50ae23d2",
+      "sha": "6259665f234c234e9441ecc7a29814bee7e9819a",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/6259665f234c234e9441ecc7a29814bee7e9819a",
       "files": {
-        "install.ps1": "331340bda9ce8f4909e6a5818d55fdca5527747d2fb192f4adc140bd38de1a78",
-        "studio/setup.ps1": "0747e4ad5495fd90021696dcaa9dbf78cfffa21138c950b48d171bd7b00f24f6",
+        "install.ps1": "674719f5ac59530723a21a23f937476cca9b37f741a3e9490aced2750050f660",
+        "studio/setup.ps1": "e03973941c4162d6b02ca16bba480d3154b66f202bb94cdf86a00196ae685241",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
     },
     "combined": {
       "repo": "danielhanchen/unsloth-staging-2",
-      "sha": "3468c0037ec27958bc768252aa7733e183b88a19",
-      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/3468c0037ec27958bc768252aa7733e183b88a19",
+      "sha": "1926be2315fea540b12a287bc092fa6f1fd45479",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/1926be2315fea540b12a287bc092fa6f1fd45479",
       "files": {
-        "install.ps1": "68711941b1318bf9cba4ad6584c50b3cffa1b82dd02afef0dab524ffaf4cd41a",
-        "studio/setup.ps1": "27bc378fd0ffe38f7e821b52472df3280e5ff702231957260e6ea58f13f4322f",
+        "install.ps1": "cdf5a02e7e5d91a55daf39a771ad0d9581280a1df1baf153622fa52a09498efc",
+        "studio/setup.ps1": "73e42e29926b72603bc69f2d097aa7ba5fe8c6b76659133b55371bc26c27f3d1",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
@@ -289,6 +291,59 @@ function Invoke-Bounded {
         Label = $Label; Text = $text; ExitCode = $exit; TimedOut = $timedOut; Stopped = $stopped
         ElapsedSec = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); RawPath = $raw
     }
+}
+
+# Many bounded children at once: at most $Parallel alive, never two sharing a Group (the same
+# test file in another state or shell may reach the same named mutex or temp name). Each job is
+# @{ Label; CommandLine; WorkDir; Timeout; Env; Group }; results are keyed by Label and shaped
+# like Invoke-Bounded's.
+function Invoke-BoundedPool {
+    param([object[]]$Jobs, [int]$Parallel = 1)
+    $pending = New-Object System.Collections.Generic.List[object]
+    foreach ($j in $Jobs) { $pending.Add($j) }
+    $running = New-Object System.Collections.Generic.List[object]
+    $results = @{}
+    while ($pending.Count -gt 0 -or $running.Count -gt 0) {
+        $i = 0
+        while ($running.Count -lt $Parallel -and $i -lt $pending.Count) {
+            $j = $pending[$i]
+            if (@($running | Where-Object { $_.Job.Group -eq $j.Group }).Count -gt 0) { $i++; continue }
+            $pending.RemoveAt($i)
+            $child = Start-HiddenChild -Label $j.Label -CommandLine $j.CommandLine -WorkDir $j.WorkDir -Env $j.Env
+            $script:CurrentChild = $null
+            $script:PoolChildren[$child.Proc.Id] = $true
+            $running.Add([pscustomobject]@{ Job = $j; Child = $child; Start = (Get-Date) })
+        }
+        Start-Sleep -Milliseconds 400
+        foreach ($r in @($running)) {
+            $proc = $r.Child.Proc
+            $timedOut = $false
+            if (-not $proc.HasExited) {
+                if (((Get-Date) - $r.Start).TotalSeconds -le $r.Job.Timeout) { continue }
+                $timedOut = $true
+                Stop-Tree $proc.Id
+                $null = $proc.WaitForExit(30000)
+            }
+            [void]$running.Remove($r)
+            $script:PoolChildren.Remove($proc.Id)
+            $exit = $null
+            try { if ($proc.HasExited) { $exit = $proc.ExitCode } } catch { $exit = $null }
+            $text = Read-SharedText $r.Child.Raw
+            if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+            $results[$r.Job.Label] = [pscustomobject]@{
+                Label = $r.Job.Label; Text = $text; ExitCode = $exit; TimedOut = $timedOut; Stopped = $false
+                ElapsedSec = [math]::Round(((Get-Date) - $r.Start).TotalSeconds, 1); RawPath = $r.Child.Raw
+            }
+        }
+    }
+    return $results
+}
+
+function Get-DefaultParallel {
+    $n = [int]([Environment]::ProcessorCount / 2)
+    if ($n -lt 2) { $n = 2 }
+    if ($n -gt 6) { $n = 6 }
+    return $n
 }
 
 function Save-Transcript {
@@ -954,7 +1009,7 @@ function Get-ZipComment {
 }
 
 function Expand-StateZip {
-    param([string]$Zip, [string]$Dest)
+    param([string]$Zip, [string]$Dest, [string[]]$SkipPrefixes = @())
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $destFull = [System.IO.Path]::GetFullPath($Dest).TrimEnd('\') + '\'
     $za = [System.IO.Compression.ZipFile]::OpenRead($Zip)
@@ -965,6 +1020,9 @@ function Expand-StateZip {
             if ($i -lt 0) { continue }
             $rel = $rel.Substring($i + 1)
             if (-not $rel) { continue }
+            $skip = $false
+            foreach ($px in $SkipPrefixes) { if ($rel.StartsWith($px, [StringComparison]::OrdinalIgnoreCase)) { $skip = $true; break } }
+            if ($skip) { continue }
             $target = [System.IO.Path]::GetFullPath((Join-Path $Dest ($rel -replace '/', '\')))
             if (-not $target.StartsWith($destFull, [StringComparison]::OrdinalIgnoreCase)) { throw "zip entry escapes the state dir: $($e.FullName)" }
             if ($rel.EndsWith('/')) { [void][System.IO.Directory]::CreateDirectory($target); continue }
@@ -982,12 +1040,17 @@ function Initialize-State {
     try {
         $zip = Join-Path $script:Work "src\$Name.zip"
         [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $zip))
-        Write-Diag "fetching $Name ($($m.repo) $($m.sha.Substring(0, 12)))"
-        Get-Download -Url ([string]$m.zip_url) -Dest $zip
+        if (-not (Test-Path -LiteralPath $zip)) {
+            Write-Diag "fetching $Name ($($m.repo) $($m.sha.Substring(0, 12)))"
+            Get-Download -Url ([string]$m.zip_url) -Dest $zip
+        }
         $comment = Get-ZipComment $zip
         if ($comment -ne [string]$m.sha) { $row.problems += "archive comment '$comment' is not the pinned sha" }
         $dir = Join-Path $script:Work "r\$Name"
-        Expand-StateZip -Zip $zip -Dest $dir
+        # Only the full pass installs from a state; the others never read the web UI sources.
+        $skip = @()
+        if ($script:Mode -ne 'full') { $skip = @('studio/frontend/', 'images/', 'docker/') }
+        Expand-StateZip -Zip $zip -Dest $dir -SkipPrefixes $skip
         Remove-Item -LiteralPath $zip -Force
         foreach ($p in $m.files.PSObject.Properties) {
             $f = Join-Path $dir ($p.Name -replace '/', '\')
@@ -1001,6 +1064,33 @@ function Initialize-State {
         $row.problems += $_.Exception.Message
         Add-DiagError "state $Name could not be fetched: $($_.Exception.Message)"
     }
+}
+
+# All archives at once through the in-box curl.exe; whatever it cannot fetch falls back to the
+# one-at-a-time download inside Initialize-State, and every archive is verified there either way.
+function Initialize-States {
+    param([string[]]$Names)
+    $t0 = Get-Date
+    $curl = Join-Path $env:SystemRoot 'System32\curl.exe'
+    if (Test-Path -LiteralPath $curl) {
+        $jobs = @()
+        foreach ($n in $Names) {
+            $zip = Join-Path $script:Work "src\$n.zip"
+            [void][System.IO.Directory]::CreateDirectory((Split-Path -Parent $zip))
+            $url = [string]$script:Manifest.states.$n.zip_url
+            $jobs += [pscustomobject]@{ Label = "fetch_$n"; Group = $n; WorkDir = $script:Work; Timeout = 900; Env = @{}
+                CommandLine = "`"$curl`" -fsSL --retry 3 --retry-delay 5 -o `"$zip`" `"$url`"" }
+        }
+        Write-Diag "fetching $($Names.Count) pinned states at once"
+        $runs = Invoke-BoundedPool -Jobs $jobs -Parallel $jobs.Count
+        foreach ($n in $Names) {
+            $r = $runs["fetch_$n"]
+            $zip = Join-Path $script:Work "src\$n.zip"
+            if ($r.ExitCode -ne 0 -and (Test-Path -LiteralPath $zip)) { Remove-Item -LiteralPath $zip -Force }
+        }
+    }
+    foreach ($n in $Names) { Initialize-State $n }
+    $script:Results.timing['states_s'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
 }
 
 # ---------------------------------------------------------------- decision runs
@@ -1024,7 +1114,7 @@ function Get-InstallDecision {
         if ($l -match '^\s{1,4}gpu\s{2,}(\S.*?)\s*$') { $gpu = $Matches[1] }
         if (-not $url -and $l -match 'installing PyTorch (?:from )?\(?(https?://[^\s)]+?)\)?(?:\.\.\.)?\s*$') { $url = $Matches[1] }
         if ($l -match 'skipping PyTorch') { $skipped = $true }
-        if ($l -match '(?i)elevat|administrator|icacls|private director|path exactly|declin|nvidia|cuda|compute capab|windows on arm') {
+        if ($l -match '(?i)elevat|administrator|icacls|private director|path exactly|declin|nvidia|cuda|compute capab|windows on arm|rocm|gfx[0-9]|radeon|vulkan|intel|xpu') {
             $t = $l.Trim()
             if ($t -and $notes.Count -lt 60) { $notes += $t }
         }
@@ -1083,6 +1173,40 @@ function Invoke-DecisionRun {
     [void](Remove-TreeNoFollow -Path $studioDir)
 }
 
+# llama.cpp's GGUF bundle is chosen after torch, which the decision runs never reach. The resolver
+# that makes the choice answers without downloading a bundle, given what the PowerShell side would
+# hand it: --has-rocm on a ROCm torch route, --rocm-gfx for a named AMD target. It runs on the
+# work-dir Python, which has no torch, so a CUDA line is picked from the driver alone.
+function Invoke-LlamaResolve {
+    param([string]$State)
+    $sd = $script:StateDirs[$State]
+    $row = [ordered]@{ state = $State; args = ''; backend = $null; install_kind = $null; asset = $null; available = $null; error = $null; elapsed_s = $null }
+    $py = Join-Path $sd 'studio\install_llama_prebuilt.py'
+    if (-not (Test-Path -LiteralPath $py)) { $row.error = 'no resolver in this state'; $script:Results.llama += $row; return }
+    $d = @($script:Results.decisions | Where-Object { $_.state -eq $State -and $_.reached } | Select-Object -First 1)
+    $extra = @()
+    if ($d.Count -gt 0) {
+        if ("$($d[0].family)" -eq 'rocm') { $extra += '--has-rocm' }
+        if ("$($d[0].gpu_line)" -match '(?i)\b(gfx[0-9a-f]{3,4})\b') { $extra += @('--rocm-gfx', $Matches[1].ToLowerInvariant()) }
+    }
+    $row.args = ($extra -join ' ')
+    $key = "$(Get-FileSha $py)|$($row.args)"
+    if (-not $script:LlamaCache.ContainsKey($key)) {
+        $r = Invoke-Bounded -Label "llama_$State" -CommandLine "$(Get-QuotedExe $script:NativePython) `"$py`" --resolve-prebuilt latest --output-format json $($row.args)" `
+            -WorkDir $sd -Timeout 180 -Env (Get-IsolationEnv -StudioHome $null)
+        $o = $null
+        foreach ($l in ((Remove-Ansi $r.Text) -split '\r?\n')) { if ($l.StartsWith('{')) { try { $o = $l | ConvertFrom-Json } catch { } } }
+        $script:LlamaCache[$key] = [pscustomobject]@{ Json = $o; Run = $r; Transcript = $(if ($o) { $null } else { Save-Transcript "llama_$State" $r.Text }) }
+    }
+    $c = $script:LlamaCache[$key]
+    $row.elapsed_s = $c.Run.ElapsedSec
+    if ($c.Json) {
+        $row.backend = $c.Json.backend; $row.install_kind = $c.Json.install_kind; $row.asset = $c.Json.asset; $row.available = $c.Json.prebuilt_available
+    } else { $row.error = "resolver gave no answer (exit $($c.Run.ExitCode), timed out $($c.Run.TimedOut)); see $($c.Transcript)" }
+    $script:Results.llama += $row
+    Write-Diag ("  llama.cpp for {0}: {1} ({2})" -f $State, $row.backend, $row.install_kind)
+}
+
 # ---------------------------------------------------------------- repo tests
 
 function Get-FailedChecks {
@@ -1094,39 +1218,23 @@ function Get-FailedChecks {
     return $out
 }
 
-function Invoke-Ps1Tests {
+function Get-Ps1TestJobs {
     param([string]$State, [string]$Shell, [string]$Filter = '')
     $sd = $script:StateDirs[$State]
     $exe = Get-ShellExe $Shell
     $files = @(Get-ChildItem -LiteralPath (Join-Path $sd 'tests\studio') -Filter '*.ps1' -File -ErrorAction SilentlyContinue | Sort-Object Name)
     if ($Filter) { $files = @($files | Where-Object { $_.Name -match $Filter }) }
-    Write-Diag "ps1 tests: $State under $Shell ($($files.Count) files)"
-    $envT = Get-IsolationEnv -StudioHome (Join-Path $script:Work "h\t-$State-$Shell")
+    $jobs = @()
     foreach ($f in $files) {
-        $rel = "tests/studio/$($f.Name)"
         $label = "ps1_${State}_${Shell}_$($f.BaseName)"
-        $r = Invoke-Bounded -Label $label -CommandLine "$(Get-QuotedExe $exe) -NoProfile -ExecutionPolicy Bypass -File `"$($f.FullName)`"" `
-            -WorkDir $sd -Timeout $TestTimeoutSec -Env $envT
-        $failed = @(Get-FailedChecks $r.Text)
-        $passed = ($r.ExitCode -eq 0) -and ($failed.Count -eq 0) -and (-not $r.TimedOut)
-        $flaky = $false; $firstText = $null
-        if (-not $passed -and -not $r.TimedOut) {
-            # One retry: a real driver under load can drop a single probe answer. A pass on the
-            # retry is recorded as flaky, with the first transcript kept.
-            $firstText = $r.Text; $firstFailed = $failed
-            $r = Invoke-Bounded -Label "${label}_retry" -CommandLine "$(Get-QuotedExe $exe) -NoProfile -ExecutionPolicy Bypass -File `"$($f.FullName)`"" `
-                -WorkDir $sd -Timeout $TestTimeoutSec -Env $envT
-            $failed = @(Get-FailedChecks $r.Text)
-            $passed = ($r.ExitCode -eq 0) -and ($failed.Count -eq 0) -and (-not $r.TimedOut)
-            if ($passed) { $flaky = $true; $failed = @($firstFailed) }
+        $jobs += [pscustomobject]@{
+            Label = $label; Group = "ps1|$($f.Name)"; WorkDir = $sd; Timeout = $TestTimeoutSec
+            CommandLine = "$(Get-QuotedExe $exe) -NoProfile -ExecutionPolicy Bypass -File `"$($f.FullName)`""
+            Env = (Get-IsolationEnv -StudioHome (Join-Path $script:Work "h\t\$label"))
+            State = $State; Shell = $Shell; Kind = 'ps1'; File = "tests/studio/$($f.Name)"; Xml = $null
         }
-        $row = [ordered]@{ state = $State; shell = $Shell; kind = 'ps1'; file = $rel; present = $true; exit = $r.ExitCode
-            passed = $passed; failed_checks = $failed; timed_out = $r.TimedOut; elapsed_s = $r.ElapsedSec; transcript = $null; mode = $script:Mode; flaky = $flaky }
-        if (-not $passed) { $row.transcript = Save-Transcript "tests/$label" $r.Text }
-        elseif ($flaky) { $row.transcript = Save-Transcript "tests/${label}_flaky_first" $firstText }
-        $script:Results.tests += $row
     }
-    [void](Remove-TreeNoFollow -Path (Join-Path $script:Work "h\t-$State-$Shell"))
+    return $jobs
 }
 
 function Initialize-PytestVenv {
@@ -1153,35 +1261,76 @@ function Get-PytestFiles {
     return $files
 }
 
-function Invoke-Pytests {
+function Get-PytestJobs {
     param([string]$State, [string]$Filter = '')
-    if (-not (Initialize-PytestVenv)) { return }
     $sd = $script:StateDirs[$State]
-    $files = @(Get-PytestFiles $sd $Filter)
-    Write-Diag "pytest: $State ($($files.Count) files)"
-    $envT = Get-IsolationEnv -StudioHome (Join-Path $script:Work "h\p-$State")
-    foreach ($f in $files) {
-        $rel = $f.FullName.Substring($sd.Length + 1) -replace '\\', '/'
+    $jobs = @()
+    foreach ($f in @(Get-PytestFiles $sd $Filter)) {
         $label = "pytest_${State}_$($f.BaseName)"
         $xml = Join-Path $script:RunDir "$label.xml"
-        $r = Invoke-Bounded -Label $label -CommandLine "$(Get-QuotedExe $script:PytestPython) -m pytest -q -p no:cacheprovider --junitxml=`"$xml`" `"$($f.FullName)`"" `
-            -WorkDir $sd -Timeout ($TestTimeoutSec * 3) -Env $envT
-        $failed = @()
-        if (Test-Path -LiteralPath $xml) {
-            try {
-                [xml]$doc = Get-Content -LiteralPath $xml -Raw
-                foreach ($tc in @($doc.SelectNodes('//testcase'))) {
-                    if ($tc.SelectSingleNode('failure') -or $tc.SelectSingleNode('error')) { $failed += "$($tc.GetAttribute('classname'))::$($tc.GetAttribute('name'))" }
-                }
-            } catch { }
+        $jobs += [pscustomobject]@{
+            Label = $label; Group = "pytest|$($f.Name)"; WorkDir = $sd; Timeout = ($TestTimeoutSec * 3)
+            CommandLine = "$(Get-QuotedExe $script:PytestPython) -m pytest -q -p no:cacheprovider --junitxml=`"$xml`" `"$($f.FullName)`""
+            Env = (Get-IsolationEnv -StudioHome (Join-Path $script:Work "h\t\$label"))
+            State = $State; Shell = 'python'; Kind = 'pytest'; File = ($f.FullName.Substring($sd.Length + 1) -replace '\\', '/'); Xml = $xml
         }
-        $passed = ($r.ExitCode -eq 0) -and (-not $r.TimedOut)
-        $row = [ordered]@{ state = $State; shell = 'python'; kind = 'pytest'; file = $rel; present = $true; exit = $r.ExitCode
-            passed = $passed; failed_checks = $failed; timed_out = $r.TimedOut; elapsed_s = $r.ElapsedSec; transcript = $null; mode = $script:Mode }
-        if (-not $passed) { $row.transcript = Save-Transcript "tests/$label" $r.Text }
+    }
+    return $jobs
+}
+
+function Get-TestVerdict {
+    param($Job, $Run)
+    if ($Job.Kind -eq 'ps1') {
+        $failed = @(Get-FailedChecks $Run.Text)
+        return [pscustomobject]@{ Failed = $failed; Passed = (($Run.ExitCode -eq 0) -and ($failed.Count -eq 0) -and (-not $Run.TimedOut)) }
+    }
+    $failed = @()
+    if ($Job.Xml -and (Test-Path -LiteralPath $Job.Xml)) {
+        try {
+            [xml]$doc = Get-Content -LiteralPath $Job.Xml -Raw
+            foreach ($tc in @($doc.SelectNodes('//testcase'))) {
+                if ($tc.SelectSingleNode('failure') -or $tc.SelectSingleNode('error')) { $failed += "$($tc.GetAttribute('classname'))::$($tc.GetAttribute('name'))" }
+            }
+        } catch { }
+    }
+    return [pscustomobject]@{ Failed = $failed; Passed = (($Run.ExitCode -eq 0) -and (-not $Run.TimedOut)) }
+}
+
+# Every test file of every state and shell through one pool, then each failure once more on its
+# own: a pass there is recorded as flaky with the first transcript kept, so neither load from the
+# pool nor a real driver dropping one answer reads as a regression, and a real failure fails twice.
+function Invoke-TestPhase {
+    param([string[]]$TestStates, [string[]]$Shells, [string]$Filter = '')
+    $jobs = @()
+    foreach ($s in $TestStates) { foreach ($sh in $Shells) { $jobs += @(Get-Ps1TestJobs $s $sh $Filter) } }
+    if (Initialize-PytestVenv) { foreach ($s in $TestStates) { $jobs += @(Get-PytestJobs $s $Filter) } }
+    Write-Diag "repo tests: $($jobs.Count) files across $($TestStates -join ', ') ($($Shells -join ', ') and pytest), $script:Parallel at a time"
+    $t0 = Get-Date
+    $runs = Invoke-BoundedPool -Jobs $jobs -Parallel $script:Parallel
+    $retried = 0
+    foreach ($j in $jobs) {
+        $r = $runs[$j.Label]
+        $v = Get-TestVerdict $j $r
+        $failed = $v.Failed; $passed = $v.Passed
+        $flaky = $false; $firstText = $null
+        if (-not $passed -and -not $r.TimedOut) {
+            $retried++
+            $firstText = $r.Text; $firstFailed = $failed
+            if ($j.Xml) { Remove-Item -LiteralPath $j.Xml -Force -ErrorAction SilentlyContinue }
+            $r = Invoke-Bounded -Label "$($j.Label)_retry" -CommandLine $j.CommandLine -WorkDir $j.WorkDir -Timeout $j.Timeout -Env $j.Env
+            $v = Get-TestVerdict $j $r
+            $failed = $v.Failed; $passed = $v.Passed
+            if ($passed) { $flaky = $true; $failed = @($firstFailed) }
+        }
+        $row = [ordered]@{ state = $j.State; shell = $j.Shell; kind = $j.Kind; file = $j.File; present = $true; exit = $r.ExitCode
+            passed = $passed; failed_checks = $failed; timed_out = $r.TimedOut; elapsed_s = $r.ElapsedSec; transcript = $null; mode = $script:Mode; flaky = $flaky }
+        if (-not $passed) { $row.transcript = Save-Transcript "tests/$($j.Label)" $r.Text }
+        elseif ($flaky) { $row.transcript = Save-Transcript "tests/$($j.Label)_flaky_first" $firstText }
         $script:Results.tests += $row
     }
-    [void](Remove-TreeNoFollow -Path (Join-Path $script:Work "h\p-$State"))
+    $script:Results.timing['tests_s'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
+    Write-Diag ("repo tests done in {0:N0}s ({1} re-run on their own)" -f $script:Results.timing['tests_s'], $retried)
+    [void](Remove-TreeNoFollow -Path (Join-Path $script:Work 'h\t'))
 }
 
 # Rows for test files that exist in some states and not others, so a head-only test is visible.
@@ -1522,6 +1671,8 @@ function New-SummaryMarkdown {
     $L.Add('')
     $L.Add("tool $($R.tool_version), $((Get-Date).ToString('yyyy-MM-dd HH:mm'))")
     $L.Add('')
+    $L.Add("Timing (s): $(@($R.timing.Keys | ForEach-Object { "$_ $($R.timing[$_])" }) -join ', ')")
+    $L.Add('')
     $m = $R.machine
     $L.Add("Machine: $($m.os_caption) build $($m.os_build), OS arch $($m.os_arch), PowerShell process arch $($m.ps_arch), elevated $($m.elevated)")
     $L.Add("GPUs: $(@($m.gpus) -join '; ')")
@@ -1542,6 +1693,20 @@ function New-SummaryMarkdown {
                 else { $cmp = "$($base[0].family) -> $($d.family)" }
             }
             $L.Add("| $($d.state) | $($d.shell) | $($d.reached) | $(Format-Cell $d.gpu_line) | $(Format-Cell $d.family) | $cmp | $($d.path_warn) | $($d.elapsed_s) |")
+        }
+    }
+    if ($R.llama.Count -gt 0) {
+        $L.Add(''); $L.Add('## llama.cpp GGUF bundle (the installer''s resolver, nothing downloaded)'); $L.Add('')
+        $L.Add('| state | resolver args | backend | install kind | asset | vs base |'); $L.Add('|---|---|---|---|---|---|')
+        foreach ($x in $R.llama) {
+            $b = @($R.llama | Where-Object { $_.state -eq 'base' } | Select-Object -First 1)
+            $cmp = '-'
+            if ($x.state -ne 'base' -and $b.Count -gt 0) {
+                if (-not $x.backend -or -not $b[0].backend) { $cmp = 'VOID' }
+                elseif ($x.install_kind -eq $b[0].install_kind) { $cmp = 'SAME' } else { $cmp = "$($b[0].install_kind) -> $($x.install_kind)" }
+            }
+            $L.Add("| $($x.state) | $(Format-Cell $x.args) | $(Format-Cell $x.backend) | $(Format-Cell $x.install_kind) | $(Format-Cell $x.asset) | $cmp |")
+            if ($x.error) { $L.Add("|  | error: $(Format-Cell $x.error) |  |  |  |  |") }
         }
     }
     if ($R.probe.Count -gt 0) {
@@ -1681,14 +1846,20 @@ $script:LogPath = Join-Path $script:Out 'diag.log'
 $script:JournalPath = Join-Path $script:Work 'journal.xml'
 $script:StateDirs = @{}
 $script:CurrentChild = $null
+$script:PoolChildren = @{}
+$script:LlamaCache = @{}
 $script:PytestPython = $null
 $script:PwshExe = $null
 $pw = @(Get-Command pwsh.exe -All -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
 if ($pw.Count -gt 0) { $script:PwshExe = $pw[0].Source }
 $script:Results = [ordered]@{
     schema = 1; tool_version = $ToolVersion; mode = $script:Mode; machine = $null; states = [ordered]@{}
-    decisions = @(); tests = @(); probe = @(); presence = @(); smoke = @(); full = @(); restore = $null; errors = @()
+    decisions = @(); llama = @(); tests = @(); probe = @(); presence = @(); smoke = @(); full = @(); restore = $null; errors = @()
+    timing = [ordered]@{}
 }
+$script:Parallel = $Parallel
+if ($script:Parallel -lt 1) { $script:Parallel = Get-DefaultParallel }
+$script:RunStart = Get-Date
 $exitCode = 0
 
 try {
@@ -1725,13 +1896,21 @@ try {
     if ($sel -notcontains 'base') { $sel = @('base') + $sel }
     foreach ($s in $sel) { if ($allStates -notcontains $s) { throw "unknown state $s (use $($allStates -join ', '))" } }
 
+    $t0 = Get-Date
     Initialize-Tools
-    foreach ($s in $sel) { Initialize-State $s }
+    $script:Results.timing['tools_s'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
+    Initialize-States $sel
     $ready = @($sel | Where-Object { $script:StateDirs.ContainsKey($_) })
 
     if ($script:Mode -eq 'quick' -or $script:Mode -eq 'elevated') {
+        # One at a time on purpose: each run's seconds are part of what is measured.
+        $t0 = Get-Date
         foreach ($s in $ready) { foreach ($sh in $shells) { Invoke-DecisionRun $s $sh } }
+        $script:Results.timing['decisions_s'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
+        $t0 = Get-Date
         foreach ($s in $ready) { foreach ($sh in $shells) { Invoke-ProbeCheck $s $sh; Invoke-SmokeCheck $s $sh } }
+        foreach ($s in $ready) { Invoke-LlamaResolve $s }
+        $script:Results.timing['probes_s'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
         $rep = Invoke-Restore 'after decisions'
         if (-not $rep.ok -or $rep.changes.Count -gt 0) { $script:Results.errors += "the decision runs changed user state: $(@($rep.changes + $rep.failures) -join '; ')" }
         if (-not $SkipTests) {
@@ -1740,8 +1919,7 @@ try {
             $ts = $TestStates
             if ($ts.Count -eq 0) { $ts = @('base', 'combined') }
             $ts = @($ts | Where-Object { $script:StateDirs.ContainsKey($_) })
-            foreach ($s in $ts) { foreach ($sh in $shells) { Invoke-Ps1Tests $s $sh $filter } }
-            foreach ($s in $ts) { Invoke-Pytests $s $filter }
+            Invoke-TestPhase -TestStates $ts -Shells $shells -Filter $filter
             Add-AbsentTestRows
         }
     }
@@ -1773,6 +1951,7 @@ try {
     $exitCode = 1
 } finally {
     if ($script:CurrentChild) { Stop-Tree $script:CurrentChild }
+    foreach ($cpid in @($script:PoolChildren.Keys)) { Stop-Tree $cpid }
     if ($script:JournalPath -and (Test-Path -LiteralPath $script:JournalPath)) {
         try {
             $rep = Invoke-Restore 'final'
@@ -1783,6 +1962,8 @@ try {
         try { Write-JsonFile -Path (Join-Path $script:Out 'journal.json') -Object (Read-Journal) } catch { }
     }
     try {
+        $script:Results.timing['total_s'] = [math]::Round(((Get-Date) - $script:RunStart).TotalSeconds, 1)
+        $script:Results.timing['parallel'] = $script:Parallel
         Write-JsonFile -Path (Join-Path $script:Out 'results.json') -Object $script:Results
         Write-TextFile -Path (Join-Path $script:Out 'summary.md') -Text (New-SummaryMarkdown)
         $script:Redactions = Get-Redactions

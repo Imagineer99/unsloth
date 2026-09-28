@@ -11,14 +11,15 @@ concurrency:
 
 jobs:
   quick:
+    name: quick / ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: windows-latest
-            args: ""
-          - os: windows-11-arm
-            args: "-SkipTests"
+          - { name: x64-auto, os: windows-latest, args: "" }
+          # Twice the runner's cores: a test that cannot share the machine shows up here first.
+          - { name: x64-parallel4, os: windows-latest, args: "-Parallel 4" }
+          - { name: arm64-auto, os: windows-11-arm, args: "" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
     steps:
@@ -45,7 +46,7 @@ jobs:
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         if: always()
         with:
-          name: diag-quick-${{ matrix.os }}
+          name: diag-quick-${{ matrix.name }}
           path: out
 
   full:

@@ -4,44 +4,44 @@
   "states": {
     "base": {
       "repo": "unslothai/unsloth",
-      "sha": "c807acbf44da1d4a0ecf465a579c31ab0c6a5f69",
-      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/c807acbf44da1d4a0ecf465a579c31ab0c6a5f69",
+      "sha": "0d2905f182a5aafa15b6393811ca39d8862b9f9f",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/0d2905f182a5aafa15b6393811ca39d8862b9f9f",
       "files": {
-        "install.ps1": "ccefc629f7d80e9fe126058962aff73e7dee0308a2e18e0ce154ce8945a0a2e1",
-        "studio/setup.ps1": "2818d55498e55de253b8c6cf7bf53ac08483104b86f5bd068bdd90a86b06980d",
+        "install.ps1": "ec1ca2413b495cba4078f3cd75a18452fbb62b89433bca785cbd61f3bdfb8b83",
+        "studio/setup.ps1": "d621434c1689d144de1bbf6eac26e4f6422660d972495ee895aa385e2379d376",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
     },
     "stack": {
       "repo": "unslothai/unsloth",
-      "sha": "8294a9b882bf6c85759780204a2d718454cd0f3f",
-      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/8294a9b882bf6c85759780204a2d718454cd0f3f",
+      "sha": "c6564c89a76f44525e34c95f1bc8a172c4e6da07",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/c6564c89a76f44525e34c95f1bc8a172c4e6da07",
       "files": {
-        "install.ps1": "55b5793d326d7194712f672bab064c9c1f70aa9f55f573f817133953e7628d58",
-        "studio/setup.ps1": "3217c24b1861d07ede6216653e1db340641d77d7e1085952d572ad1bc582f8d8",
+        "install.ps1": "0ac28f56c53fc0e47169fa1adf11bd09d8c3a518c82d95598412837a482e54fc",
+        "studio/setup.ps1": "557fa33a0f8f03ac56360db8fa22636f542cfa18bb4c582c3946798de2114734",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
     },
     "presence": {
       "repo": "danielhanchen/unsloth-staging-2",
-      "sha": "eebda7d997cc7a26562ee1084644974e50ae23d2",
-      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/eebda7d997cc7a26562ee1084644974e50ae23d2",
+      "sha": "6259665f234c234e9441ecc7a29814bee7e9819a",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/6259665f234c234e9441ecc7a29814bee7e9819a",
       "files": {
-        "install.ps1": "331340bda9ce8f4909e6a5818d55fdca5527747d2fb192f4adc140bd38de1a78",
-        "studio/setup.ps1": "0747e4ad5495fd90021696dcaa9dbf78cfffa21138c950b48d171bd7b00f24f6",
+        "install.ps1": "674719f5ac59530723a21a23f937476cca9b37f741a3e9490aced2750050f660",
+        "studio/setup.ps1": "e03973941c4162d6b02ca16bba480d3154b66f202bb94cdf86a00196ae685241",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }
     },
     "combined": {
       "repo": "danielhanchen/unsloth-staging-2",
-      "sha": "3468c0037ec27958bc768252aa7733e183b88a19",
-      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/3468c0037ec27958bc768252aa7733e183b88a19",
+      "sha": "1926be2315fea540b12a287bc092fa6f1fd45479",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/1926be2315fea540b12a287bc092fa6f1fd45479",
       "files": {
-        "install.ps1": "68711941b1318bf9cba4ad6584c50b3cffa1b82dd02afef0dab524ffaf4cd41a",
-        "studio/setup.ps1": "27bc378fd0ffe38f7e821b52472df3280e5ff702231957260e6ea58f13f4322f",
+        "install.ps1": "cdf5a02e7e5d91a55daf39a771ad0d9581280a1df1baf153622fa52a09498efc",
+        "studio/setup.ps1": "73e42e29926b72603bc69f2d097aa7ba5fe8c6b76659133b55371bc26c27f3d1",
         "scripts/uninstall.ps1": "b353c3070e7ad9a2cd181a4b2de0e4347b8800ba4c8185874ef2697eaf26bd5b",
         "pyproject.toml": "9f1b71f3bca6f0ca4b4c82959f85942e2c9e0bd007749512ccebc2f87a7bd8b5"
       }

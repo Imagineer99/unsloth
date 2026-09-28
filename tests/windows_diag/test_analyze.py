@@ -277,3 +277,31 @@ def test_presence_is_judged_against_wmi_adapters_not_smi():
     d["machine"]["nvidia_ven_adapters"] = 1
     d["presence"][-1]["nvidia_present"] = False
     assert "REGRESSION" in verdicts(d, "presence")
+
+
+def llama_rows(base_kind, head_kind):
+    return [{"state": "base", "install_kind": base_kind, "backend": "x"},
+            {"state": "combined", "install_kind": head_kind, "backend": "x"}]
+
+
+@pytest.mark.parametrize("base_kind, head_kind, want", [
+    ("windows-vulkan", "windows-vulkan", "SAME"),
+    ("windows-vulkan", "windows-cpu", "REGRESSION"),
+    ("windows-cuda", "windows-vulkan", "REGRESSION"),
+    ("windows-cpu", "windows-vulkan", "EXPECTED_WIDEN"),
+    ("windows-vulkan", "windows-cuda", "EXPECTED_WIDEN"),
+    ("windows-rocm", "windows-hip", "REGRESSION"),
+])
+def test_llama_bundle_verdicts(base_kind, head_kind, want):
+    assert verdicts(doc(llama = llama_rows(base_kind, head_kind)), "llama") == [want]
+
+
+def test_llama_without_an_answer_is_void():
+    rows = [{"state": "base", "install_kind": None, "error": "offline"}, {"state": "combined", "install_kind": "windows-vulkan"}]
+    assert verdicts(doc(llama = rows), "llama") == ["VOID"]
+
+
+def test_render_prints_timing_and_the_base_bundle():
+    d = doc(llama = llama_rows("windows-vulkan", "windows-vulkan"), timing = {"tests_s": 300.0, "parallel": 4})
+    md = analyze.render(d, *analyze.analyze(d))
+    assert "llama.cpp bundle at base: windows-vulkan" in md and "tests_s 300.0" in md

@@ -77,6 +77,39 @@ def judge_decisions(d, cells):
                               "head printed the path-exactness warning (expected only when elevated or with no trusted Python)"))
 
 
+def llama_rank(kind) -> int:
+    """0 = no answer, 1 = CPU bundle, 2 = Vulkan, 3 = a vendor bundle (CUDA, ROCm, HIP)."""
+    k = str(kind or "").lower()
+    if not k:
+        return 0
+    if "vulkan" in k:
+        return 2
+    if any(x in k for x in ("cuda", "rocm", "hip")):
+        return 3
+    return 1
+
+
+def judge_llama(d, cells):
+    rows = index(d.get("llama"), "state")
+    base = rows.get(("base",))
+    for (state,), head in rows.items():
+        if state not in HEADS:
+            continue
+        if not base or not base.get("install_kind") or not head.get("install_kind"):
+            who = "base" if not base or not base.get("install_kind") else "head"
+            cells.append(cell("llama", state, "-", "VOID", f"{who} resolver gave no answer: {(base if who == 'base' else head or {}).get('error')}"))
+            continue
+        bk, hk = base["install_kind"], head["install_kind"]
+        detail = f"base={bk} head={hk}"
+        if bk == hk:
+            verdict = "SAME"
+        elif llama_rank(hk) > llama_rank(bk):
+            verdict, detail = "EXPECTED_WIDEN", detail + " (review: head picked a faster bundle than base)"
+        else:
+            verdict = "REGRESSION"
+        cells.append(cell("llama", state, "-", verdict, detail))
+
+
 def judge_tests(d, cells):
     rows = index(d.get("tests"), "state", "shell", "kind", "file")
 
@@ -242,7 +275,7 @@ def not_proven(d, cells) -> list[str]:
 
 def analyze(d: dict) -> tuple[list[dict], list[str]]:
     cells: list[dict] = []
-    for f in (judge_decisions, judge_tests, judge_probe, judge_presence, judge_smoke, judge_full):
+    for f in (judge_decisions, judge_llama, judge_tests, judge_probe, judge_presence, judge_smoke, judge_full):
         f(d, cells)
     return cells, harness_findings(d)
 
@@ -256,6 +289,8 @@ def render(d, cells, harness) -> str:
         f"- GPUs: {', '.join(m.get('gpus') or []) or 'none'}; nvidia-smi={m.get('nvidia_smi')} cuda={m.get('smi_cuda')} cc={m.get('smi_cc')}",
         "- States: " + ", ".join(f"{k}={str((v or {}).get('sha') or '')[:9]}" + ("" if (v or {}).get("verified", True) else " (UNVERIFIED)")
                                    for k, v in (d.get("states") or {}).items()),
+        f"- llama.cpp bundle at base: {next((r.get('install_kind') for r in d.get('llama') or [] if r.get('state') == 'base'), None)}",
+        "- Timing (s): " + (", ".join(f"{k} {v}" for k, v in (d.get("timing") or {}).items()) or "not recorded"),
         "",
         "## Harness",
         "",
@@ -267,7 +302,7 @@ def render(d, cells, harness) -> str:
     for c in cells:
         counts[c["verdict"]] = counts.get(c["verdict"], 0) + 1
     lines += ["", "## Totals", "", ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())) or "no cells"]
-    for area in ("decisions", "tests", "probe", "presence", "smoke", "full"):
+    for area in ("decisions", "llama", "tests", "probe", "presence", "smoke", "full"):
         rows = [c for c in cells if c["area"] == area]
         if not rows:
             continue
