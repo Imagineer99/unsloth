@@ -808,6 +808,13 @@ function Get-Inventory {
         }
     } catch { $inv.gpu_error = $_.Exception.Message }
     $inv.gpus = $gpus
+    $cpu = [ordered]@{ logical = [Environment]::ProcessorCount; name = $null; cores = $null; ram_gb = $null }
+    try {
+        $p = @(Get-CimInstance Win32_Processor -OperationTimeoutSec 30)
+        if ($p.Count -gt 0) { $cpu.name = ([string]$p[0].Name).Trim(); $cpu.cores = ($p | Measure-Object -Property NumberOfCores -Sum).Sum }
+        if ($os) { $cpu.ram_gb = [math]::Round([double]$os.TotalVisibleMemorySize / 1MB, 1) }
+    } catch { }
+    $inv.cpu = $cpu
 
     $smi = [ordered]@{ path = (Find-NvidiaSmi); list = $null; query = $null; banner_cuda = $null; cc = @(); driver = $null; names = @() }
     if ($smi.path) {
@@ -1342,9 +1349,11 @@ function Get-TestVerdict {
     return [pscustomobject]@{ Failed = $failed; Passed = (($Run.ExitCode -eq 0) -and (-not $Run.TimedOut)) }
 }
 
-# Every test file of every state and shell through one pool, then each failure once more on its
-# own: a pass there is recorded as flaky with the first transcript kept, so neither load from the
-# pool nor a real driver dropping one answer reads as a regression, and a real failure fails twice.
+# Every test file of every state and shell through one pool, then each failure once more with
+# less load: a pass there is recorded as flaky with the first transcript kept, so neither load from
+# the pool nor a real driver dropping one answer reads as a regression, and a real failure fails
+# twice. A file that fails the same checks in every state it runs in is not re-run: a second try
+# cannot turn that into a base-versus-head difference, and those re-runs were most of the phase.
 function Invoke-TestPhase {
     param([string[]]$TestStates, [string[]]$Shells, [string]$Filter = '')
     $jobs = @()
@@ -1353,17 +1362,44 @@ function Invoke-TestPhase {
     Write-Diag "repo tests: $($jobs.Count) files across $($TestStates -join ', ') ($($Shells -join ', ') and pytest), $script:Parallel at a time"
     $t0 = Get-Date
     $runs = Invoke-BoundedPool -Jobs $jobs -Parallel $script:Parallel
-    $retried = 0
+    $first = @{}
+    $byFile = @{}
+    foreach ($j in $jobs) {
+        $v = Get-TestVerdict $j $runs[$j.Label]
+        $first[$j.Label] = $v
+        $key = "$($j.Kind)|$($j.Shell)|$($j.File)"
+        if (-not $byFile.ContainsKey($key)) { $byFile[$key] = @() }
+        $byFile[$key] += $j.Label
+    }
+    $retryJobs = @()
     foreach ($j in $jobs) {
         $r = $runs[$j.Label]
-        $v = Get-TestVerdict $j $r
+        if ($first[$j.Label].Passed -or $r.TimedOut) { continue }
+        $peers = @($byFile["$($j.Kind)|$($j.Shell)|$($j.File)"])
+        $sig = (@($first[$j.Label].Failed) | Sort-Object) -join '|'
+        $same = $peers.Count -ge 2
+        foreach ($p in $peers) {
+            if ($first[$p].Passed -or $runs[$p].TimedOut -or ((@($first[$p].Failed) | Sort-Object) -join '|') -ne $sig) { $same = $false; break }
+        }
+        if ($same) { continue }
+        if ($j.Xml) { Remove-Item -LiteralPath $j.Xml -Force -ErrorAction SilentlyContinue }
+        $rj = [pscustomobject]@{}
+        foreach ($prop in $j.PSObject.Properties) { $rj | Add-Member -NotePropertyName $prop.Name -NotePropertyValue $prop.Value }
+        $rj.Label = "$($j.Label)_retry"
+        $retryJobs += $rj
+    }
+    $retryRuns = @{}
+    if ($retryJobs.Count -gt 0) {
+        $retryRuns = Invoke-BoundedPool -Jobs $retryJobs -Parallel ([math]::Max(1, [math]::Floor($script:Parallel / 2)))
+    }
+    foreach ($j in $jobs) {
+        $r = $runs[$j.Label]
+        $v = $first[$j.Label]
         $failed = $v.Failed; $passed = $v.Passed
         $flaky = $false; $firstText = $null; $avBlock = $r.AvBlock
-        if (-not $passed -and -not $r.TimedOut) {
-            $retried++
+        if ($retryRuns.ContainsKey("$($j.Label)_retry")) {
             $firstText = $r.Text; $firstFailed = $failed
-            if ($j.Xml) { Remove-Item -LiteralPath $j.Xml -Force -ErrorAction SilentlyContinue }
-            $r = Invoke-Bounded -Label "$($j.Label)_retry" -CommandLine $j.CommandLine -WorkDir $j.WorkDir -Timeout $j.Timeout -Env $j.Env
+            $r = $retryRuns["$($j.Label)_retry"]
             $v = Get-TestVerdict $j $r
             $failed = $v.Failed; $passed = $v.Passed
             if ($passed) { $flaky = $true; $failed = @($firstFailed) }
@@ -1377,7 +1413,7 @@ function Invoke-TestPhase {
         $script:Results.tests += $row
     }
     $script:Results.timing['tests_s'] = [math]::Round(((Get-Date) - $t0).TotalSeconds, 1)
-    Write-Diag ("repo tests done in {0:N0}s ({1} re-run on their own)" -f $script:Results.timing['tests_s'], $retried)
+    Write-Diag ("repo tests done in {0:N0}s ({1} re-run, {2} failing alike in every state kept as is)" -f $script:Results.timing['tests_s'], $retryJobs.Count, (@($jobs | Where-Object { -not $first[$_.Label].Passed -and -not $runs[$_.Label].TimedOut }).Count - $retryJobs.Count))
     [void](Remove-TreeNoFollow -Path (Join-Path $script:Work 'h\t'))
 }
 
@@ -1982,6 +2018,7 @@ try {
         os_caption = $inv.os.caption; os_build = "$($inv.os.build).$($inv.os.ubr)"; os_arch = $inv.os.host_arch; ps_arch = $inv.os.ps_process_arch
         gpus = @($inv.gpus | ForEach-Object { $_.name }); nvidia_smi = [bool]($inv.nvidia_smi.path -and $inv.nvidia_smi.cc.Count -gt 0)
         smi_cuda = $inv.nvidia_smi.banner_cuda; smi_cc = @($inv.nvidia_smi.cc); elevated = $inv.elevated
+        cpu = "$($inv.cpu.name) ($($inv.cpu.cores) cores, $($inv.cpu.logical) threads, $($inv.cpu.ram_gb) GB)"
         nvidia_ven_adapters = @($inv.gpus | Where-Object { $_.nvidia_ven -and "$($_.config_error)" -eq '0' }).Count
         # Set only by the staging dry run that plants stand-in NVIDIA binaries: what they report.
         spoof = $env:UNSLOTH_DIAG_SPOOF

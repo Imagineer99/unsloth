@@ -349,6 +349,7 @@ def render(d, cells, harness) -> str:
         f"- Antivirus: {', '.join((d.get('av') or {}).get('products') or []) or 'not recorded'}; "
         f"{len((d.get('av') or {}).get('blocks') or [])} blocked children, {(d.get('av') or {}).get('events', 0)} antivirus log entries",
         f"- llama.cpp bundle at base: {next((r.get('install_kind') for r in d.get('llama') or [] if r.get('state') == 'base'), None)}",
+        f"- CPU: {m.get('cpu') or 'not recorded'}",
         "- Timing (s): " + (", ".join(f"{k} {v}" for k, v in (d.get("timing") or {}).items()) or "not recorded"),
         "",
         "## Harness",
