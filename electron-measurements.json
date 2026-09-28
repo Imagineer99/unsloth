@@ -1,0 +1,329 @@
+{
+  "before_ref": "9f4bf6f2c38c7cf8a2e68d409e46a47db0681e5a",
+  "comparison": "Incremental change from the previous PR head, not main vs complete PR",
+  "expect": "Windows captions use 46x36 targets and equal 10-DIP symbol canvases instead of mixed Lucide canvases; navigation has 30px targets and 18px icons at the shared y=18 centerline.",
+  "scene": "Real WindowTitlebar React component, Chromium, mocked Tauri commands, independent browser contexts",
+  "device_scale_factor": 1.75,
+  "sides": {
+    "before": {
+      "height": 42,
+      "buttons": [
+        {
+          "label": "Collapse sidebar",
+          "rect": {
+            "x": 20,
+            "y": 4,
+            "width": 34,
+            "height": 34,
+            "top": 4,
+            "right": 54,
+            "bottom": 38,
+            "left": 20
+          },
+          "svg": {
+            "x": 28,
+            "y": 12,
+            "width": 18,
+            "height": 18,
+            "top": 12,
+            "right": 46,
+            "bottom": 30,
+            "left": 28
+          }
+        },
+        {
+          "label": "Go back",
+          "rect": {
+            "x": 58,
+            "y": 4,
+            "width": 34,
+            "height": 34,
+            "top": 4,
+            "right": 92,
+            "bottom": 38,
+            "left": 58
+          },
+          "svg": {
+            "x": 66,
+            "y": 12,
+            "width": 18,
+            "height": 18,
+            "top": 12,
+            "right": 84,
+            "bottom": 30,
+            "left": 66
+          }
+        },
+        {
+          "label": "Go forward",
+          "rect": {
+            "x": 96,
+            "y": 4,
+            "width": 34,
+            "height": 34,
+            "top": 4,
+            "right": 130,
+            "bottom": 38,
+            "left": 96
+          },
+          "svg": {
+            "x": 104,
+            "y": 12,
+            "width": 18,
+            "height": 18,
+            "top": 12,
+            "right": 122,
+            "bottom": 30,
+            "left": 104
+          }
+        },
+        {
+          "label": "Minimize window",
+          "rect": {
+            "x": 1238,
+            "y": 4,
+            "width": 34,
+            "height": 34,
+            "top": 4,
+            "right": 1272,
+            "bottom": 38,
+            "left": 1238
+          },
+          "svg": {
+            "x": 1247,
+            "y": 13,
+            "width": 16,
+            "height": 16,
+            "top": 13,
+            "right": 1263,
+            "bottom": 29,
+            "left": 1247
+          }
+        },
+        {
+          "label": "Maximize window",
+          "rect": {
+            "x": 1276,
+            "y": 4,
+            "width": 34,
+            "height": 34,
+            "top": 4,
+            "right": 1310,
+            "bottom": 38,
+            "left": 1276
+          },
+          "svg": {
+            "x": 1286,
+            "y": 14,
+            "width": 14,
+            "height": 14,
+            "top": 14,
+            "right": 1300,
+            "bottom": 28,
+            "left": 1286
+          }
+        },
+        {
+          "label": "Close window",
+          "rect": {
+            "x": 1314,
+            "y": 4,
+            "width": 34,
+            "height": 34,
+            "top": 4,
+            "right": 1348,
+            "bottom": 38,
+            "left": 1314
+          },
+          "svg": {
+            "x": 1321,
+            "y": 11,
+            "width": 20,
+            "height": 20,
+            "top": 11,
+            "right": 1341,
+            "bottom": 31,
+            "left": 1321
+          }
+        }
+      ],
+      "errors": []
+    },
+    "after": {
+      "height": 36,
+      "buttons": [
+        {
+          "label": "Collapse sidebar",
+          "rect": {
+            "x": 2,
+            "y": 3,
+            "width": 30,
+            "height": 30,
+            "top": 3,
+            "right": 32,
+            "bottom": 33,
+            "left": 2
+          },
+          "svg": {
+            "x": 8,
+            "y": 9,
+            "width": 18,
+            "height": 18,
+            "top": 9,
+            "right": 26,
+            "bottom": 27,
+            "left": 8
+          }
+        },
+        {
+          "label": "Go back",
+          "rect": {
+            "x": 36,
+            "y": 3,
+            "width": 30,
+            "height": 30,
+            "top": 3,
+            "right": 66,
+            "bottom": 33,
+            "left": 36
+          },
+          "svg": {
+            "x": 42,
+            "y": 9,
+            "width": 18,
+            "height": 18,
+            "top": 9,
+            "right": 60,
+            "bottom": 27,
+            "left": 42
+          }
+        },
+        {
+          "label": "Go forward",
+          "rect": {
+            "x": 70,
+            "y": 3,
+            "width": 30,
+            "height": 30,
+            "top": 3,
+            "right": 100,
+            "bottom": 33,
+            "left": 70
+          },
+          "svg": {
+            "x": 76,
+            "y": 9,
+            "width": 18,
+            "height": 18,
+            "top": 9,
+            "right": 94,
+            "bottom": 27,
+            "left": 76
+          }
+        },
+        {
+          "label": "Minimize window",
+          "rect": {
+            "x": 1222,
+            "y": 0,
+            "width": 46,
+            "height": 36,
+            "top": 0,
+            "right": 1268,
+            "bottom": 36,
+            "left": 1222
+          },
+          "svg": {
+            "x": 1239.859375,
+            "y": 12.859375,
+            "width": 10.28125,
+            "height": 10.28125,
+            "top": 12.859375,
+            "right": 1250.140625,
+            "bottom": 23.140625,
+            "left": 1239.859375
+          }
+        },
+        {
+          "label": "Maximize window",
+          "rect": {
+            "x": 1268,
+            "y": 0,
+            "width": 46,
+            "height": 36,
+            "top": 0,
+            "right": 1314,
+            "bottom": 36,
+            "left": 1268
+          },
+          "svg": {
+            "x": 1285.859375,
+            "y": 12.859375,
+            "width": 10.28125,
+            "height": 10.28125,
+            "top": 12.859375,
+            "right": 1296.140625,
+            "bottom": 23.140625,
+            "left": 1285.859375
+          }
+        },
+        {
+          "label": "Close window",
+          "rect": {
+            "x": 1314,
+            "y": 0,
+            "width": 46,
+            "height": 36,
+            "top": 0,
+            "right": 1360,
+            "bottom": 36,
+            "left": 1314
+          },
+          "svg": {
+            "x": 1331.859375,
+            "y": 12.859375,
+            "width": 10.28125,
+            "height": 10.28125,
+            "top": 12.859375,
+            "right": 1342.140625,
+            "bottom": 23.140625,
+            "left": 1331.859375
+          }
+        }
+      ],
+      "viewport_checks": [
+        {
+          "width": 640,
+          "hit_targets_clear": [
+            true,
+            true,
+            true
+          ]
+        },
+        {
+          "width": 900,
+          "hit_targets_clear": [
+            true,
+            true,
+            true
+          ]
+        },
+        {
+          "width": 1360,
+          "hit_targets_clear": [
+            true,
+            true,
+            true
+          ]
+        }
+      ],
+      "commands": [
+        "plugin:window|minimize",
+        "plugin:window|toggle_maximize",
+        "plugin:window|close"
+      ],
+      "errors": []
+    }
+  },
+  "after_ref": "3dafd0a533ffd5244fdd6528471ac9a68c53fd1b"
+}
