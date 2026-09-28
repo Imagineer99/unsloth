@@ -39,7 +39,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Off
 $ProgressPreference = 'SilentlyContinue'
-$ToolVersion = '1.1.0'
+$ToolVersion = '1.2.0'
 
 $EmbeddedManifest = @'
 {
@@ -101,6 +101,11 @@ $UvAssets = @{
     'arm64' = @{ Asset = 'uv-aarch64-pc-windows-msvc.zip'; Sha256 = '9BC7C18E616230FA2DC6FB24BC3AFDE18A95C2B5C9433DE747E9502C66041568' }
 }
 $DeadMirror = 'http://127.0.0.1:9'
+# What PowerShell and Windows print when an antivirus refuses a script (AMSI) or a file
+# (ERROR_VIRUS_INFECTED and friends). A matching line marks that child as blocked by antivirus.
+$AvBlockPattern = '(?i)ScriptContainedMaliciousContent|contains malicious content|blocked by your antivirus|file contains a virus|potentially unwanted software'
+# Event-log providers of the antivirus products this is likely to meet.
+$AvProviderPattern = '(?i)bitdefender|bdservicehost|bdagent|vsserv|endpoint ?security|avast|avg|kaspersky|eset|mcafee|norton|sophos|trend ?micro|malwarebytes|webroot|f-secure|windows defender|securitycenter'
 
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 $Utf8Bom = New-Object System.Text.UTF8Encoding($true)
@@ -171,6 +176,21 @@ function Remove-Ansi {
     param([string]$Text)
     if (-not $Text) { return '' }
     return [regex]::Replace($Text, $AnsiPattern, '')
+}
+
+function Get-AvBlock {
+    param([string]$Text)
+    foreach ($l in ((Remove-Ansi $Text) -split '\r?\n')) {
+        if ($l -match $AvBlockPattern) { $t = $l.Trim(); if ($t.Length -gt 300) { $t = $t.Substring(0, 300) }; return $t }
+    }
+    return $null
+}
+
+function Add-AvBlock {
+    param([string]$Label, [string]$Line, $ExitCode)
+    if (-not $Line -or -not $script:Results) { return }
+    $script:Results.av.blocks += [ordered]@{ label = $Label; line = $Line; exit = $ExitCode }
+    Write-Diag "  antivirus blocked $Label`: $Line" 'Yellow'
 }
 
 function Set-ProcessEnv {
@@ -287,9 +307,11 @@ function Invoke-Bounded {
     try { if ($proc.HasExited) { $exit = $proc.ExitCode } } catch { $exit = $null }
     $text = Read-SharedText $raw
     if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+    $av = Get-AvBlock $text
+    Add-AvBlock $Label $av $exit
     return [pscustomobject]@{
         Label = $Label; Text = $text; ExitCode = $exit; TimedOut = $timedOut; Stopped = $stopped
-        ElapsedSec = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); RawPath = $raw
+        ElapsedSec = [math]::Round(((Get-Date) - $start).TotalSeconds, 1); RawPath = $raw; AvBlock = $av
     }
 }
 
@@ -330,9 +352,11 @@ function Invoke-BoundedPool {
             try { if ($proc.HasExited) { $exit = $proc.ExitCode } } catch { $exit = $null }
             $text = Read-SharedText $r.Child.Raw
             if ($text.Length -gt 0 -and $text[0] -eq [char]0xFEFF) { $text = $text.Substring(1) }
+            $av = Get-AvBlock $text
+            Add-AvBlock $r.Job.Label $av $exit
             $results[$r.Job.Label] = [pscustomobject]@{
                 Label = $r.Job.Label; Text = $text; ExitCode = $exit; TimedOut = $timedOut; Stopped = $false
-                ElapsedSec = [math]::Round(((Get-Date) - $r.Start).TotalSeconds, 1); RawPath = $r.Child.Raw
+                ElapsedSec = [math]::Round(((Get-Date) - $r.Start).TotalSeconds, 1); RawPath = $r.Child.Raw; AvBlock = $av
             }
         }
     }
@@ -1012,6 +1036,7 @@ function Expand-StateZip {
     param([string]$Zip, [string]$Dest, [string[]]$SkipPrefixes = @())
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $destFull = [System.IO.Path]::GetFullPath($Dest).TrimEnd('\') + '\'
+    $written = New-Object System.Collections.Generic.List[string]
     $za = [System.IO.Compression.ZipFile]::OpenRead($Zip)
     try {
         foreach ($e in $za.Entries) {
@@ -1028,8 +1053,10 @@ function Expand-StateZip {
             if ($rel.EndsWith('/')) { [void][System.IO.Directory]::CreateDirectory($target); continue }
             [void][System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($target))
             [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $target, $true)
+            $written.Add($target)
         }
     } finally { $za.Dispose() }
+    return ,$written.ToArray()
 }
 
 function Initialize-State {
@@ -1050,7 +1077,7 @@ function Initialize-State {
         # Only the full pass installs from a state; the others never read the web UI sources.
         $skip = @()
         if ($script:Mode -ne 'full') { $skip = @('studio/frontend/', 'images/', 'docker/') }
-        Expand-StateZip -Zip $zip -Dest $dir -SkipPrefixes $skip
+        $script:StateFiles[$Name] = Expand-StateZip -Zip $zip -Dest $dir -SkipPrefixes $skip
         Remove-Item -LiteralPath $zip -Force
         foreach ($p in $m.files.PSObject.Properties) {
             $f = Join-Path $dir ($p.Name -replace '/', '\')
@@ -1166,7 +1193,7 @@ function Invoke-DecisionRun {
         state = $State; shell = $Shell; reached = $d.reached; gpu_line = $d.gpu_line; torch_url = $d.torch_url
         family = $d.family; path_warn = $d.path_warn; elapsed_s = $r.ElapsedSec; exit = $r.ExitCode
         timed_out = $r.TimedOut; transcript = (Save-Transcript "decision_${State}_$Shell" $r.Text); notes = $d.notes
-        mode = $script:Mode
+        mode = $script:Mode; av_block = $r.AvBlock
     }
     $script:Results.decisions += $row
     Write-Diag ("  gpu: {0} | torch: {1} | {2}s" -f $d.gpu_line, $d.family, $r.ElapsedSec)
@@ -1312,7 +1339,7 @@ function Invoke-TestPhase {
         $r = $runs[$j.Label]
         $v = Get-TestVerdict $j $r
         $failed = $v.Failed; $passed = $v.Passed
-        $flaky = $false; $firstText = $null
+        $flaky = $false; $firstText = $null; $avBlock = $r.AvBlock
         if (-not $passed -and -not $r.TimedOut) {
             $retried++
             $firstText = $r.Text; $firstFailed = $failed
@@ -1321,9 +1348,11 @@ function Invoke-TestPhase {
             $v = Get-TestVerdict $j $r
             $failed = $v.Failed; $passed = $v.Passed
             if ($passed) { $flaky = $true; $failed = @($firstFailed) }
+            if (-not $avBlock) { $avBlock = $r.AvBlock }
         }
         $row = [ordered]@{ state = $j.State; shell = $j.Shell; kind = $j.Kind; file = $j.File; present = $true; exit = $r.ExitCode
-            passed = $passed; failed_checks = $failed; timed_out = $r.TimedOut; elapsed_s = $r.ElapsedSec; transcript = $null; mode = $script:Mode; flaky = $flaky }
+            passed = $passed; failed_checks = $failed; timed_out = $r.TimedOut; elapsed_s = $r.ElapsedSec; transcript = $null; mode = $script:Mode; flaky = $flaky
+            av_block = $avBlock }
         if (-not $passed) { $row.transcript = Save-Transcript "tests/$($j.Label)" $r.Text }
         elseif ($flaky) { $row.transcript = Save-Transcript "tests/$($j.Label)_flaky_first" $firstText }
         $script:Results.tests += $row
@@ -1622,6 +1651,44 @@ print("DIAGJSON " + json.dumps(r))
     Write-Diag "  uninstall exit $($un.ExitCode), shortcuts removed: $($row.shortcuts_removed)"
 }
 
+# ---------------------------------------------------------------- antivirus evidence
+
+# Whatever an antivirus quarantined or rewrote while the run used a state: every extracted file is
+# looked for again and the pinned ones re-hashed, just before the work dir is packed.
+function Test-StatesIntact {
+    foreach ($n in @($script:StateFiles.Keys)) {
+        $files = @($script:StateFiles[$n])
+        $missing = @($files | Where-Object { -not [System.IO.File]::Exists($_) })
+        $changed = @()
+        $m = $script:Manifest.states.$n
+        foreach ($p in $m.files.PSObject.Properties) {
+            $f = Join-Path $script:StateDirs[$n] ($p.Name -replace '/', '\')
+            if ([System.IO.File]::Exists($f) -and (Get-FileSha $f) -ne [string]$p.Value) { $changed += $p.Name }
+        }
+        $rel = @($missing | Select-Object -First 25 | ForEach-Object { $_.Substring($script:StateDirs[$n].Length + 1) -replace '\\', '/' })
+        $script:Results.av.states[$n] = [ordered]@{ files = $files.Count; missing = $missing.Count; missing_sample = $rel; changed_pinned = $changed }
+        if ($missing.Count -gt 0 -or $changed.Count -gt 0) {
+            Write-Diag "  state $n lost $($missing.Count) file(s) and had $($changed.Count) pinned file(s) changed during the run (antivirus?)" 'Yellow'
+        }
+    }
+}
+
+# Antivirus entries the Application log and Defender's own log picked up during the run. Readable
+# as a standard user; a product that logs nowhere shows up only through the checks above.
+function Get-AvEvents {
+    $since = $script:RunStart
+    $ev = @()
+    try { $ev += @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $since } -ErrorAction Stop | Where-Object { $_.ProviderName -match $AvProviderPattern }) } catch { }
+    try { $ev += @(Get-WinEvent -FilterHashtable @{ LogName = 'Microsoft-Windows-Windows Defender/Operational'; StartTime = $since; Id = 1006, 1007, 1015, 1116, 1117, 1118, 1119, 1121, 1122, 1125, 1126 } -ErrorAction Stop) } catch { }
+    $rows = @()
+    foreach ($e in @($ev | Sort-Object TimeCreated | Select-Object -First 300)) {
+        $msg = "$($e.Message)" -replace '\s+', ' '
+        if ($msg.Length -gt 600) { $msg = $msg.Substring(0, 600) }
+        $rows += [ordered]@{ time = $e.TimeCreated.ToString('o'); provider = $e.ProviderName; id = $e.Id; level = $e.LevelDisplayName; message = $msg }
+    }
+    return $rows
+}
+
 # ---------------------------------------------------------------- summary and packaging
 
 function Get-Redactions {
@@ -1759,6 +1826,18 @@ function New-SummaryMarkdown {
             $L.Add("| $($f.state) | $(Format-Cell $f.install_exit) | $tv | $cu | $mm | $(Format-Cell $f.health_ok) | $(Format-Cell $f.update_exit) $(Format-Cell $f.update_tag) | $sc | $dg | $(Format-Cell $f.uninstall_exit) | $(Format-Cell $f.shortcuts_removed) |")
         }
     }
+    $L.Add(''); $L.Add('## Antivirus'); $L.Add('')
+    $L.Add("Products: $(@($R.av.products) -join '; ')")
+    $L.Add("Blocked children (AMSI / virus-infected errors): $(@($R.av.blocks).Count); log entries from antivirus providers during the run: $($R.av.events) ($(@($R.av.event_providers) -join ', '))")
+    if ($R.av.states.Count -gt 0) {
+        $L.Add(''); $L.Add('| state | blocked children | files missing after the run | pinned files changed |'); $L.Add('|---|---|---|---|')
+        foreach ($k in $R.av.states.Keys) {
+            $st = $R.av.states[$k]
+            $nb = @($R.av.blocks | Where-Object { "$($_.label)" -match "^[a-z0-9]+_$k(_|$)" }).Count
+            $L.Add("| $k | $nb | $($st.missing) | $(Format-Cell (@($st.changed_pinned) -join ', ')) |")
+        }
+    }
+    foreach ($b in @($R.av.blocks | Select-Object -First 20)) { $L.Add("- blocked: $($b.label): $($b.line)") }
     $L.Add(''); $L.Add('## Restore'); $L.Add('')
     if ($R.restore) {
         $L.Add("ok: $($R.restore.ok)")
@@ -1769,7 +1848,7 @@ function New-SummaryMarkdown {
     if ($R.errors.Count -gt 0) { $L.Add(''); $L.Add('## Errors'); $L.Add(''); foreach ($e in $R.errors) { $L.Add("- $e") } }
     $L.Add(''); $L.Add('## Not covered by this script'); $L.Add('')
     $L.Add('- #10408 App Control / Smart App Control prepare stage (changes machine policy)')
-    $L.Add('- antivirus behavioural checks (need a disposable VM)')
+    $L.Add('- the release-signed install.ps1: the states here are unsigned, and the 2026-09-24 Bitdefender heuristic fired on the signed file')
     $L.Add('- WSL and the signed Tauri desktop updater')
     return ($L -join "`r`n")
 }
@@ -1848,6 +1927,7 @@ $script:StateDirs = @{}
 $script:CurrentChild = $null
 $script:PoolChildren = @{}
 $script:LlamaCache = @{}
+$script:StateFiles = @{}
 $script:PytestPython = $null
 $script:PwshExe = $null
 $pw = @(Get-Command pwsh.exe -All -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
@@ -1856,6 +1936,7 @@ $script:Results = [ordered]@{
     schema = 1; tool_version = $ToolVersion; mode = $script:Mode; machine = $null; states = [ordered]@{}
     decisions = @(); llama = @(); tests = @(); probe = @(); presence = @(); smoke = @(); full = @(); restore = $null; errors = @()
     timing = [ordered]@{}
+    av = [ordered]@{ products = @(); blocks = @(); states = [ordered]@{}; events = 0; event_providers = @() }
 }
 $script:Parallel = $Parallel
 if ($script:Parallel -lt 1) { $script:Parallel = Get-DefaultParallel }
@@ -1875,6 +1956,7 @@ try {
     Write-Diag 'collecting the machine inventory (read-only)'
     $inv = Get-Inventory
     Write-JsonFile -Path (Join-Path $script:Out 'inventory.json') -Object $inv
+    $script:Results.av.products = @($inv.antivirus | ForEach-Object { $_.name })
     $script:Results.machine = [ordered]@{
         os_caption = $inv.os.caption; os_build = "$($inv.os.build).$($inv.os.ubr)"; os_arch = $inv.os.host_arch; ps_arch = $inv.os.ps_process_arch
         gpus = @($inv.gpus | ForEach-Object { $_.name }); nvidia_smi = [bool]($inv.nvidia_smi.path -and $inv.nvidia_smi.cc.Count -gt 0)
@@ -1962,6 +2044,13 @@ try {
         try { Write-JsonFile -Path (Join-Path $script:Out 'journal.json') -Object (Read-Journal) } catch { }
     }
     try {
+        try { Test-StatesIntact } catch { Add-DiagError "state integrity check failed: $($_.Exception.Message)" }
+        try {
+            $avEvents = @(Get-AvEvents)
+            Write-JsonFile -Path (Join-Path $script:Out 'av_events.json') -Object $avEvents
+            $script:Results.av.events = $avEvents.Count
+            $script:Results.av.event_providers = @($avEvents | ForEach-Object { $_.provider } | Sort-Object -Unique)
+        } catch { Add-DiagError "antivirus event read failed: $($_.Exception.Message)" }
         $script:Results.timing['total_s'] = [math]::Round(((Get-Date) - $script:RunStart).TotalSeconds, 1)
         $script:Results.timing['parallel'] = $script:Parallel
         Write-JsonFile -Path (Join-Path $script:Out 'results.json') -Object $script:Results

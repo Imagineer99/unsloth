@@ -305,3 +305,35 @@ def test_render_prints_timing_and_the_base_bundle():
     d = doc(llama = llama_rows("windows-vulkan", "windows-vulkan"), timing = {"tests_s": 300.0, "parallel": 4})
     md = analyze.render(d, *analyze.analyze(d))
     assert "llama.cpp bundle at base: windows-vulkan" in md and "tests_s 300.0" in md
+
+
+def av_doc(base_hits = (), head_hits = (), head_missing = 0):
+    blocks = [{"label": f"decision_base_{i}", "line": "blocked by your antivirus"} for i in base_hits]
+    blocks += [{"label": f"ps1_combined_pwsh_{i}", "line": "ScriptContainedMaliciousContent"} for i in head_hits]
+    states = {"base": {"missing": 0, "changed_pinned": []},
+              "combined": {"missing": head_missing, "missing_sample": ["studio/x.py"], "changed_pinned": []}}
+    return doc(av = {"products": ["Bitdefender Antivirus"], "blocks": blocks, "states": states, "events": 1})
+
+
+@pytest.mark.parametrize("base_hits, head_hits, head_missing, want", [
+    ((), (), 0, "SAME"),
+    ((), ("a",), 0, "REGRESSION"),
+    ((), (), 3, "REGRESSION"),
+    (("a",), (), 0, "IMPROVED"),
+    (("a",), ("b",), 0, "INFO"),
+])
+def test_av_area_compares_head_with_base(base_hits, head_hits, head_missing, want):
+    assert verdicts(av_doc(base_hits, head_hits, head_missing), "av") == [want]
+
+
+def test_av_blocked_rows_are_not_code_regressions():
+    d = av_doc((), ("a",))
+    d["tests"][1] = dict(d["tests"][1], passed = False, av_block = "ScriptContainedMaliciousContent")
+    d["decisions"][1] = dict(d["decisions"][1], reached = False, av_block = "blocked by your antivirus")
+    assert verdicts(d, "tests") == ["AV_BLOCKED"]
+    assert verdicts(d, "decisions") == ["AV_BLOCKED"]
+    assert verdicts(d, "av") == ["REGRESSION"]
+
+
+def test_no_av_section_means_no_av_cells():
+    assert verdicts(doc(), "av") == []

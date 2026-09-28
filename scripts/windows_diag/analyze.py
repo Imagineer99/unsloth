@@ -55,6 +55,11 @@ def judge_decisions(d, cells):
         if state not in HEADS:
             continue
         base = rows.get(("base", shell))
+        blocked = [w for w, r in (("base", base), ("head", head)) if r and r.get("av_block")]
+        if blocked:
+            cells.append(cell("decisions", state, shell, "AV_BLOCKED",
+                              f"antivirus stopped the {' and '.join(blocked)} run; judged in the av area"))
+            continue
         if not base or not base.get("reached") or not head.get("reached"):
             who = "base" if not base or not base.get("reached") else "head"
             cells.append(cell("decisions", state, shell, "VOID", f"{who} never reached the torch decision"))
@@ -110,6 +115,46 @@ def judge_llama(d, cells):
         cells.append(cell("llama", state, "-", verdict, detail))
 
 
+AV_LABEL = re.compile(r"^[a-z0-9]+_(base|stack|presence|combined)(?:_|$)")
+
+
+def av_hits(d) -> dict:
+    """Per state: children an antivirus blocked, files it removed, pinned files it changed."""
+    av = d.get("av") or {}
+    hits = {}
+    for b in av.get("blocks") or []:
+        m = AV_LABEL.match(str(b.get("label") or ""))
+        if m:
+            hits.setdefault(m.group(1), []).append(f"blocked {b.get('label')}")
+    for state, st in (av.get("states") or {}).items():
+        if st.get("missing"):
+            hits.setdefault(state, []).append(f"{st['missing']} file(s) gone, e.g. {', '.join((st.get('missing_sample') or [])[:3])}")
+        for f in st.get("changed_pinned") or []:
+            hits.setdefault(state, []).append(f"{f} changed")
+    return hits
+
+
+def judge_av(d, cells):
+    av = d.get("av")
+    if not av:
+        return
+    hits = av_hits(d)
+    base = hits.get("base", [])
+    for state in HEADS:
+        if state not in (d.get("states") or {}):
+            continue
+        head = hits.get(state, [])
+        if head and not base:
+            verdict, detail = "REGRESSION", "antivirus acts on head but not on base: " + "; ".join(head[:5])
+        elif base and not head:
+            verdict, detail = "IMPROVED", "antivirus acts on base but not on head: " + "; ".join(base[:5])
+        elif base and head:
+            verdict, detail = "INFO", f"antivirus acts on both (base {len(base)}, head {len(head)}): " + "; ".join(head[:3])
+        else:
+            verdict, detail = "SAME", "no antivirus action on base or head"
+        cells.append(cell("av", state, "-", verdict, detail))
+
+
 def judge_tests(d, cells):
     rows = index(d.get("tests"), "state", "shell", "kind", "file")
 
@@ -125,6 +170,8 @@ def judge_tests(d, cells):
             "timed out" if head.get("timed_out") else f"exit {head.get('exit')}")
         if not failed(head):
             verdict, detail = "SAME", "passed"
+        elif head.get("av_block"):
+            verdict, detail = "AV_BLOCKED", f"antivirus stopped it on head ({head['av_block']}); judged in the av area"
         elif not base_present:
             verdict, detail = "REGRESSION", f"head-only test fails: {checks}"
         elif failed(base):
@@ -275,7 +322,7 @@ def not_proven(d, cells) -> list[str]:
 
 def analyze(d: dict) -> tuple[list[dict], list[str]]:
     cells: list[dict] = []
-    for f in (judge_decisions, judge_llama, judge_tests, judge_probe, judge_presence, judge_smoke, judge_full):
+    for f in (judge_decisions, judge_llama, judge_av, judge_tests, judge_probe, judge_presence, judge_smoke, judge_full):
         f(d, cells)
     return cells, harness_findings(d)
 
@@ -289,6 +336,8 @@ def render(d, cells, harness) -> str:
         f"- GPUs: {', '.join(m.get('gpus') or []) or 'none'}; nvidia-smi={m.get('nvidia_smi')} cuda={m.get('smi_cuda')} cc={m.get('smi_cc')}",
         "- States: " + ", ".join(f"{k}={str((v or {}).get('sha') or '')[:9]}" + ("" if (v or {}).get("verified", True) else " (UNVERIFIED)")
                                    for k, v in (d.get("states") or {}).items()),
+        f"- Antivirus: {', '.join((d.get('av') or {}).get('products') or []) or 'not recorded'}; "
+        f"{len((d.get('av') or {}).get('blocks') or [])} blocked children, {(d.get('av') or {}).get('events', 0)} antivirus log entries",
         f"- llama.cpp bundle at base: {next((r.get('install_kind') for r in d.get('llama') or [] if r.get('state') == 'base'), None)}",
         "- Timing (s): " + (", ".join(f"{k} {v}" for k, v in (d.get("timing") or {}).items()) or "not recorded"),
         "",
@@ -302,12 +351,12 @@ def render(d, cells, harness) -> str:
     for c in cells:
         counts[c["verdict"]] = counts.get(c["verdict"], 0) + 1
     lines += ["", "## Totals", "", ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())) or "no cells"]
-    for area in ("decisions", "llama", "tests", "probe", "presence", "smoke", "full"):
+    for area in ("av", "decisions", "llama", "tests", "probe", "presence", "smoke", "full"):
         rows = [c for c in cells if c["area"] == area]
         if not rows:
             continue
         lines += ["", f"## {area}", "", "| state | shell | verdict | detail |", "| --- | --- | --- | --- |"]
-        order = {"REGRESSION": 0, "VOID": 1, "EXPECTED_WIDEN": 2, "INFO": 3, "N/A": 4, "SAME": 5}
+        order = {"REGRESSION": 0, "AV_BLOCKED": 1, "VOID": 2, "IMPROVED": 3, "EXPECTED_WIDEN": 4, "INFO": 5, "N/A": 6, "SAME": 7}
         for c in sorted(rows, key = lambda c: (order.get(c["verdict"], 9), c["state"], c["shell"])):
             detail = str(c["detail"]).replace("|", "\\|")
             lines.append(f"| {c['state']} | {c['shell']} | {c['verdict']} | {detail} |")
