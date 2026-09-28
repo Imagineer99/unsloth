@@ -1,0 +1,130 @@
+{
+  "before": {
+    "controls": [
+      {
+        "label": "Collapse sidebar",
+        "x": 16,
+        "y": 2,
+        "w": 30,
+        "h": 30,
+        "cy": 17,
+        "icon": 16
+      },
+      {
+        "label": "Go back",
+        "x": 48,
+        "y": 2,
+        "w": 30,
+        "h": 30,
+        "cy": 17,
+        "icon": 16
+      },
+      {
+        "label": "Go forward",
+        "x": 80,
+        "y": 2,
+        "w": 30,
+        "h": 30,
+        "cy": 17,
+        "icon": 16
+      },
+      {
+        "label": "Minimize window",
+        "x": 1274,
+        "y": 4,
+        "w": 26,
+        "h": 26,
+        "cy": 17,
+        "icon": 16
+      },
+      {
+        "label": "Maximize window",
+        "x": 1302,
+        "y": 4,
+        "w": 26,
+        "h": 26,
+        "cy": 17,
+        "icon": 14
+      },
+      {
+        "label": "Close window",
+        "x": 1330,
+        "y": 4,
+        "w": 26,
+        "h": 26,
+        "cy": 17,
+        "icon": 20
+      }
+    ],
+    "rapid_click_calls": {
+      "minimize": 20,
+      "toggle_maximize": 20,
+      "close": 20
+    },
+    "errors": []
+  },
+  "after": {
+    "controls": [
+      {
+        "label": "Collapse sidebar",
+        "x": 20,
+        "y": 4,
+        "w": 34,
+        "h": 34,
+        "cy": 21,
+        "icon": 18
+      },
+      {
+        "label": "Go back",
+        "x": 58,
+        "y": 4,
+        "w": 34,
+        "h": 34,
+        "cy": 21,
+        "icon": 18
+      },
+      {
+        "label": "Go forward",
+        "x": 96,
+        "y": 4,
+        "w": 34,
+        "h": 34,
+        "cy": 21,
+        "icon": 18
+      },
+      {
+        "label": "Minimize window",
+        "x": 1238,
+        "y": 4,
+        "w": 34,
+        "h": 34,
+        "cy": 21,
+        "icon": 16
+      },
+      {
+        "label": "Maximize window",
+        "x": 1276,
+        "y": 4,
+        "w": 34,
+        "h": 34,
+        "cy": 21,
+        "icon": 14
+      },
+      {
+        "label": "Close window",
+        "x": 1314,
+        "y": 4,
+        "w": 34,
+        "h": 34,
+        "cy": 21,
+        "icon": 20
+      }
+    ],
+    "rapid_click_calls": {
+      "minimize": 20,
+      "toggle_maximize": 20,
+      "close": 20
+    },
+    "errors": []
+  }
+}
