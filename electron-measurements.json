@@ -155,70 +155,70 @@
         {
           "label": "Collapse sidebar",
           "rect": {
-            "x": 2,
+            "x": 8,
             "y": 3,
             "width": 30,
             "height": 30,
             "top": 3,
-            "right": 32,
+            "right": 38,
             "bottom": 33,
-            "left": 2
+            "left": 8
           },
           "svg": {
-            "x": 8,
+            "x": 14,
             "y": 9,
             "width": 18,
             "height": 18,
             "top": 9,
-            "right": 26,
+            "right": 32,
             "bottom": 27,
-            "left": 8
+            "left": 14
           }
         },
         {
           "label": "Go back",
           "rect": {
-            "x": 36,
+            "x": 42,
             "y": 3,
             "width": 30,
             "height": 30,
             "top": 3,
-            "right": 66,
+            "right": 72,
             "bottom": 33,
-            "left": 36
+            "left": 42
           },
           "svg": {
-            "x": 42,
+            "x": 48,
             "y": 9,
             "width": 18,
             "height": 18,
             "top": 9,
-            "right": 60,
+            "right": 66,
             "bottom": 27,
-            "left": 42
+            "left": 48
           }
         },
         {
           "label": "Go forward",
           "rect": {
-            "x": 70,
+            "x": 76,
             "y": 3,
             "width": 30,
             "height": 30,
             "top": 3,
-            "right": 100,
+            "right": 106,
             "bottom": 33,
-            "left": 70
+            "left": 76
           },
           "svg": {
-            "x": 76,
+            "x": 82,
             "y": 9,
             "width": 18,
             "height": 18,
             "top": 9,
-            "right": 94,
+            "right": 100,
             "bottom": 27,
-            "left": 76
+            "left": 82
           }
         },
         {
@@ -325,5 +325,6 @@
       "errors": []
     }
   },
-  "after_ref": "3dafd0a533ffd5244fdd6528471ac9a68c53fd1b"
+  "after_ref": "21d820388e20a2430836ee8c358435edae4bcc4f",
+  "navigation_alignment": "Optical left-edge alignment to sidebar brand; navigation inset = shared brand inset minus 8 CSS px; 8px at default interface scale."
 }
