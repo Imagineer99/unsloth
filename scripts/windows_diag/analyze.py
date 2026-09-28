@@ -202,7 +202,13 @@ def judge_probe(d, cells):
             continue
         got_cuda, got_cc = majmin(r.get("cuda")), sorted(set(r.get("cc") or []))
         detail = f"probe cuda={got_cuda} cc={got_cc}; {truth} cuda={want_cuda} cc={want_cc}"
-        ok = got_cuda == want_cuda and got_cc == want_cc
+        if want_cuda is None and truth == "nvidia-smi":
+            # nvidia-smi listed the GPUs but printed no parsable CUDA version: judge on compute
+            # capability alone and say the CUDA half is unchecked.
+            detail += " (nvidia-smi CUDA version unreadable: CUDA not checked)"
+            ok = got_cc == want_cc
+        else:
+            ok = got_cuda == want_cuda and got_cc == want_cc
         if ok:
             verdict = "SAME"
         elif state not in HEADS:
@@ -210,11 +216,13 @@ def judge_probe(d, cells):
         else:
             # Head is only worse than base when base read the libraries correctly on this host.
             base = base_rows.get(("base", shell))
-            base_ok = bool(base) and base.get("available") and majmin(base.get("cuda")) == want_cuda and sorted(set(base.get("cc") or [])) == want_cc
+            base_ok = bool(base) and base.get("available") and sorted(set(base.get("cc") or [])) == want_cc
+            if want_cuda is not None:
+                base_ok = base_ok and majmin(base.get("cuda")) == want_cuda
             if base_ok:
                 verdict = "REGRESSION"
             else:
-                verdict, detail = "SAME", detail + " (base does not read them either: no usable driver library on this host)"
+                verdict, detail = "SAME", detail + " (base does not match either)"
         cells.append(cell("probe", state, shell, verdict, detail))
 
 

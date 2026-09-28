@@ -147,6 +147,16 @@ def test_probe_mismatch_shared_with_base_is_not_a_regression():
     assert head_verdicts(d, "probe") == ["SAME"]
 
 
+def test_unreadable_smi_cuda_judges_compute_capability_only():
+    # Driver 616 on the RTX 5090 and Spark: nvidia-smi listed the GPU, but no CUDA version parsed.
+    d = with_base_probe(doc(), cuda="13.4")
+    d["machine"]["smi_cuda"] = None
+    d["probe"][-1]["cuda"] = "13.4"
+    assert head_verdicts(d, "probe") == ["SAME"]
+    d["probe"][-1]["cc"] = ["8.9"]
+    assert head_verdicts(d, "probe") == ["REGRESSION"]
+
+
 def test_nvidia_arm64_index_counts_as_a_gpu_route():
     d = doc()
     d["decisions"][0]["family"] = "nvidia-arm64"

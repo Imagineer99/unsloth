@@ -39,7 +39,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Off
 $ProgressPreference = 'SilentlyContinue'
-$ToolVersion = '1.3.0'
+$ToolVersion = '1.4.0'
 
 $EmbeddedManifest = @'
 {
@@ -59,8 +59,8 @@ $EmbeddedManifest = @'
     },
     "stack": {
       "repo": "unslothai/unsloth",
-      "sha": "c6564c89a76f44525e34c95f1bc8a172c4e6da07",
-      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/c6564c89a76f44525e34c95f1bc8a172c4e6da07",
+      "sha": "e67dd4cef13de4f3df8f2b3d81ed41046f592a43",
+      "zip_url": "https://codeload.github.com/unslothai/unsloth/zip/e67dd4cef13de4f3df8f2b3d81ed41046f592a43",
       "files": {
         "install.ps1": "0ac28f56c53fc0e47169fa1adf11bd09d8c3a518c82d95598412837a482e54fc",
         "studio/setup.ps1": "557fa33a0f8f03ac56360db8fa22636f542cfa18bb4c582c3946798de2114734",
@@ -70,8 +70,8 @@ $EmbeddedManifest = @'
     },
     "presence": {
       "repo": "danielhanchen/unsloth-staging-2",
-      "sha": "6259665f234c234e9441ecc7a29814bee7e9819a",
-      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/6259665f234c234e9441ecc7a29814bee7e9819a",
+      "sha": "174388cb523f31e76df0496f518f112433fb5aae",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/174388cb523f31e76df0496f518f112433fb5aae",
       "files": {
         "install.ps1": "674719f5ac59530723a21a23f937476cca9b37f741a3e9490aced2750050f660",
         "studio/setup.ps1": "e03973941c4162d6b02ca16bba480d3154b66f202bb94cdf86a00196ae685241",
@@ -81,8 +81,8 @@ $EmbeddedManifest = @'
     },
     "combined": {
       "repo": "danielhanchen/unsloth-staging-2",
-      "sha": "1926be2315fea540b12a287bc092fa6f1fd45479",
-      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/1926be2315fea540b12a287bc092fa6f1fd45479",
+      "sha": "c45f85dde1863f8ba9d6122a4cbbd5f0c4692d1d",
+      "zip_url": "https://codeload.github.com/danielhanchen/unsloth-staging-2/zip/c45f85dde1863f8ba9d6122a4cbbd5f0c4692d1d",
       "files": {
         "install.ps1": "cdf5a02e7e5d91a55daf39a771ad0d9581280a1df1baf153622fa52a09498efc",
         "studio/setup.ps1": "73e42e29926b72603bc69f2d097aa7ba5fe8c6b76659133b55371bc26c27f3d1",
@@ -821,8 +821,15 @@ function Get-Inventory {
                 if ($cells.Count -ge 3 -and $cells[1] -match '^\d+\.\d+$') { $smi.names += $cells[0]; $smi.cc += $cells[1]; $smi.driver = $cells[2] }
             }
         }
-        $b = Get-ToolProbe 'smi_banner' $smi.path '' 30
-        if ($b -and $b.output -match 'CUDA Version:\s*([0-9]+\.[0-9]+)') { $smi.banner_cuda = $Matches[1] }
+        # The driver CUDA version: the plain banner first, then the -q report. Newer drivers reword
+        # the banner, so match any "CUDA ... Version" label and keep the raw text for the zip.
+        $cudaRe = '(?im)CUDA(?:\s+Driver)?\s+Version\s*:\s*([0-9]+\.[0-9]+)'
+        foreach ($probe in @(@('smi_banner', ''), @('smi_q', '-q'))) {
+            $b = Get-ToolProbe $probe[0] $smi.path $probe[1] 30
+            if (-not $b) { continue }
+            $smi["$($probe[0])_raw"] = [ordered]@{ exit = $b.exit; timed_out = $b.timed_out; head = $(if ($b.output.Length -gt 1500) { $b.output.Substring(0, 1500) } else { $b.output }) }
+            if ($b.output -match $cudaRe) { $smi.banner_cuda = $Matches[1]; $smi.banner_source = $probe[0]; break }
+        }
     }
     $inv.nvidia_smi = $smi
 
