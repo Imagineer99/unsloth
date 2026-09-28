@@ -315,7 +315,7 @@ function Invoke-BoundedPool {
             $running.Add([pscustomobject]@{ Job = $j; Child = $child; Start = (Get-Date) })
         }
         Start-Sleep -Milliseconds 400
-        foreach ($r in @($running)) {
+        foreach ($r in $running.ToArray()) {
             $proc = $r.Child.Proc
             $timedOut = $false
             if (-not $proc.HasExited) {

@@ -36,6 +36,9 @@ jobs:
       - name: Zero net change
         shell: pwsh
         run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase after
+      - name: The run did its work
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/check_result.ps1 -Mode quick
       - name: Collect
         if: always()
         shell: pwsh
@@ -66,6 +69,9 @@ jobs:
       - name: Zero net change and the planted install restored
         shell: pwsh
         run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase after
+      - name: The run did its work
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/check_result.ps1 -Mode full
       - name: Collect
         if: always()
         shell: pwsh
@@ -87,10 +93,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: x64-rtx5090-smi-and-libs, os: windows-latest, smi: "1", libs: "1", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-SkipTests" }
-          - { name: x64-rtx5090-libs-only, os: windows-latest, smi: "0", libs: "1", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-SkipTests" }
-          - { name: arm64-gb10-smi, os: windows-11-arm, smi: "1", libs: "0", cuda: "13.0", cc: "12.1", gpu: "NVIDIA GB10", args: "-SkipTests" }
-          - { name: x64-rtx5090-smi-full, os: windows-latest, smi: "1", libs: "0", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-Full" }
+          - { name: x64-rtx5090-smi-and-libs, os: windows-latest, smi: "1", libs: "1", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-SkipTests", check: "quick -SkipTests" }
+          - { name: x64-rtx5090-libs-only, os: windows-latest, smi: "0", libs: "1", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-SkipTests", check: "quick -SkipTests" }
+          - { name: arm64-gb10-smi, os: windows-11-arm, smi: "1", libs: "0", cuda: "13.0", cc: "12.1", gpu: "NVIDIA GB10", args: "-SkipTests", check: "quick -SkipTests" }
+          - { name: x64-rtx5090-smi-full, os: windows-latest, smi: "1", libs: "0", cuda: "13.0", cc: "12.0", gpu: "NVIDIA GeForce RTX 5090", args: "-Full", check: "full" }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 300
     env:
@@ -143,6 +149,9 @@ jobs:
       - name: Zero net change
         shell: pwsh
         run: ./scripts/windows_diag/ci/snapshot.ps1 -Phase after
+      - name: The run did its work
+        shell: pwsh
+        run: ./scripts/windows_diag/ci/check_result.ps1 -Mode ${{ matrix.check }}
       - name: The spoof was actually consulted
         shell: pwsh
         run: |
