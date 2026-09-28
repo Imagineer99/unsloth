@@ -293,8 +293,8 @@ function Invoke-Bounded {
     }
 }
 
-# Many bounded children at once: at most $Parallel alive, never two sharing a Group (the same
-# test file in another state or shell may reach the same named mutex or temp name). Each job is
+# Many bounded children at once: at most $Parallel alive, never two sharing a Group (one test file
+# of one state under both shells shares that state's tree and the names derived from it). Each job is
 # @{ Label; CommandLine; WorkDir; Timeout; Env; Group }; results are keyed by Label and shaped
 # like Invoke-Bounded's.
 function Invoke-BoundedPool {
@@ -1228,7 +1228,7 @@ function Get-Ps1TestJobs {
     foreach ($f in $files) {
         $label = "ps1_${State}_${Shell}_$($f.BaseName)"
         $jobs += [pscustomobject]@{
-            Label = $label; Group = "ps1|$($f.Name)"; WorkDir = $sd; Timeout = $TestTimeoutSec
+            Label = $label; Group = "ps1|$State|$($f.Name)"; WorkDir = $sd; Timeout = $TestTimeoutSec
             CommandLine = "$(Get-QuotedExe $exe) -NoProfile -ExecutionPolicy Bypass -File `"$($f.FullName)`""
             Env = (Get-IsolationEnv -StudioHome (Join-Path $script:Work "h\t\$label"))
             State = $State; Shell = $Shell; Kind = 'ps1'; File = "tests/studio/$($f.Name)"; Xml = $null
@@ -1269,7 +1269,7 @@ function Get-PytestJobs {
         $label = "pytest_${State}_$($f.BaseName)"
         $xml = Join-Path $script:RunDir "$label.xml"
         $jobs += [pscustomobject]@{
-            Label = $label; Group = "pytest|$($f.Name)"; WorkDir = $sd; Timeout = ($TestTimeoutSec * 3)
+            Label = $label; Group = "pytest|$State|$($f.Name)"; WorkDir = $sd; Timeout = ($TestTimeoutSec * 3)
             CommandLine = "$(Get-QuotedExe $script:PytestPython) -m pytest -q -p no:cacheprovider --junitxml=`"$xml`" `"$($f.FullName)`""
             Env = (Get-IsolationEnv -StudioHome (Join-Path $script:Work "h\t\$label"))
             State = $State; Shell = 'python'; Kind = 'pytest'; File = ($f.FullName.Substring($sd.Length + 1) -replace '\\', '/'); Xml = $xml
