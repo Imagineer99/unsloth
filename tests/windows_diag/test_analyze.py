@@ -337,3 +337,11 @@ def test_av_blocked_rows_are_not_code_regressions():
 
 def test_no_av_section_means_no_av_cells():
     assert verdicts(doc(), "av") == []
+
+
+def test_a_file_refused_on_write_counts_against_that_state():
+    d = av_doc()
+    d["av"]["states"]["combined"]["blocked_on_write"] = ["scripts/x.py (Access to the path is denied.)"]
+    assert verdicts(d, "av") == ["REGRESSION"]
+    d["av"]["states"]["base"]["blocked_on_write"] = ["scripts/x.py (Access to the path is denied.)"]
+    assert verdicts(d, "av") == ["INFO"]

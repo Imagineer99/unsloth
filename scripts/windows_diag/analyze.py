@@ -129,6 +129,8 @@ def av_hits(d) -> dict:
     for state, st in (av.get("states") or {}).items():
         if st.get("missing"):
             hits.setdefault(state, []).append(f"{st['missing']} file(s) gone, e.g. {', '.join((st.get('missing_sample') or [])[:3])}")
+        for f in st.get("blocked_on_write") or []:
+            hits.setdefault(state, []).append(f"refused to write {f}")
         for f in st.get("changed_pinned") or []:
             hits.setdefault(state, []).append(f"{f} changed")
     return hits

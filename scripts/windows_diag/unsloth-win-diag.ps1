@@ -39,7 +39,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Off
 $ProgressPreference = 'SilentlyContinue'
-$ToolVersion = '1.2.0'
+$ToolVersion = '1.3.0'
 
 $EmbeddedManifest = @'
 {
@@ -1032,11 +1032,14 @@ function Get-ZipComment {
     return $null
 }
 
+# A file an antivirus refuses to let us write is recorded, not fatal: the state still runs unless
+# the refused file is one the manifest pins ($Required), and the refusal is judged per state.
 function Expand-StateZip {
-    param([string]$Zip, [string]$Dest, [string[]]$SkipPrefixes = @())
+    param([string]$Zip, [string]$Dest, [string[]]$SkipPrefixes = @(), [string[]]$Required = @())
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $destFull = [System.IO.Path]::GetFullPath($Dest).TrimEnd('\') + '\'
     $written = New-Object System.Collections.Generic.List[string]
+    $blocked = New-Object System.Collections.Generic.List[string]
     $za = [System.IO.Compression.ZipFile]::OpenRead($Zip)
     try {
         foreach ($e in $za.Entries) {
@@ -1052,11 +1055,16 @@ function Expand-StateZip {
             if (-not $target.StartsWith($destFull, [StringComparison]::OrdinalIgnoreCase)) { throw "zip entry escapes the state dir: $($e.FullName)" }
             if ($rel.EndsWith('/')) { [void][System.IO.Directory]::CreateDirectory($target); continue }
             [void][System.IO.Directory]::CreateDirectory([System.IO.Path]::GetDirectoryName($target))
-            [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $target, $true)
-            $written.Add($target)
+            try {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $target, $true)
+                $written.Add($target)
+            } catch {
+                if ($Required -contains $rel) { throw }
+                $blocked.Add("$rel ($(($_.Exception.InnerException, $_.Exception | Where-Object { $_ } | Select-Object -First 1).Message))")
+            }
         }
     } finally { $za.Dispose() }
-    return ,$written.ToArray()
+    return [pscustomobject]@{ Files = $written.ToArray(); Blocked = $blocked.ToArray() }
 }
 
 function Initialize-State {
@@ -1074,10 +1082,14 @@ function Initialize-State {
         $comment = Get-ZipComment $zip
         if ($comment -ne [string]$m.sha) { $row.problems += "archive comment '$comment' is not the pinned sha" }
         $dir = Join-Path $script:Work "r\$Name"
-        # Only the full pass installs from a state; the others never read the web UI sources.
+        # Only the full pass installs from a state; the others never read the web UI sources, nor
+        # the repo's own supply-chain scanner, whose stealer signatures antivirus reads as a stealer.
         $skip = @()
-        if ($script:Mode -ne 'full') { $skip = @('studio/frontend/', 'images/', 'docker/') }
-        $script:StateFiles[$Name] = Expand-StateZip -Zip $zip -Dest $dir -SkipPrefixes $skip
+        if ($script:Mode -ne 'full') { $skip = @('studio/frontend/', 'images/', 'docker/', 'scripts/scan_packages.py') }
+        $x = Expand-StateZip -Zip $zip -Dest $dir -SkipPrefixes $skip -Required @($m.files.PSObject.Properties | ForEach-Object { $_.Name })
+        $script:StateFiles[$Name] = $x.Files
+        $script:StateBlocked[$Name] = $x.Blocked
+        foreach ($b in $x.Blocked) { Write-Diag "  $Name`: could not write $b (antivirus?)" 'Yellow' }
         Remove-Item -LiteralPath $zip -Force
         foreach ($p in $m.files.PSObject.Properties) {
             $f = Join-Path $dir ($p.Name -replace '/', '\')
@@ -1666,7 +1678,8 @@ function Test-StatesIntact {
             if ([System.IO.File]::Exists($f) -and (Get-FileSha $f) -ne [string]$p.Value) { $changed += $p.Name }
         }
         $rel = @($missing | Select-Object -First 25 | ForEach-Object { $_.Substring($script:StateDirs[$n].Length + 1) -replace '\\', '/' })
-        $script:Results.av.states[$n] = [ordered]@{ files = $files.Count; missing = $missing.Count; missing_sample = $rel; changed_pinned = $changed }
+        $blockedOnWrite = @($script:StateBlocked[$n])
+        $script:Results.av.states[$n] = [ordered]@{ files = $files.Count; missing = $missing.Count; missing_sample = $rel; changed_pinned = $changed; blocked_on_write = $blockedOnWrite }
         if ($missing.Count -gt 0 -or $changed.Count -gt 0) {
             Write-Diag "  state $n lost $($missing.Count) file(s) and had $($changed.Count) pinned file(s) changed during the run (antivirus?)" 'Yellow'
         }
@@ -1830,11 +1843,11 @@ function New-SummaryMarkdown {
     $L.Add("Products: $(@($R.av.products) -join '; ')")
     $L.Add("Blocked children (AMSI / virus-infected errors): $(@($R.av.blocks).Count); log entries from antivirus providers during the run: $($R.av.events) ($(@($R.av.event_providers) -join ', '))")
     if ($R.av.states.Count -gt 0) {
-        $L.Add(''); $L.Add('| state | blocked children | files missing after the run | pinned files changed |'); $L.Add('|---|---|---|---|')
+        $L.Add(''); $L.Add('| state | blocked children | refused on write | files missing after the run | pinned files changed |'); $L.Add('|---|---|---|---|---|')
         foreach ($k in $R.av.states.Keys) {
             $st = $R.av.states[$k]
             $nb = @($R.av.blocks | Where-Object { "$($_.label)" -match "^[a-z0-9]+_$k(_|$)" }).Count
-            $L.Add("| $k | $nb | $($st.missing) | $(Format-Cell (@($st.changed_pinned) -join ', ')) |")
+            $L.Add("| $k | $nb | $(@($st.blocked_on_write).Count) | $($st.missing) | $(Format-Cell (@($st.changed_pinned) -join ', ')) |")
         }
     }
     foreach ($b in @($R.av.blocks | Select-Object -First 20)) { $L.Add("- blocked: $($b.label): $($b.line)") }
@@ -1928,6 +1941,7 @@ $script:CurrentChild = $null
 $script:PoolChildren = @{}
 $script:LlamaCache = @{}
 $script:StateFiles = @{}
+$script:StateBlocked = @{}
 $script:PytestPython = $null
 $script:PwshExe = $null
 $pw = @(Get-Command pwsh.exe -All -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1)
