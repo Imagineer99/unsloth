@@ -1,0 +1,53 @@
+{
+  "scenario": "JWT-authenticated Studio chat with keyless full scope and tools enabled",
+  "browser": "Playwright / installed Microsoft Edge, Windows",
+  "viewport": [
+    1440,
+    960
+  ],
+  "model": "unsloth/gemma-3-270m-it-GGUF / Q4_K_M",
+  "inference": "real llama.cpp, CPU, no mocked responses",
+  "prior_backend_tests": "128 passed on 2026-09-28",
+  "capture_date": "2026-09-30",
+  "observation_after_chat_ms": 12000,
+  "before": {
+    "commit": "7bacc24d4abcc0cf9390737959cc1237164e0e7e",
+    "keyless": {
+      "scope": "full",
+      "tools": true,
+      "exposure": null
+    },
+    "popup_visible": true,
+    "requests": [
+      {
+        "endpoint": "/api/inference/chat-runs/producer",
+        "status": "completed",
+        "via_api_key": true
+      }
+    ]
+  },
+  "after": {
+    "commit": "938eac98138b44e21f0e7d2adfba922e4b761192",
+    "keyless": {
+      "scope": "full",
+      "tools": true,
+      "exposure": null
+    },
+    "popup_visible": false,
+    "requests": [
+      {
+        "endpoint": "/api/inference/chat-runs/producer",
+        "status": "completed",
+        "via_api_key": false
+      }
+    ]
+  },
+  "external_control": {
+    "popup_visible": true,
+    "authorization_header": false,
+    "endpoint": "/v1/chat/completions",
+    "status": "completed",
+    "via_api_key": true
+  },
+  "backend_tests": "128 passed again on 2026-09-30"
+}
