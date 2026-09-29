@@ -1,0 +1,19 @@
+{
+  "pr_head": "6878569c72a5fb781c8eb4d0a628b018897140da",
+  "pr_base": "0cc9ed2d3a2f45fa09ca80bf1507291fd51b3d01",
+  "native_before_source": "9fce7488bee35102b79f8ef39f9e24b48c03a260",
+  "native_after_source": "Same baseline plus the CSS change in this PR",
+  "scope": "Native preview comparison; not a complete latest-main native rebuild. Titlebar baseline source is byte-identical to PR base.",
+  "capture": "Windows screen capture; 3840x2160 physical pixels; identical 640x240 crops at x410 y40; lossless PNG; no resizing or sharpening",
+  "checks": "32 targeted layout tests passed; preview frontend and Windows release builds passed; 12 Playwright component theme/spacing checks passed.",
+  "images": {
+    "dark": {
+      "filename": "lossless-comparison-dark.png",
+      "sha256": "7d3ae76136fe11a1fca7ef071d0f11ff4d5c91afbbb8c63addebf98623361052"
+    },
+    "light": {
+      "filename": "lossless-comparison-light.png",
+      "sha256": "b9ef74ce66da91b5162fac01f6eb6c46e70a15f9ba57ba6d4108b2d3d784fc7b"
+    }
+  }
+}
