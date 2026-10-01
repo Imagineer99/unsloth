@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.metadata
-import importlib.util
 import ipaddress
 import json
 import os
@@ -22,10 +21,12 @@ from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 if os.environ.get("ISSUE_12415_INSTALLED_BACKEND") == "1":
-    spec = importlib.util.find_spec("studio")
-    assert spec and spec.submodule_search_locations, "Installed Studio package is missing"
-    BACKEND = Path(next(iter(spec.submodule_search_locations))) / "backend"
-    assert not BACKEND.is_relative_to(ROOT), "Release probe must not import checkout backend"
+    distribution = importlib.metadata.distribution("unsloth")
+    BACKEND = Path(distribution.locate_file("studio/backend")).resolve()
+    assert BACKEND.is_dir(), "Installed Studio backend is missing"
+    assert not BACKEND.is_relative_to((ROOT / "studio/backend").resolve()), (
+        "Release probe must not import checkout backend"
+    )
 else:
     BACKEND = ROOT / "studio" / "backend"
 sys.path.insert(0, str(BACKEND))
