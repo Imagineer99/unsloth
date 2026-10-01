@@ -64,6 +64,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: issue-12415-offline-${{ matrix.os }}-${{ matrix.browser }}
-          path: ${{ github.workspace }}/.studio-live/artifacts
+          path: ${{ env.STUDIO_ARTIFACT_DIR }}
           if-no-files-found: warn
           retention-days: 7
