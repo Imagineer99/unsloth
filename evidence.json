@@ -1,0 +1,128 @@
+{
+  "base_sha": "acc0c89fcb1ef06bd23ca10de96fd2388eab4fd0",
+  "head_sha": "ca4add32fef59f5a7d4b4d45cd19138e5a38b6af",
+  "scene": "smoke-titlebar-blur",
+  "expect": "Blur and dim the custom titlebar surface and page navigation for viewport modals; keep window controls and hover feedback sharp and usable. Exclude scoped dialogs and menus.",
+  "facts": {
+    "before": {
+      "expected_blur": false,
+      "media": {
+        "titlebarZ": "70",
+        "content": "none",
+        "opacity": "1",
+        "blur": "none",
+        "pointerEvents": "none",
+        "backdropZ": "auto",
+        "controlsZ": "auto",
+        "overlayZ": "50"
+      },
+      "commands": [
+        "minimize",
+        "toggle_maximize",
+        "close",
+        "start_dragging"
+      ],
+      "checks": [
+        "media",
+        "dialog",
+        "alert",
+        "sheet",
+        "scoped excluded",
+        "menu excluded",
+        "nested",
+        "close cleanup",
+        "dark",
+        "narrow",
+        "web",
+        "macOS"
+      ],
+      "page_errors": []
+    },
+    "after": {
+      "expected_blur": true,
+      "media": {
+        "titlebarZ": "70",
+        "content": "\"\"",
+        "opacity": "1",
+        "blur": "blur(2px)",
+        "pointerEvents": "none",
+        "backdropZ": "90",
+        "controlsZ": "100",
+        "overlayZ": "50"
+      },
+      "commands": [
+        "minimize",
+        "toggle_maximize",
+        "close",
+        "start_dragging"
+      ],
+      "checks": [
+        "media",
+        "dialog",
+        "alert",
+        "sheet",
+        "scoped excluded",
+        "menu excluded",
+        "nested",
+        "close cleanup",
+        "dark",
+        "narrow",
+        "web",
+        "macOS"
+      ],
+      "page_errors": []
+    }
+  },
+  "differences": {
+    "content": {
+      "before": "none",
+      "after": "\"\""
+    },
+    "blur": {
+      "before": "none",
+      "after": "blur(2px)"
+    },
+    "backdropZ": {
+      "before": "auto",
+      "after": "90"
+    },
+    "controlsZ": {
+      "before": "auto",
+      "after": "100"
+    }
+  },
+  "pixels": {
+    "titlebar-light": {
+      "bounds": [
+        0,
+        0,
+        1440,
+        40
+      ],
+      "outside_titlebar": null
+    },
+    "media-light": {
+      "bounds": [
+        0,
+        0,
+        1440,
+        40
+      ],
+      "outside_titlebar": null
+    },
+    "media-dark": {
+      "bounds": [
+        0,
+        0,
+        1440,
+        40
+      ],
+      "outside_titlebar": null
+    }
+  },
+  "setup": "Independent Vite processes, source trees and caches; identical fixture imported into both trees; same dependency installation. Windows platform and Tauri IPC stubbed in Chromium. No backend or inference.",
+  "limitations": "Component scene uses production WindowTitlebar, MediaViewer and modal primitives with a deterministic surrounding page and SVG. Native OS window actions are not executed by Playwright. User also tested the equivalent feature in a separate customized local Windows desktop build before rebasing.",
+  "negative_proof": "Fixed-state assertions fail against this exact base.",
+  "hover": "2x device scale; lossless 160x64 CSS-pixel crops; no sharpening or resizing.",
+  "checks": "Production frontend build, TypeScript checks, 3 existing layering tests and 9 CI coverage tests passed. Chromium scene passed on base and head. Fixed-state assertions failed on base as expected."
+}
