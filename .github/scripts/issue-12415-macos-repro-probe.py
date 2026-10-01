@@ -23,7 +23,8 @@ TOKEN = "hf_issue12415_synthetic_runner_credential"
 
 
 def environment(artifacts):
-    home = artifacts.parent / "state"
+    # Keep model blobs outside uploaded artifacts.
+    home = artifacts.parent.parent / "state"
     hf_home = home / "hf"
     env = dict(os.environ, HF_HOME=str(hf_home), HF_HUB_CACHE=str(hf_home / "hub"),
                HF_TOKEN_PATH=str(hf_home / "token"), HF_XET_CACHE=str(hf_home / "xet"),
@@ -137,7 +138,8 @@ async def main():
     assert python.is_file(), f"Missing installed backend Python: {python}"
     (artifacts / "platform.json").write_text(json.dumps({"system": platform.system(),
         "machine": platform.machine(), "version": platform.platform(), "browser": os.environ.get("STUDIO_BROWSER", "webkit"),
-        "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "harness_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "release_tag": os.environ.get("ISSUE_12415_RELEASE_TAG"),
         "native_desktop_app": False, "scope": "real Studio API routes via browser request harness"}, indent=2)+"\n")
     env = environment(artifacts)
     # State isolation changes STUDIO_HOME; keep the installer's actual native runtime.
@@ -152,6 +154,8 @@ async def main():
     else:
         raise RuntimeError("Installed llama.cpp runtime was not found")
     metadata = artifacts / "model.json"
+    if os.environ.get("ISSUE_12415_INSTALLED_BACKEND") == "1":
+        run_helper(python, "provenance", metadata, env, "--output", str(artifacts/"backend-provenance.json"))
     run_helper(python, "prepare", metadata, env)
     # The same synthetic host identity is held for the blocked auth-check and offline control.
     env["HF_TOKEN"] = TOKEN

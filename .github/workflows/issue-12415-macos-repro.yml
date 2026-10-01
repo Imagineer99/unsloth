@@ -1,6 +1,7 @@
 # Disposable macOS reproduction. Success means known unwanted probes were observed
 # and offline/access/completeness/inference controls passed, not that a fix is present.
-# Exercises real route handlers via a browser harness, not the packaged Tauri app.
+# Uses the release's bundled installer and PyPI backend, via real route handlers
+# in a browser harness. Does not launch the native packaged Tauri app.
 
 name: "Issue-12415-macOS-offline-discovery"
 
@@ -28,6 +29,9 @@ jobs:
       STUDIO_ARTIFACT_DIR: ${{ github.workspace }}/.studio-live/artifacts/${{ matrix.os }}-${{ matrix.browser }}
       STUDIO_BROWSER: ${{ matrix.browser }}
       UNSLOTH_SKIP_AUTOSTART: '1'
+      ISSUE_12415_INSTALLED_BACKEND: '1'
+      ISSUE_12415_RELEASE_TAG: 'v0.1.902-beta'
+      ISSUE_12415_BACKEND_VERSION: '2026.9.14'
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
@@ -48,11 +52,18 @@ jobs:
             python -m playwright install "${{ matrix.browser }}"
           fi
 
-      - name: Install Studio from this branch (Unix)
+      - name: Download and install the released backend (GGUF-only)
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$UNSLOTH_STUDIO_HOME"
-          bash ./install.sh --local --no-torch
+          release_dir="$RUNNER_TEMP/issue-12415-release"
+          mkdir -p "$release_dir"
+          gh release download "$ISSUE_12415_RELEASE_TAG" --repo unslothai/unsloth \
+            --pattern latest.json --pattern Unsloth-Desktop-ARM64.app.tar.gz --dir "$release_dir"
+          gh api "repos/unslothai/unsloth/releases/tags/$ISSUE_12415_RELEASE_TAG" > "$release_dir/release.json"
+          python .github/scripts/issue-12415-release-install.py
 
       - name: Exercise real Studio routes through WebKit and run local inference
         shell: bash
@@ -64,6 +75,6 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: issue-12415-offline-${{ matrix.os }}-${{ matrix.browser }}
-          path: ${{ env.STUDIO_ARTIFACT_DIR }}
+          path: ${{ github.workspace }}/.studio-live/artifacts
           if-no-files-found: warn
           retention-days: 7

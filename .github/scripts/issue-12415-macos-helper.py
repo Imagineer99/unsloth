@@ -7,6 +7,9 @@ Only network transport is blocked; discovery and cache authorization remain real
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.metadata
+import importlib.util
 import ipaddress
 import json
 import os
@@ -18,8 +21,32 @@ import time
 from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "studio" / "backend"))
+if os.environ.get("ISSUE_12415_INSTALLED_BACKEND") == "1":
+    spec = importlib.util.find_spec("studio")
+    assert spec and spec.submodule_search_locations, "Installed Studio package is missing"
+    BACKEND = Path(next(iter(spec.submodule_search_locations))) / "backend"
+    assert not BACKEND.is_relative_to(ROOT), "Release probe must not import checkout backend"
+else:
+    BACKEND = ROOT / "studio" / "backend"
+sys.path.insert(0, str(BACKEND))
 TOKEN = "hf_issue12415_synthetic_runner_credential"
+
+
+def provenance(output: Path):
+    from hub.services.models import gguf_variants
+    from utils._studio_release_build import STUDIO_RELEASE_VERSION
+    version = importlib.metadata.version("unsloth")
+    expected = os.environ.get("ISSUE_12415_BACKEND_VERSION")
+    if expected:
+        assert version == expected, (version, expected)
+        assert STUDIO_RELEASE_VERSION == os.environ["ISSUE_12415_RELEASE_TAG"]
+    module = Path(gguf_variants.__file__).resolve()
+    assert module.is_relative_to(BACKEND.resolve()), module
+    output.write_text(json.dumps({"unsloth_version": version,
+        "studio_release_version": STUDIO_RELEASE_VERSION, "backend_root": str(BACKEND),
+        "gguf_variants_path": str(module),
+        "gguf_variants_sha256": hashlib.sha256(module.read_bytes()).hexdigest()}, indent=2)+"\n")
+    print(f"PASS backend provenance: unsloth=={version}, {STUDIO_RELEASE_VERSION}", flush=True)
 
 
 def prepare(output: Path):
@@ -196,13 +223,15 @@ def local_inference(metadata: Path, output: Path):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("mode", choices=["prepare", "serve", "local"])
+    parser.add_argument("mode", choices=["provenance", "prepare", "serve", "local"])
     parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--attempts", type=Path)
     parser.add_argument("--port", type=int)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    if args.mode == "prepare":
+    if args.mode == "provenance":
+        provenance(args.output)
+    elif args.mode == "prepare":
         prepare(args.metadata)
     elif args.mode == "serve":
         serve(args.metadata, args.attempts, args.port)
