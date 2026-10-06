@@ -674,6 +674,29 @@ def test_build_tool_cancellation_reaps_the_guest_process_group(
             and time.monotonic() < deadline
         ):
             time.sleep(0.05)
+        if not (pids.exists() and pids.read_text()):
+            # Diagnostic only: who holds what when the guest child never starts.
+            me = os.getpid()
+            print(f"DIAG worker={me} alive={thread.is_alive()} calls={[c[:2] for c in calls]}", flush = True)
+            print(subprocess.run(["ps", "-eo", "pid,ppid,pgid,stat,wchan:30,etimes,args", "--forest"],
+                                 capture_output = True, text = True).stdout[-20000:], flush = True)
+            for pid in [p for p in os.listdir("/proc") if p.isdigit()]:
+                try:
+                    status = open(f"/proc/{pid}/status").read()
+                    ppid = int(status.split("PPid:")[1].split()[0])
+                    if ppid != me and int(pid) != me:
+                        continue
+                    fds = {}
+                    for fd in os.listdir(f"/proc/{pid}/fd"):
+                        try:
+                            fds[fd] = os.readlink(f"/proc/{pid}/fd/{fd}")
+                        except OSError:
+                            pass
+                    print(f"DIAG pid={pid} ppid={ppid} wchan={open(f'/proc/{pid}/wchan').read()} "
+                          f"cmd={open(f'/proc/{pid}/cmdline').read().replace(chr(0), ' ')[:200]} "
+                          f"pipes={sorted(v for v in fds.values() if v.startswith('pipe'))}", flush = True)
+                except (OSError, IndexError, ValueError):
+                    pass
         assert pids.exists() and pids.read_text(), errors
         apt_pid, child_pid = map(int, pids.read_text().split())
         if cancel_source == "file":
