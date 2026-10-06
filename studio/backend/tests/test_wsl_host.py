@@ -680,6 +680,16 @@ def test_build_tool_cancellation_reaps_the_guest_process_group(
             print(f"DIAG worker={me} alive={thread.is_alive()} calls={[c[:2] for c in calls]}", flush = True)
             print(subprocess.run(["ps", "-eo", "pid,ppid,pgid,stat,wchan:30,etimes,args", "--forest"],
                                  capture_output = True, text = True).stdout[-20000:], flush = True)
+            subprocess.run([sys.executable, "-m", "pip", "install", "-q", "py-spy"], capture_output = True)
+            spy = os.path.join(os.path.dirname(sys.executable), "py-spy")
+            for kid in open(f"/proc/{me}/task/{me}/children").read().split() + [
+                k for t in os.listdir(f"/proc/{me}/task") for k in open(f"/proc/{me}/task/{t}/children").read().split()
+            ]:
+                print(f"DIAG3 child {kid} status:", open(f"/proc/{kid}/status").read().split("State:")[1].split(chr(10))[0], flush = True)
+                for argv in (["sudo", "-n", "cat", f"/proc/{kid}/stack"],
+                             ["sudo", "-n", spy, "dump", "--native", "--pid", kid]):
+                    r = subprocess.run(argv, capture_output = True, text = True, timeout = 60)
+                    print(f"DIAG3 {' '.join(argv[2:4])} rc={r.returncode}", r.stdout[-6000:], r.stderr[-1500:], flush = True)
             for pid in [p for p in os.listdir("/proc") if p.isdigit()]:
                 try:
                     status = open(f"/proc/{pid}/status").read()
