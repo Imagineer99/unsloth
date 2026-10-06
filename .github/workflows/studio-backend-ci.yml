@@ -114,6 +114,8 @@ env:
   # 3.10 rather than the 3.9 pyproject.toml declares, because 3.9 is not true today:
   # unsloth/models/_utils.py uses dataclasses.dataclass(kw_only) and
   PYTHON_FLOOR: '3.10'
+  # Diagnostic: dump every thread's stack when a test runs past 45 s.
+  PYTEST_ADDOPTS: '-o faulthandler_timeout=45'
 
 
 jobs:
