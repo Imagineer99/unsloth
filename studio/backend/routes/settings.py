@@ -3927,6 +3927,7 @@ class LanAccessResponse(BaseModel):
     active_port: Optional[int] = None
     configured_addresses: Optional[list[str]] = None
     available_addresses: list[LanAccessAddress] = []
+    configured_public_addresses: list[str] = []
     managed_by: Optional[Literal["launch", "settings"]] = None
     can_start: bool
     can_stop: bool
