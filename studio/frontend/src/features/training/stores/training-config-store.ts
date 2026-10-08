@@ -1584,6 +1584,16 @@ export const useTrainingConfigStore = create<TrainingConfigStore>()(
         },
         setGradientCheckpointing: (gradientCheckpointing) =>
           setUserEdit({ gradientCheckpointing }),
+        setOffloadLayers: (offloadLayers) => setUserEdit({ offloadLayers }),
+        setOffloadVramGb: (offloadVramGb) => setUserEdit({ offloadVramGb }),
+        setOffloadVramGbForDevice: (gpuIndex, value) =>
+          setUserEdit((state) => ({
+            offloadVramGbPerDevice: {
+              ...state.offloadVramGbPerDevice,
+              [String(gpuIndex)]: value,
+            },
+          })),
+        setPrefetchDepth: (prefetchDepth) => setUserEdit({ prefetchDepth }),
         setRandomSeed: (randomSeed) => setUserEdit({ randomSeed }),
         setEnableWandb: (enableWandb) => setUserEdit({ enableWandb }),
         setWandbToken: (wandbToken) => setUserEdit({ wandbToken }),
