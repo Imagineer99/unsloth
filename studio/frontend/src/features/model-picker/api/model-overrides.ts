@@ -20,6 +20,7 @@ import {
   type PerModelConfig,
   deletePerModelConfigsForOverrideKeys,
   normalizePerModelConfig,
+  perModelConfigSnapshot,
 } from "../model-config/per-model-config";
 
 const OVERRIDES_URL = "/api/settings/openai-auto-switch/overrides";
@@ -619,6 +620,10 @@ async function sendModelOverride(
   };
 }
 
+// Last write per folded key: a forget's cleanup spares any alias saved after it was sent.
+let syncSeq = 0;
+const lastWriteSeq = new Map<string, number>();
+
 /**
  * Mirror a per-model config save to the backend without blocking the UI. Best-effort: the
  * localStorage write already happened, so a failed sync must not fail the save. Logged, not
@@ -632,9 +637,17 @@ export function syncModelOverride(
   config: PerModelConfig | null,
   options?: PutModelOverrideOptions,
 ): void {
+  const seq = ++syncSeq;
+  lastWriteSeq.set(foldOverrideKey(modelOverrideKey(modelId, ggufVariant)), seq);
+  // localStorage is shared, so this also catches a save from another tab meanwhile.
+  const sent = config === null ? perModelConfigSnapshot() : undefined;
   void putModelOverride(modelId, ggufVariant, config, options)
     .then(({ removedKeys }) => {
-      if (!deletePerModelConfigsForOverrideKeys(removedKeys)) {
+      // An undo, or a save under another alias, already rewrote what this forget reports.
+      const stale = removedKeys.filter(
+        (key) => (lastWriteSeq.get(foldOverrideKey(key)) ?? 0) <= seq,
+      );
+      if (!deletePerModelConfigsForOverrideKeys(stale, sent)) {
         console.warn(
           "Forgot model settings on the server, but this browser kept its own copy.",
         );
