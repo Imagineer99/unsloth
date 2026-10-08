@@ -3,6 +3,7 @@
 
 import { create } from "zustand";
 import { type StateStorage, createJSONStorage, persist } from "zustand/middleware";
+import { useChatRuntimeStore } from "@/features/chat";
 import { accountDatabaseName } from "@/lib/account-transition";
 import { hostOf } from "./address";
 import { forgetNativeDownloads } from "./native-downloads";
@@ -35,6 +36,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 function iconsFor(history: HistoryItem[], icons: Record<string, string>): Record<string, string> {
   const hosts = new Set(history.map((visit) => hostOf(visit.url)));
   return Object.fromEntries(Object.entries(icons).filter(([host]) => hosts.has(host)));
+}
+
+function savesHistory(temporary: boolean): boolean {
+  return useBrowserPrefsStore.getState().saveHistory && !temporary && !useChatRuntimeStore.getState().incognito;
 }
 
 function retentionCutoff(): number {
@@ -79,9 +84,9 @@ interface BrowserHistoryState {
   downloads: DownloadItem[];
   /** Host to the icon its pages declared, newest last. */
   icons: Record<string, string>;
-  recordVisit: (url: string, title: string) => void;
-  recordIcon: (host: string, icon: string) => void;
-  recordDownload: (item: Omit<DownloadItem, "id" | "downloadedAt">) => void;
+  recordVisit: (url: string, title: string, temporary?: boolean) => void;
+  recordIcon: (host: string, icon: string, temporary?: boolean) => void;
+  recordDownload: (item: Omit<DownloadItem, "id" | "downloadedAt">, temporary?: boolean) => void;
   removeVisit: (id: string) => void;
   removeVisits: (ids: ReadonlySet<string>) => void;
   removeDownload: (id: string) => void;
@@ -97,19 +102,19 @@ export const useBrowserHistoryStore = create<BrowserHistoryState>()(
       history: [],
       downloads: [],
       icons: {},
-      recordIcon: (host, icon) =>
+      recordIcon: (host, icon, temporary = false) =>
         set((state) => {
           if (!host || icon.length > MAX_URL_CHARS || state.icons[host] === icon) return state;
           // Icons name the hosts visited, so they follow the history setting.
-          if (!useBrowserPrefsStore.getState().saveHistory) return state;
+          if (!savesHistory(temporary)) return state;
           const { [host]: _replaced, ...rest } = state.icons;
           const hosts = Object.keys(rest);
           for (const old of hosts.slice(0, Math.max(0, hosts.length + 1 - MAX_ICONS))) delete rest[old];
           return { icons: { ...rest, [host]: icon } };
         }),
-      recordVisit: (url, fullTitle) =>
+      recordVisit: (url, fullTitle, temporary = false) =>
         set((state) => {
-          if (url.length > MAX_URL_CHARS || !useBrowserPrefsStore.getState().saveHistory) return state;
+          if (url.length > MAX_URL_CHARS || !savesHistory(temporary)) return state;
           const title = fullTitle.slice(0, MAX_TITLE_CHARS);
           const cutoff = retentionCutoff();
           const kept = cutoff ? state.history.filter((visit) => visit.visitedAt >= cutoff) : state.history;
@@ -123,9 +128,9 @@ export const useBrowserHistoryStore = create<BrowserHistoryState>()(
           const icons = kept.length < state.history.length ? iconsFor(history, state.icons) : state.icons;
           return { history, icons };
         }),
-      recordDownload: (item) =>
+      recordDownload: (item, temporary = false) =>
         set((state) => {
-          if (!useBrowserPrefsStore.getState().saveDownloadHistory) {
+          if (!useBrowserPrefsStore.getState().saveDownloadHistory || temporary || useChatRuntimeStore.getState().incognito) {
             if (item.nativeId) forgetNativeDownloads([item.nativeId]);
             return state;
           }
