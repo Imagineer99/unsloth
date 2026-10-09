@@ -1,0 +1,93 @@
+{
+  "pr": 13109,
+  "tested_head": "472a1fe9b23f82ea07032d2567d78b8a85d971a6",
+  "baseline": {
+    "arm": "baseline",
+    "scenarios": {
+      "early_retry": {
+        "before": {
+          "assistant_count": 3,
+          "branches": [
+            "1/2"
+          ],
+          "last_turn_visible": true
+        },
+        "after": {
+          "assistant_count": 1,
+          "branches": [
+            "2/2"
+          ],
+          "last_turn_visible": false
+        }
+      },
+      "selected_variant": {
+        "before": {
+          "assistant_count": 1,
+          "branches": [
+            "2/4"
+          ],
+          "last_turn_visible": false
+        },
+        "after": {
+          "assistant_count": 1,
+          "branches": [
+            "4/4"
+          ],
+          "last_turn_visible": false
+        }
+      }
+    },
+    "all_messages_unchanged": true,
+    "stored_messages": 12
+  },
+  "model": "Qwen3.5-0.8B UD-Q4_K_XL",
+  "environment": "WSL, Chromium, source-built app; existing installed dependencies",
+  "restart": "Backend stopped/restarted and new browser process with same browser storage",
+  "targeted_tests": {
+    "passed": 15,
+    "failed": 0
+  },
+  "limitations": [
+    "Packaged desktop shell not tested",
+    "Prompt editing not tested"
+  ],
+  "fixed": {
+    "arm": "fixed",
+    "scenarios": {
+      "early_retry": {
+        "before": {
+          "assistant_count": 3,
+          "branches": [
+            "1/2"
+          ],
+          "last_turn_visible": true
+        },
+        "after": {
+          "assistant_count": 3,
+          "branches": [
+            "1/2"
+          ],
+          "last_turn_visible": true
+        }
+      },
+      "selected_variant": {
+        "before": {
+          "assistant_count": 1,
+          "branches": [
+            "2/4"
+          ],
+          "last_turn_visible": false
+        },
+        "after": {
+          "assistant_count": 1,
+          "branches": [
+            "2/4"
+          ],
+          "last_turn_visible": false
+        }
+      }
+    },
+    "all_messages_unchanged": true,
+    "stored_messages": 12
+  }
+}
