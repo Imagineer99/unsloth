@@ -1,0 +1,23 @@
+✔ chat fine-tune data uses the reply picked in the branch picker (75.50004ms)
+✔ chat fine-tune data uses the newest reply when no chat is open (22.653035ms)
+✔ chat fine-tune data keeps chats opened earlier on their newest reply (20.814561ms)
+✔ chat fine-tune data uses the reply a closed chat was left on (11.051032ms)
+✔ the branch left open is reopened, not the newest row's (1.719249ms)
+✔ with nothing saved the newest row's branch is shown, as before (0.157888ms)
+✔ a saved head whose row is gone falls back to the newest row (0.151193ms)
+✔ turns added under the saved head since are part of its branch (0.108316ms)
+✔ a saved head with retried children follows the newest child (0.162055ms)
+✔ the newest turn under the saved head wins over a newer sibling (0.139505ms)
+✔ legacy rows without parents chain through to the newest (0.161764ms)
+✔ the recorder saves the head of the branch on screen as it moves (56.12805ms)
+✔ a temporary chat saved after a branch switch records the branch on screen (7.80263ms)
+✔ deleting a chat clears its saved branch once the delete holds (41.427269ms)
+✔ a rejected delete keeps the saved branch of the chat it brings back (27.082564ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 479.446825
