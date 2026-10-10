@@ -13,9 +13,15 @@ import {
 } from "../utils/conversation-markdown";
 import { allRecordedSandboxSessionIds } from "../utils/recorded-sandbox-session";
 import { liveThreadBranch } from "../utils/live-thread-head";
-import { forkChatThread } from "../api/chat-api";
-import { settleThreadScopedSettingsForCopy } from "../stores/chat-runtime-store";
-import type { SidebarItem } from "../hooks/use-chat-sidebar-items";
+import { forkChatThread, streamChatCompletions } from "../api/chat-api";
+import {
+  settleThreadScopedSettingsForCopy,
+  useChatRuntimeStore,
+} from "../stores/chat-runtime-store";
+import {
+  renameChatItem,
+  type SidebarItem,
+} from "../hooks/use-chat-sidebar-items";
 import {
   exportConversationCsv,
   exportConversationMarkdown,
@@ -23,7 +29,18 @@ import {
   exportConversationRawJsonl,
   exportConversationShareGPT,
 } from "../prompt-storage/prompt-storage-dialog";
-import { listStoredChatMessages } from "../utils/chat-history-storage";
+import {
+  getStoredChatThread,
+  listStoredChatMessages,
+} from "../utils/chat-history-storage";
+import { savedBranchHead } from "../utils/branch-head";
+import { orderByParentChain } from "../utils/message-order";
+import {
+  buildTitleRefreshRequest,
+  heuristicChatTitle,
+  titleFromStream,
+  titleRefreshExcerpt,
+} from "../utils/chat-title";
 
 export type ConversationExportFormat =
   | "raw-jsonl"
@@ -108,6 +125,73 @@ function forkRefused(): Error {
     new Error("This chat is still generating. Fork it once it finishes."),
     { unslothForkRefused: true },
   );
+}
+
+export type RegenerateTitleOutcome =
+  | "renamed"
+  | "unchanged"
+  | "empty"
+  | "busy"
+  | "failed";
+
+const regeneratingTitles = new Set<string>();
+// Past this, the title is picked from the messages instead.
+const TITLE_MODEL_WAIT_MS = 15_000;
+
+async function titleFromModel(checkpoint: string, excerpt: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TITLE_MODEL_WAIT_MS);
+  try {
+    const request = await buildTitleRefreshRequest(checkpoint, excerpt);
+    if (!request) return null;
+    return await titleFromStream(streamChatCompletions(request, controller.signal));
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Uses the selected model, never the one that answered (an idle local model would be reloaded for a
+ *  few words); without one, the messages. A comparison's panes share user turns, so one is read. */
+export async function regenerateChatTitle(
+  item: SidebarItem,
+): Promise<RegenerateTitleOutcome> {
+  if (regeneratingTitles.has(item.id)) return "busy";
+  regeneratingTitles.add(item.id);
+  try {
+    const threadId = getSidebarItemThreadIds(item)[0];
+    const liveBranch = liveThreadBranch(threadId);
+    const [startTitle, raw] = await Promise.all([
+      getStoredChatThread(threadId).then((thread) => thread?.title),
+      listStoredChatMessages(threadId),
+    ]);
+    // The branch on screen, else the one reopening the chat shows, as the exports read it.
+    const storedIds = new Set(raw.map((m) => m.id));
+    const headId = liveBranch?.length
+      ? ([...liveBranch].reverse().find((id) => storedIds.has(id)) ?? null)
+      : savedBranchHead(threadId, raw);
+    const branch = raw.some((m) => m.parentId != null)
+      ? orderByParentChain(raw, { includeSiblings: false, headId })
+      : raw;
+    const excerpt = titleRefreshExcerpt(branch);
+    if (!excerpt) return "empty";
+    const { params, modelLoading } = useChatRuntimeStore.getState();
+    const title =
+      (params.checkpoint && !modelLoading
+        ? await titleFromModel(params.checkpoint, excerpt)
+        : null) ?? heuristicChatTitle(branch);
+    if (!title) return "empty";
+    // A rename made while the model answered wins.
+    const current = (await getStoredChatThread(threadId))?.title;
+    if (current !== startTitle || title === current) return "unchanged";
+    await renameChatItem({ ...item, title: current ?? item.title }, title);
+    return "renamed";
+  } catch {
+    return "failed";
+  } finally {
+    regeneratingTitles.delete(item.id);
+  }
 }
 
 /** The sandbox sessions this chat's stored tool results name, if any. */
