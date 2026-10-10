@@ -2075,6 +2075,135 @@ def test_a_thread_becoming_active_with_a_blank_bar_is_repriced(seed_script, scen
 
 
 @pytest.mark.parametrize(
+    ("picked", "saved_model", "expected"),
+    [
+        pytest.param(
+            "external::openai::gpt-x",
+            None,
+            {"totalTokens": 6, "estimated": True},
+            id = "cloud_model_estimates",
+        ),
+        pytest.param("", None, {"totalTokens": 6, "estimated": True}, id = "no_model_estimates"),
+        pytest.param(
+            "external::openai::gpt-x",
+            "external::openai::gpt-x",
+            {"totalTokens": 300, "estimated": None},
+            id = "cloud_model_restores_its_own_saved_usage",
+        ),
+        pytest.param(
+            "external::openai::gpt-x",
+            "unsloth/gguf-model",
+            {"totalTokens": 6, "estimated": True},
+            id = "another_models_saved_usage_is_not_restored",
+        ),
+    ],
+)
+def test_a_mounted_thread_revisited_without_a_countable_model_is_refilled(
+    picked, saved_model, expected
+):
+    """#10337: picking a cloud model (or none) wipes every thread's usage, and a chat already opened
+    this session never reruns the history loader, so switching back to it showed no bar at all."""
+    saved = (
+        f'{{ promptTokens: 280, completionTokens: 20, totalTokens: 300, cachedTokens: 0, modelId: "{saved_model}" }}'
+        if saved_model
+        else "undefined"
+    )
+    out = _run(
+        textwrap.dedent(
+            f"""
+            // @ts-nocheck
+            import {{ renderThreadContextUsageRecount, seed, snapshot, useChatRuntimeStore, world }} from "./harness.ts";
+            {LOADED_MODEL}
+            world.storedMessages["thread-a"] = [
+              {{ id: "m1", role: "user", createdAt: 1, content: [{{ type: "text", text: "hello there" }}], metadata: {{}} }},
+              {{ id: "m2", role: "assistant", createdAt: 2, content: [{{ type: "text", text: "general kenobi" }}],
+                metadata: {{ contextUsage: {saved} }} }},
+            ];
+            seed({{
+              activeThreadId: "thread-b",
+              contextUsage: {{ promptTokens: 700, completionTokens: 20, totalTokens: 720, cachedTokens: 0 }},
+              contextUsageByThreadId: {{
+                "thread-a": {{ promptTokens: 500, completionTokens: 10, totalTokens: 510, cachedTokens: 0 }},
+                "thread-b": {{ promptTokens: 700, completionTokens: 20, totalTokens: 720, cachedTokens: 0 }},
+              }},
+            }});
+            renderThreadContextUsageRecount();
+
+            // Both chats stay mounted; the user picks another model, then clicks back into thread-a.
+            useChatRuntimeStore.getState().setCheckpoint({json.dumps(picked)});
+            if (!{json.dumps(picked)}) seed({{ loadedContextLength: null }});
+            renderThreadContextUsageRecount();
+            useChatRuntimeStore.getState().setActiveThreadId("thread-a");
+            renderThreadContextUsageRecount();
+            await new Promise((resolve) => setTimeout(resolve, 30));
+
+            const after = snapshot();
+            console.log(JSON.stringify({{
+              counts: world.countedMessages.length,
+              contextUsage: after.contextUsage,
+              cached: after.contextUsageByThreadId["thread-a"] ?? null,
+            }}));
+            """
+        )
+    )
+    assert out["counts"] == 0, "nothing can be counted exactly without a local model"
+    shown = out["contextUsage"] or {}
+    assert (
+        shown.get("totalTokens") == expected["totalTokens"]
+    ), "a revisited chat must show its stored usage or an estimate, not a blank bar"
+    assert shown.get("estimated") == expected["estimated"]
+    assert (out["cached"] or {}).get("totalTokens") == expected["totalTokens"]
+
+
+@pytest.mark.parametrize("interruption", ["run_starts_mid_read", "load_still_cancelling"])
+def test_a_cloud_refill_waits_for_a_run_or_load_to_settle(interruption):
+    """A turn sent while the refill reads storage must not get the pre-send estimate, and a cancelled
+    local load clears usage again after the external pick, so both have to re-fire the refill."""
+    if interruption == "run_starts_mid_read":
+        interrupt = 'seed({ runningByThreadId: { "thread-a": true } });'
+        settle = """
+            world.storedMessages["thread-a"].push(
+              { id: "m3", role: "user", createdAt: 3, content: [{ type: "text", text: "and what about the moon then" }], metadata: {} },
+            );
+            seed({ runningByThreadId: {} });
+        """
+    else:
+        interrupt = "seed({ modelLoading: true });"
+        settle = "seed({ modelLoading: false, contextUsage: null, contextUsageByThreadId: {} });"
+    out = _run(
+        textwrap.dedent(
+            f"""
+            // @ts-nocheck
+            import {{ renderThreadContextUsageRecount, seed, snapshot, useChatRuntimeStore, world }} from "./harness.ts";
+            {LOADED_MODEL}
+            world.storedMessages["thread-a"] = [
+              {{ id: "m1", role: "user", createdAt: 1, content: [{{ type: "text", text: "hello there" }}], metadata: {{}} }},
+              {{ id: "m2", role: "assistant", createdAt: 2, content: [{{ type: "text", text: "general kenobi" }}], metadata: {{}} }},
+            ];
+            seed({{ activeThreadId: "thread-a" }});
+            useChatRuntimeStore.getState().setCheckpoint("external::openai::gpt-x");
+            renderThreadContextUsageRecount();
+            // Lands while the refill is still awaiting storage; the store selectors re-render.
+            {interrupt}
+            renderThreadContextUsageRecount();
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            const during = snapshot().contextUsage;
+
+            {settle}
+            renderThreadContextUsageRecount();
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            console.log(JSON.stringify({{ during, after: snapshot().contextUsage }}));
+            """
+        )
+    )
+    assert out["during"] is None, "nothing may be published while a run or load is in flight"
+    expected = 13 if interruption == "run_starts_mid_read" else 6
+    assert (
+        (out["after"] or {}).get("totalTokens") == expected
+    ), "the refill must run again once the run or load settles, against the current records"
+
+
+@pytest.mark.parametrize(
     ("mount", "expected_total"),
     [
         # The runtime mounted mid-count after a turn was sent, so the priced branch is a prefix.
