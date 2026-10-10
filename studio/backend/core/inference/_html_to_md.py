@@ -16,6 +16,7 @@ error placeholders, session banners, cookie prompts) from the result.
 
 from __future__ import annotations
 
+import functools
 import html
 import re
 import secrets
@@ -399,6 +400,131 @@ class _TableFrame:
         self.parts: list[str] = []
 
 
+class _TitleButtonScan(HTMLParser):
+    """Find buttons that hold their heading's whole title (``<h3><button>Question</button></h3>``, an accordion
+    trigger): the heading's first visible button with text, with no visible heading text outside it. Decided
+    before rendering so the kept button renders in source order like any inline element."""
+
+    def __init__(self, start: int, snippet: str) -> None:
+        super().__init__(convert_charrefs = True)
+        self.keep: set[int] = set()
+        self._start = start
+        self._line_starts = _line_starts(snippet)
+        self._open: list[str] = []
+        self._muted: list[int] = []  # open-tag indices of hidden / skipped subtrees
+        self._button_at: int | None = None
+        self._button_id = -1
+        # per open heading: [open-tag index, candidate button id or None, candidate has text, other text seen]
+        self._headings: list[list] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.lower()
+        # headings hold phrasing content only: a list item or cell means the heading was left open
+        if tag in ("li", "dt", "dd", "tr", "td", "th"):
+            self._close_headings(0)
+        if tag in _VOID_TAGS:
+            return
+        attr_dict = dict(attrs)
+        self._open.append(tag)
+        index = len(self._open) - 1
+        if _is_hidden_element(attr_dict) or (tag in _SKIP_TAGS and tag != "button"):
+            self._muted.append(index)
+        if tag in _HEADING_TAGS or _is_aria_heading(attr_dict):
+            self._headings.append([index, None, False, False])
+        elif tag == "button" and self._button_at is None:
+            self._button_at = index
+            self._button_id = self._start + _offset(self._line_starts, self.getpos())
+            frame = self._headings[-1] if self._headings else None
+            if frame is not None and frame[1] is None and not self._muted:
+                frame[1] = self._button_id
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.lower()
+        for i in range(len(self._open) - 1, -1, -1):
+            if self._open[i] == tag:
+                self._pop_to(i)
+                return
+
+    def handle_data(self, data: str) -> None:
+        if self._muted or not data.strip():
+            return
+        for frame in self._headings:
+            if self._button_at is not None and frame[1] == self._button_id:
+                frame[2] = True
+            elif self._button_at is None:
+                frame[3] = True
+
+    def close(self) -> None:
+        super().close()
+        self._close_headings(0)
+
+    def _pop_to(self, i: int) -> None:
+        if self._button_at is not None and self._button_at >= i:
+            self._button_at = None
+            # an icon-only control releases the slot for the trigger after it
+            for frame in self._headings:
+                if frame[1] == self._button_id and not frame[2]:
+                    frame[1] = None
+        while self._muted and self._muted[-1] >= i:
+            self._muted.pop()
+        self._close_headings(i)
+        del self._open[i:]
+
+    def _close_headings(self, i: int) -> None:
+        while self._headings and self._headings[-1][0] >= i:
+            _, button, has_text, other = self._headings.pop()
+            if button is not None and has_text and not other:
+                self.keep.add(button)
+
+
+_HEADING_OPEN_RE = re.compile(r"<h[1-6][\s>/]", re.IGNORECASE)
+_ARIA_HEADING_RE = re.compile(r"role\s*=\s*[\"']?[^\"'>]*heading", re.IGNORECASE)
+_BUTTON_OPEN_RE = re.compile(r"<button", re.IGNORECASE)
+_HEADING_CLOSE_RE = re.compile(r"</h[1-6]", re.IGNORECASE)
+# how far after a heading opens its title button may start; past it the button is dropped as before
+_TITLE_BUTTON_WINDOW = 4_000
+
+
+def _line_starts(text: str) -> list[int]:
+    starts = [0]
+    starts.extend(m.end() for m in re.finditer("\n", text))
+    return starts
+
+
+def _offset(line_starts: list[int], pos: tuple[int, int]) -> int:
+    return line_starts[pos[0] - 1] + pos[1]
+
+
+@functools.lru_cache(maxsize = 4)
+def _title_buttons(source_html: str) -> frozenset[int]:
+    """Source offsets of the ``<button`` tags that carry their heading's title. Only the stretch from each
+    heading's open tag to its close is scanned, so a page pays per heading, not a second full parse."""
+    if not _BUTTON_OPEN_RE.search(source_html):
+        return frozenset()
+    opens = sorted(
+        [m.start() for m in _HEADING_OPEN_RE.finditer(source_html)]
+        + [source_html.rfind("<", 0, m.start()) for m in _ARIA_HEADING_RE.finditer(source_html)]
+    )
+    spans: list[list[int]] = []
+    for start in opens:
+        if start < 0 or (spans and start < spans[-1][1]):
+            continue
+        limit = start + _TITLE_BUTTON_WINDOW
+        if not _BUTTON_OPEN_RE.search(source_html, start, limit):
+            continue
+        close = _HEADING_CLOSE_RE.search(source_html, start, limit)
+        end = close.start() if close and source_html[start + 1] in "hH" else limit
+        if _BUTTON_OPEN_RE.search(source_html, start, end):
+            spans.append([start, end])
+    keep: set[int] = set()
+    for start, end in spans:
+        scan = _TitleButtonScan(start, source_html[start:end])
+        scan.feed(source_html[start:end])
+        scan.close()
+        keep |= scan.keep
+    return frozenset(keep)
+
+
 class _MarkdownRenderer(HTMLParser):
     """HTMLParser subclass that emits Markdown tokens into a list.
 
@@ -417,6 +543,9 @@ class _MarkdownRenderer(HTMLParser):
         page_span_limit: int | None = None,
     ):
         super().__init__(convert_charrefs = False)
+        # source offsets of buttons that carry their heading's title, from _title_buttons
+        self.title_buttons: frozenset[int] = frozenset()
+        self._line_starts: list[int] = []
         self._site_links = site_links
         self._out: list[str] = []
         self._skip_depth: int = 0
@@ -972,6 +1101,11 @@ class _MarkdownRenderer(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag = tag.lower()
+        title_button = (
+            tag == "button"
+            and bool(self.title_buttons)
+            and _offset(self._line_starts, self.getpos()) in self.title_buttons
+        )
 
         if self._skip_depth:
             if tag in _SKIP_TAGS:
@@ -982,7 +1116,7 @@ class _MarkdownRenderer(HTMLParser):
         # <p>, releasing its hidden mark so following siblings render.
         self._close_implicit(tag)
 
-        if tag in _SKIP_TAGS:
+        if tag in _SKIP_TAGS and not (title_button and self._heading_marks):
             self._skip_depth += 1
             return
 
@@ -1084,7 +1218,8 @@ class _MarkdownRenderer(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
 
-        if tag in _SKIP_TAGS:
+        # a kept title button closes through _exit_tag; skipped ones always raised _skip_depth
+        if tag in _SKIP_TAGS and (self._skip_depth or tag != "button"):
             self._skip_depth = max(0, self._skip_depth - 1)
             return
         if self._skip_depth:
@@ -1364,6 +1499,9 @@ def _new_renderer(
         header_decisions = header_decisions,
         page_span_limit = 2 * len(source_html),
     )
+    renderer.title_buttons = _title_buttons(source_html)
+    if renderer.title_buttons:
+        renderer._line_starts = _line_starts(source_html)
     renderer.feed(source_html)
     renderer.close()
     renderer.flush_pending()
