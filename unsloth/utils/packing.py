@@ -203,6 +203,14 @@ def _enable_hf_packed_attention() -> None:
         logging.getLogger(__name__).info(f"Unsloth: packed varlen attention not enabled ({exc})")
 
 
+def _scope_flash_attention_impl(model, trainer) -> None:
+    try:
+        from .flash_impl import scope_flash_attention_impl_to_train
+        scope_flash_attention_impl_to_train(trainer, model)
+    except Exception as exc:
+        logging.getLogger(__name__).info(f"Unsloth: flash attention impl not scoped ({exc})")
+
+
 def enable_sample_packing(
     model,
     trainer,
@@ -222,6 +230,7 @@ def enable_sample_packing(
     if collator is None or not hasattr(collator, "torch_call"):
         return
     _enable_hf_packed_attention()
+    _scope_flash_attention_impl(model, trainer)
     if getattr(collator, "_unsloth_packing_wrapped", False):
         return
 
@@ -265,11 +274,11 @@ def enable_sample_packing(
 def enable_padding_free_metadata(model, trainer):
     """Inject seq-length metadata when padding-free batching is enabled without packing."""
     collator = getattr(trainer, "data_collator", None)
-    if (
-        collator is None
-        or getattr(collator, "_unsloth_padding_free_lengths_wrapped", False)
-        or not getattr(collator, "padding_free", False)
-    ):
+    if collator is None or not getattr(collator, "padding_free", False):
+        return
+    # Before the already-wrapped return: a reused collator's new trainer still needs scoping.
+    _scope_flash_attention_impl(model, trainer)
+    if getattr(collator, "_unsloth_padding_free_lengths_wrapped", False):
         return
 
     mark_allow_overlength(model)
