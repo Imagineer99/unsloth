@@ -1,0 +1,20 @@
+{
+  "clock": "simulated, not a GPU benchmark",
+  "results": [
+    {
+      "mode": "before",
+      "simulated_seconds": 1300.0,
+      "result": "timed-out"
+    },
+    {
+      "mode": "custom",
+      "simulated_seconds": 1301.0,
+      "result": "completed"
+    },
+    {
+      "mode": "unlimited",
+      "simulated_seconds": 86401.0,
+      "result": "completed"
+    }
+  ]
+}

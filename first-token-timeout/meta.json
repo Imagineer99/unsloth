@@ -1,0 +1,95 @@
+{
+  "scene": "first-token-timeout-settings",
+  "expect": "BEFORE has no first-token setting; AFTER saves custom minutes and Unlimited to the backend and retains them on reload/restart.",
+  "sides": {
+    "before": {
+      "url": "http://127.0.0.1:36295",
+      "pid": 1124,
+      "port": 36295,
+      "home": "/home/samle/dev/unsloth_main/unsloth/work/first-token-evidence/final/before-home",
+      "commit": "658b75a681fc33f05a8d3efd3f952d6294ca8691",
+      "frontend_sha256": "da9484458f2c28afacc9e705fb53fd1bad0face071fdd4a1c3a37a2523b4bb7e"
+    },
+    "after": {
+      "url": "http://127.0.0.1:53209",
+      "pid": 2724,
+      "port": 53209,
+      "home": "/home/samle/dev/unsloth_main/unsloth/work/first-token-evidence/final/after-home",
+      "commit": "e84e85340b177836a0391bad23872926297050e7",
+      "frontend_sha256": "7144cdc0b31d924600e23f043ea5c0eaea4599198f6f43ba0bbe51f1666a254e"
+    }
+  },
+  "facts": [
+    {
+      "browser": "chromium",
+      "label": "before",
+      "setting_count": 0,
+      "api_status": 404,
+      "page_errors": []
+    },
+    {
+      "browser": "firefox",
+      "label": "before",
+      "setting_count": 0,
+      "api_status": 404,
+      "page_errors": []
+    },
+    {
+      "browser": "webkit",
+      "label": "before",
+      "setting_count": 0,
+      "api_status": 404,
+      "page_errors": []
+    },
+    {
+      "browser": "chromium",
+      "label": "after",
+      "setting_count": 1,
+      "custom_minutes": 60,
+      "saved_minutes": 0,
+      "reload_persisted": true,
+      "invalid_inputs_rejected": 5,
+      "page_errors": []
+    },
+    {
+      "browser": "firefox",
+      "label": "after",
+      "setting_count": 1,
+      "custom_minutes": 60,
+      "saved_minutes": 0,
+      "reload_persisted": true,
+      "invalid_inputs_rejected": 5,
+      "page_errors": []
+    },
+    {
+      "browser": "webkit",
+      "label": "after",
+      "setting_count": 1,
+      "custom_minutes": 60,
+      "saved_minutes": 0,
+      "reload_persisted": true,
+      "invalid_inputs_rejected": 5,
+      "page_errors": []
+    }
+  ],
+  "limitations": "Real settings API and production UI; no model/GPU inference. Backend timeout tests use simulated time.",
+  "restart_persisted": true,
+  "facts_diff": {
+    "setting_count": {
+      "before": 0,
+      "after": 1
+    },
+    "custom_minutes": {
+      "before": null,
+      "after": 60
+    },
+    "unlimited_minutes": {
+      "before": null,
+      "after": 0
+    },
+    "reload_and_restart": {
+      "before": null,
+      "after": true
+    }
+  }
+}
