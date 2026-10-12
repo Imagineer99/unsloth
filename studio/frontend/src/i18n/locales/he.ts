@@ -2180,6 +2180,13 @@ export const he = {
         noGpu: "לא זוהה GPU",
         gpuUnusable: "GPU אינו שמיש",
         gpuUnusableDetail: "זוהה, אך PyTorch אינו יכול להשתמש בו",
+        detailedView: "תצוגה מפורטת",
+        detailedViewDescription:
+          "הצגת עומס המעבד ועומס, טמפרטורה וצריכת חשמל של כל GPU בחלון הצף וכאן.",
+        cpuLoad: "עומס מעבד",
+        gpuLoad: "עומס GPU",
+        temperature: "טמפרטורה",
+        power: "הספק",
       },
       gpu: {
         title: "התקני GPU",
