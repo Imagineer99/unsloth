@@ -1,0 +1,8 @@
+{
+  "before": "8d450cb8cbd4453e778bf0a31f8f2fd765b02117",
+  "after": "efaca49da6b969d70149c13a26db644da8782f62",
+  "before_ansi": "96",
+  "after_ansi": "38;5;136",
+  "text_identical": true,
+  "kind": "rendered output preview"
+}
