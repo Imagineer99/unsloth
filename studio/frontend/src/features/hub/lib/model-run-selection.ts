@@ -20,6 +20,9 @@ export interface HubModelRunSelection {
   ggufVariant?: string;
   ggufFilename?: string;
   expectedBytes?: number;
+  /** ggufVariant is an MLX precision folder, fetched by the load itself. */
+  precisionFolder?: boolean;
+  downloaded?: boolean;
 }
 
 function isPresent(value: string | null | undefined): value is string {
@@ -117,6 +120,36 @@ function createHandoffMeta(
   return meta;
 }
 
+function createPrecisionFolderHandoff(
+  requestId: string,
+  model: SelectedModelView,
+  selection: HubModelRunSelection,
+): ModelConfigHandoffRequest | null {
+  const id = model.hubRepoId ?? model.id;
+  if (!isPresent(id) || !isPresent(selection.ggufVariant) || isEmbeddingOnly(model)) {
+    return null;
+  }
+  const meta: ModelConfigHandoffRequest["meta"] = {
+    source: "hub",
+    isLora: false,
+    isDownloaded: selection.downloaded === true,
+    isGguf: false,
+    ggufVariant: selection.ggufVariant,
+    pipelineTag: model.task ?? model.pipelineTag ?? null,
+  };
+  if (isPresent(selection.ggufFilename)) {
+    meta.ggufFilename = selection.ggufFilename;
+  }
+  if (
+    selection.expectedBytes != null &&
+    Number.isFinite(selection.expectedBytes) &&
+    selection.expectedBytes > 0
+  ) {
+    meta.expectedBytes = selection.expectedBytes;
+  }
+  return { requestId, id, displayName: model.title, meta };
+}
+
 /** The task the Audio handoff runs on: offline, a cached curated audio GGUF carries only the
  *  backend's generic text-generation task, which the picker maps back from the catalog too. */
 export function hubAudioTask(
@@ -203,6 +236,9 @@ export function createHubModelConfigHandoff({
 }): ModelConfigHandoffRequest | null {
   if (!isPresent(requestId)) {
     return null;
+  }
+  if (selection.precisionFolder) {
+    return createPrecisionFolderHandoff(requestId, model, selection);
   }
   if (!hasRunnableChatModel(model)) {
     return null;
