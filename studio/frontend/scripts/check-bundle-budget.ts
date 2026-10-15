@@ -120,12 +120,11 @@ export const BUDGET = {
   // Naming the Windows update that adds MXC's built-in container (#13798) adds 358 B raw / 93 B transfer, its
   // string in the eager English locale (6,765,003 -> 6,765,361 B raw against 3c0061e16, one machine and build,
   // Node 24, chunk count unchanged at 95), which put main 55 B raw over. Raised by that growth.
-  // Each chat keeping its own browser tabs (#13800: the store's per-chat state, background pages in the
-  // native view, and the off-screen question strings) adds 5,278 B raw / 1,928 B transfer (6,765,003 ->
-  // 6,770,281 B raw, 2,033,563 -> 2,035,491 B transfer against a8585676d4, one machine and build, Node 24,
-  // chunk count unchanged at 95), raised by that.
-  transferBytes: 2_035_705,
-  rawBytes: 6_770_942,
+  // The Image downloads > Info stamp row in Settings > Library, its search entry and strings (#13444) add
+  // 327 B raw to the eager settings and English locale chunks (6,765,380 -> 6,765,707 B raw against
+  // 82c608b31, one machine and build, Node 24, chunk count unchanged at 95), 43 B over. Raised by that growth.
+  transferBytes: 2_033_777,
+  rawBytes: 6_765_991,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
