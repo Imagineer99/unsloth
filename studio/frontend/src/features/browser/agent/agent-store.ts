@@ -16,7 +16,10 @@ import {
   ruleFor,
 } from "./permissions";
 
-export type AgentPrompt = Question & { id: number };
+/** `always`: the bar offers Always allow, as the answer can be kept for this chat. */
+export type AgentPrompt = Question & { id: number; always: boolean };
+/** `always`: allowed, and not asked again for this kind of action on this site in this chat. */
+export type Answer = false | "once" | "always";
 
 /** One chat's use of the browser tools; chats run theirs side by side, each in its own tab. */
 export type AgentChat = {
@@ -97,53 +100,18 @@ export const useBrowserAgentStore = create<BrowserAgentState>()(
   ),
 );
 
-// A new chat's key -> its saved one, so a run that captured the old key still reaches its chat.
-const adopted = new Map<string, string>();
-
-export function liveChat(chat: string): string {
-  let key = chat;
-  for (let hops = 0; hops < 8 && adopted.has(key); hops++) key = adopted.get(key) ?? key;
-  return key;
-}
-
-export function agentChat(chat: string): AgentChat {
-  return useBrowserAgentStore.getState().chats[liveChat(chat)] ?? IDLE_AGENT;
-}
-
-export function patchAgentChat(chat: string, patch: Partial<AgentChat>): void {
-  const key = liveChat(chat);
-  useBrowserAgentStore.setState((state) => ({
-    chats: { ...state.chats, [key]: { ...(state.chats[key] ?? IDLE_AGENT), ...patch } },
-  }));
-}
-
-/** A new chat saved under its id keeps its run, tab, pending question and the action in flight. */
-export function adoptAgentChat(from: string, to: string): void {
-  if (from === to) return;
-  adopted.set(from, to);
-  const action = activeActions.get(from);
-  activeActions.delete(from);
-  if (action && !activeActions.has(to)) activeActions.set(to, action);
-  useBrowserAgentStore.setState((state) => {
-    const moved = state.chats[from];
-    if (!moved) return state;
-    const { [from]: _moved, ...chats } = state.chats;
-    return { chats: chats[to] ? chats : { ...chats, [to]: moved } };
-  });
-}
-
-const answers = new Map<number, (allow: boolean) => void>();
+const answers = new Map<number, (answer: Answer) => void>();
 let nextQuestion = 1;
 
-/** Ask the user in `chat`'s agent bar; false when they decline or the run ends first. */
-export function askUser(chat: string, question: Question, signal?: AbortSignal): Promise<boolean> {
+/** Ask the user in the agent bar; false when they decline or the run ends first. */
+export function askUser(question: Question, signal?: AbortSignal, always = false): Promise<Answer> {
   return new Promise((resolve) => {
     const id = nextQuestion++;
-    const finish = (allow: boolean) => {
+    const finish = (answer: Answer) => {
       answers.delete(id);
       signal?.removeEventListener("abort", onAbort);
-      if (agentChat(chat).question?.id === id) patchAgentChat(chat, { question: null });
-      resolve(allow);
+      if (useBrowserAgentStore.getState().question?.id === id) useBrowserAgentStore.setState({ question: null });
+      resolve(answer);
     };
     const onAbort = () => finish(false);
     if (signal?.aborted) {
@@ -155,12 +123,12 @@ export function askUser(chat: string, question: Question, signal?: AbortSignal):
     const current = agentChat(chat).question;
     if (current) answers.get(current.id)?.(false);
     answers.set(id, finish);
-    patchAgentChat(chat, { question: { ...question, id } });
+    useBrowserAgentStore.setState({ question: { ...question, id, always } });
   });
 }
 
-export function answerQuestion(id: number, allow: boolean): void {
-  answers.get(id)?.(allow);
+export function answerQuestion(id: number, allow: boolean, always = false): void {
+  answers.get(id)?.(allow && (always ? "always" : "once"));
 }
 
 const DOWNLOAD_STRICTNESS: Record<DownloadsRule, number> = { allow: 0, ask: 1, block: 2 };

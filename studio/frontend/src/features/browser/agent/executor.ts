@@ -15,8 +15,8 @@ import { hasNativeView, keepInBackground, nativeAction, releaseBackground, whenV
 import { callNative, useNativeBrowser } from "../native-support";
 import { requestFrameAgent } from "../page-frame";
 import { browserPanelAvailable } from "../panel-availability";
-import { type BrowserTab, chatKeyOfThread, currentEntry, onChatAdopted, useBrowserStore } from "../store";
-import { adoptAgentChat, agentChat, askUser, liveChat, onBrowserAgentRunEnd, patchAgentChat, setActiveAction, useBrowserAgentStore } from "./agent-store";
+import { type BrowserTab, currentEntry, useBrowserStore } from "../store";
+import { type Answer, askUser, setActiveAction, useBrowserAgentStore } from "./agent-store";
 import { type Gate, type Question, type SitePolicy, gateElement, gateNavigation, hostOfUrl, navigationBlocks } from "./gate";
 import { type SiteRule, ruleFor } from "./permissions";
 import { type AgentAnswer, type ElementInfo, pageAgentSource } from "./page-agent";
@@ -112,23 +112,20 @@ export function parseBrowserAction(value: unknown): BrowserAction | null {
   };
 }
 
-type Session = {
-  chat: string;
-  // Sites the user approved or named, where the model may open addresses it made up; every site the
-  // agent has been on (a page's link reaches its site, but the page chose it, not the user); and the
-  // links on the page the agent last read.
-  knownHosts: Set<string>;
-  reachedHosts: Set<string>;
-  opaqueHosts: Set<string>;
-  pageLinks: Set<string>;
-  // Where the agent's own moves landed: a native view's Back or Forward doesn't say where it goes,
-  // so this is how it is checked before it loads.
-  trail: string[];
-  at: number;
-  // A chat never saw another's screenshots: its x and y are CSS pixels until it takes one.
-  pointScale: Map<string, ShotView & { scaleX: number; scaleY: number }>;
-  queue: Promise<void>;
-};
+// Sites the user approved or named, where the model may open addresses it made up; every site the
+// agent has been on (a page's link reaches its site, but the page chose it, not the user); and the
+// links on the page the agent last read. All per chat.
+const knownHosts = new Set<string>();
+const reachedHosts = new Set<string>();
+const opaqueHosts = new Set<string>();
+let pageLinks = new Set<string>();
+let scope: string | undefined;
+// Where the agent's own moves in this chat landed: a native view's Back or Forward doesn't say where
+// it goes, so this is how it is checked before it loads.
+let trail: string[] = [];
+let at = -1;
+// Always allow answers, by chat: kept when another chat uses the browser, like Always allow on tool cards.
+const alwaysAllowed = new Map<string, Set<string>>();
 
 const sessions = new Map<string, Session>();
 const MAX_SESSIONS = 32;
@@ -459,11 +456,11 @@ async function untilFilled(tab: BrowserTab, since: number, signal?: AbortSignal)
   return (await waitOnPage(tab.id, (now) => currentEntry(now) !== entry, since, FILL_QUIET_MAX_MS, signal, FILL_IDLE_QUIET_MS)) === "loading";
 }
 
-async function pass(gate: Gate, context: Run): Promise<string | null> {
+async function pass(gate: Gate, signal?: AbortSignal, remember = true): Promise<string | null> {
   if (gate.kind === "allow") return null;
   if (gate.kind === "block") return `Not done: ${gate.reason}.`;
   const { ask, host, name, detail } = gate;
-  const allowed = await askInPanel({ ask, host, name, detail }, context);
+  const allowed = await askInPanel({ ask, host, name, detail }, signal, remember);
   // Not gate.prompt: it quotes the page's label, and errors reach the model outside the fence.
   return allowed ? null : `The user declined ${DECLINED[ask]} on ${host || "this page"}. Do something else, or ask them.`;
 }
@@ -478,16 +475,20 @@ const DECLINED: Record<Question["ask"], string> = {
   pointer: "clicking where the page doesn't say what is there",
 };
 
-/** A question waits in a chat that isn't on screen: say so, with a way there. One toast per chat. */
-function notifyOffScreenQuestion(chat: string): void {
-  // A single chat's key is `single:<thread>`, a compare's `compare:<pair>`; the sidebar row has that id.
-  const [type, id] = [chat.slice(0, chat.indexOf(":")), chat.slice(chat.indexOf(":") + 1)];
-  const item =
-    visibleChatItems(useChatNavigationStore.getState()).find((candidate) => candidate.id === id && candidate.type === type) ?? null;
-  toast(translate("browser.agent.waiting", { chat: item?.title || translate("browser.agent.otherChat", undefined, getLocale()) }, getLocale()), {
-    id: `browser-agent-question:${chat}`,
-    action: item ? { label: translate("browser.agent.show", undefined, getLocale()), onClick: () => openChatItemById(item) } : undefined,
-  });
+/** Questions show in the panel's agent bar, so the panel has to be on screen to ask. A script is asked every time. */
+async function askInPanel(question: Question, signal?: AbortSignal, remember = true): Promise<Answer> {
+  // As askUser does: a stopped action isn't answered, even by Always allow.
+  if (signal?.aborted) return false;
+  // A click is asked about by its label, so Always allow covers that button, not every risky one.
+  const key = [question.ask, question.host, question.ask === "click" ? question.name : ""].join("\n");
+  // "__default" is a new chat's first turn that hasn't got its id yet, which another new chat can share.
+  const chat = !remember || question.ask === "script" || !scope || scope === "__default" ? undefined : scope;
+  if (chat && alwaysAllowed.get(chat)?.has(key)) return "always";
+  const store = useBrowserStore.getState();
+  if (!store.open) store.openPanel();
+  const answer = await askUser(question, signal, Boolean(chat));
+  if (answer === "always" && chat) alwaysAllowed.set(chat, (alwaysAllowed.get(chat) ?? new Set()).add(key));
+  return answer;
 }
 
 /** Questions show in the chat's agent bar: the panel opens for one in the chat on screen, and one
@@ -651,7 +652,8 @@ async function perform(action: BrowserAction, context: Run): Promise<Result> {
     } else if (nativeMove) {
       // History from before this chat, or from the user browsing in the tab: where it leads is unknown.
       const where = action.op === "back" ? "the previous page" : "the next page";
-      const refused = await pass({ kind: "ask", ask: "open", host: where, name: "", detail: "", prompt: `Open ${where}?` }, context);
+      // Not kept by Always allow: `where` names no site, so it would answer for wherever a later move leads.
+      const refused = await pass({ kind: "ask", ask: "open", host: where, name: "", detail: "", prompt: `Open ${where}?` }, signal, false);
       if (refused) return { ok: false, error: refused };
     }
     const since = Date.now();
