@@ -116,6 +116,8 @@ export interface DiffusionGenerateProgress {
   // Live latent preview of the image being denoised (small JPEG data URL), and a counter that moves with each one.
   preview?: string | null;
   preview_seq?: number;
+  // "connection" while the run is on a saved image connection: the Stop target for a resumed run.
+  target?: "connection" | null;
 }
 
 export interface DiffusionLoadProgress {
@@ -449,10 +451,7 @@ export async function generateDiffusionImage(
     // A proxy answers with HTML (or nothing); the app answers with JSON. Only the former means the request may still
     // be running: settling an application error would poll for a generation that never started and hide the reason
     // the backend gave.
-    if (
-      response.status === 503 &&
-      (response.headers.get("content-type") || "").toLowerCase().includes("application/json")
-    ) {
+    if ((response.headers.get("content-type") || "").toLowerCase().includes("application/json")) {
       throw new Error(detail);
     }
     throw new GenerateResponseLostError(detail);
@@ -471,13 +470,16 @@ export async function generateDiffusionImage(
  *  nothing persisted. `cancelled` is false when there was nothing to stop. */
 export async function cancelDiffusionGeneration(
   signal?: AbortSignal,
+  target?: "connection",
 ): Promise<{ cancelled: boolean }> {
   return parseJson(
     // No network retry, and abortable. The endpoint always targets whichever generation is active NOW, so a retry or
     // a 401 refresh-and-replay firing after the stopped run settled can land on a run the user started meanwhile.
     // The signal lets the caller drop a pending one.
     await authFetch(
-      "/api/inference/images/generate/cancel",
+      target
+        ? `/api/inference/images/generate/cancel?target=${target}`
+        : "/api/inference/images/generate/cancel",
       { method: "POST", signal },
       { retryNetworkErrors: false },
     ),
