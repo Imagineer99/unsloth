@@ -147,8 +147,12 @@ export const BUDGET = {
   // transfer (6,773,496 -> 6,774,820 B raw, 2,036,386 -> 2,036,728 B transfer against 59ab069b5, one machine
   // and build, Node 24, chunk count unchanged at 95). Lazy-loading it cost more transfer and a 96th startup
   // chunk (Rollup split react-dom out), so it is imported statically and the budget raised by that growth.
-  transferBytes: 2_036_821,
-  rawBytes: 6_774_897,
+  // The Windows Long Paths explainer on the first-run startup screen (#13523) adds 1,816 B raw / 479 B
+  // transfer (6,777,794 -> 6,779,610 B raw, 2,037,725 -> 2,038,204 B transfer against 50b9deacb, one machine
+  // and build, Node 24, chunk count unchanged at 95). Main already measured 2,897 B raw / 904 B transfer over
+  // the previous limits there, so they are set to the measured build.
+  transferBytes: 2_038_204,
+  rawBytes: 6_779_610,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
