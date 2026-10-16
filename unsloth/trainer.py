@@ -27,6 +27,13 @@ from trl import SFTTrainer
 
 # Bypass the partially-initialised unsloth namespace during the _gpu_init load.
 from .models._utils import is_bfloat16_supported
+from unsloth.optimizers.flash_adamw import (
+    _FLASH_ADAMW_PLACEHOLDER,
+    is_flash_adamw,
+    is_flash_adamw_marked,
+    mark_flash_adamw,
+    unmark_flash_adamw,
+)
 from unsloth.utils import (
     configure_padding_free,
     configure_sample_packing,
@@ -924,6 +931,8 @@ class QGaloreConfig:
 
 
 class UnslothTrainingArguments(TrainingArguments):
+    _unsloth_accepts_adamw_flash = True
+
     def __init__(
         self,
         embedding_learning_rate: float = None,
@@ -940,7 +949,23 @@ class UnslothTrainingArguments(TrainingArguments):
         self.q_galore_config = q_galore_config
         self.embedding_learning_rate = embedding_learning_rate
         self.loraplus_lr_ratio = loraplus_lr_ratio
+        # Imported here too: tests exec this class body in a namespace without the module imports.
+        from unsloth.optimizers.flash_adamw import (
+            _FLASH_ADAMW_PLACEHOLDER,
+            is_flash_adamw,
+            is_flash_adamw_marked,
+            mark_flash_adamw,
+            unmark_flash_adamw,
+        )
+
+        flash_adamw = is_flash_adamw(kwargs.get("optim", None))
+        if flash_adamw:
+            kwargs["optim"] = _FLASH_ADAMW_PLACEHOLDER
         super().__init__(*args, **kwargs)
+        if flash_adamw or is_flash_adamw_marked(self):
+            mark_flash_adamw(self)
+        else:
+            unmark_flash_adamw(self)
         self.embedding_learning_rate = embedding_learning_rate
         self.loraplus_lr_ratio = loraplus_lr_ratio
         if self.eval_steps is not None and self.eval_strategy != "steps":
