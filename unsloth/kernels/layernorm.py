@@ -68,7 +68,9 @@ def layernorm_forward(
 
 
 @triton.jit
-def _layernorm_backward_row(dY, X, W_row, r, mu, row_idx, col_offsets, mask, n_cols: tl.constexpr):
+def _layernorm_backward_row(
+    dY, dX, X, W_row, r, mu, row_idx, col_offsets, mask, n_cols: tl.constexpr
+):
     # Approximately follows karpathy/llm.c doc/layernorm/layernorm.md
     # Per torchtune's Fp32LayerNorm, all modules are in float32.
     dY_row = tl.load(dY + col_offsets, mask = mask, other = 0).to(tl.float32)
@@ -80,19 +82,21 @@ def _layernorm_backward_row(dY, X, W_row, r, mu, row_idx, col_offsets, mask, n_c
     dY_W = dY_row * W_row
     dX_row = dY_W - tl.sum(dY_W, axis = 0) / n_cols - normed * tl.sum(dY_W * normed, axis = 0) / n_cols
     dX_row = dX_row * inv_var
-    tl.store(dY + col_offsets, dX_row, mask = mask)
+    tl.store(dX + col_offsets, dX_row, mask = mask)
     return dY_row, normed
 
 
 @triton.jit
 def layernorm_backward(
     dY,
+    dX,
     X,
     W,
     b,
     r,
     mu,
     dY_row_stride: tl.constexpr,  # n_cols
+    dX_row_stride: tl.constexpr,
     X_row_stride: tl.constexpr,  # n_cols
     n_cols: tl.constexpr,
     eps: tl.constexpr,
@@ -107,6 +111,7 @@ def layernorm_backward(
     W_row = tl.load(W + col_offsets, mask = mask, other = 0).to(tl.float32)
     _layernorm_backward_row(
         dY + row_idx * dY_row_stride,
+        dX + row_idx * dX_row_stride,
         X + row_idx * X_row_stride,
         W_row,
         r,
@@ -123,6 +128,7 @@ def layernorm_backward(
 @triton.jit
 def layernorm_backward_dw(
     dY,
+    dX,
     X,
     W,
     r,
@@ -132,6 +138,7 @@ def layernorm_backward_dw(
     n_rows,
     rows_per_program,
     dY_row_stride: tl.constexpr,
+    dX_row_stride: tl.constexpr,
     X_row_stride: tl.constexpr,
     n_cols: tl.constexpr,
     LONG_INDEXING: tl.constexpr,
@@ -152,6 +159,7 @@ def layernorm_backward_dw(
             row_idx = i.to(tl.int64)
         dY_row, normed = _layernorm_backward_row(
             dY + row_idx * dY_row_stride,
+            dX + row_idx * dX_row_stride,
             X + row_idx * X_row_stride,
             W_row,
             r,
@@ -273,17 +281,20 @@ class Fast_Layernorm(torch.autograd.Function):
         n_rows, n_cols = dY.shape
         device = dY.device
         train_w, train_b = ctx.needs_input_grad[1], ctx.needs_input_grad[2]
-        LONG_INDEXING = long_indexing(dY, X, block = ctx.BLOCK_SIZE)
+        # Never into dY: autograd may hand the same grad to other nodes, or it is the caller's.
+        dX = torch.empty_like(dY)
+        LONG_INDEXING = long_indexing(dY, dX, X, block = ctx.BLOCK_SIZE)
 
         if not (train_w or train_b):
             with torch_gpu_device(device):
                 _launch(
                     layernorm_backward,
                     (n_rows,),
-                    (dY, X, W, b, r, mu),
-                    6,
+                    (dY, dX, X, W, b, r, mu),
+                    7,
                     dict(
                         dY_row_stride = dY.stride(0),
+                        dX_row_stride = dX.stride(0),
                         X_row_stride = X.stride(0),
                         n_cols = n_cols,
                         eps = ctx.eps,
@@ -294,7 +305,7 @@ class Fast_Layernorm(torch.autograd.Function):
                     num_warps = ctx.num_warps,
                     enable_fp_fusion = True,
                 )
-            return dY.view(*shape), None, None, None
+            return dX.view(*shape), None, None, None
 
         programs, rows_per_program = _dw_programs(device, n_rows, ctx.num_warps)
         # Every program stores its partial row, so empty suffices unless nothing launches.
@@ -308,10 +319,11 @@ class Fast_Layernorm(torch.autograd.Function):
                 _launch(
                     layernorm_backward_dw,
                     (programs,),
-                    (dY, X, W, r, mu, partials[0], partials[-1], n_rows, rows_per_program),
-                    7,
+                    (dY, dX, X, W, r, mu, partials[0], partials[-1], n_rows, rows_per_program),
+                    8,
                     dict(
                         dY_row_stride = dY.stride(0),
+                        dX_row_stride = dX.stride(0),
                         X_row_stride = X.stride(0),
                         n_cols = n_cols,
                         LONG_INDEXING = LONG_INDEXING,
@@ -332,7 +344,7 @@ class Fast_Layernorm(torch.autograd.Function):
                 device,
                 enable_fp_fusion = True,
             )
-        return dY.view(*shape), dW, dB, None
+        return dX.view(*shape), dW, dB, None
 
 
 def _dw_programs(device, n_rows, num_warps):
