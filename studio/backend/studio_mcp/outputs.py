@@ -90,6 +90,8 @@ class ChatModel(ToolOutput):
 class ChatSlot(ToolOutput):
     loaded: list[ChatModel] = []
     loading: list[RouteText] = []
+    # Keep multiple models loaded: off, fit or always. None from a server that predates it.
+    multi_model_mode: Optional[RouteText] = None
 
 
 class ImageSlot(ToolOutput):
@@ -136,6 +138,14 @@ class TrainingSlot(ToolOutput):
     loss: Optional[float] = None
     progress_percent: Optional[float] = None
     eta_seconds: Optional[float] = None
+
+
+class TrainingJob(TrainingSlot):
+    # Once completed: the run folder and its checkpoints by the names export_model and load_model take.
+    run_folder: Optional[RouteText] = None
+    checkpoints: list[RouteText] = []
+    # The call that returns the run's full loss curve.
+    loss_history: Optional[str] = None
 
 
 class ExportSlot(ToolOutput):
@@ -197,8 +207,20 @@ class LoadResult(ToolOutput):
     kind: RouteText
     model: RouteText
     loaded: bool = True
+    # "loading" when wait_s ran out first: the load goes on, and get_job(kind="load", id=job_id) follows it.
+    status: RouteText = "loaded"
+    fraction: Optional[float] = None
+    job_id: Optional[RouteText] = None
+    poll_after_s: Optional[float] = None
     display_name: Optional[RouteText] = None
     evicted: list[RouteText] = []
+    evicted_slots: list[EvictedSlot] = []
+
+
+class EvictedSlot(ToolOutput):
+    # llm, audio, image or video.
+    kind: RouteText
+    model: RouteText
 
 
 class UnloadResult(ToolOutput):
@@ -343,6 +365,10 @@ class JobStatus(ToolOutput):
     id: Optional[RouteText] = None
     status: Optional[RouteText] = None
     progress_percent: Optional[float] = None
+    # While the job runs: seconds to wait before the next get_job call without wait_s.
+    poll_after_s: Optional[float] = None
+    training: Optional[TrainingJob] = None
+    load: Optional[LoadResult] = None
     error: Optional[RouteText] = None
     video: Optional[VideoInfo] = None
     recipe: Optional[RecipeInfo] = None
