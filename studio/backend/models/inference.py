@@ -5517,6 +5517,11 @@ class DiffusionDownloadPlanResponse(BaseModel):
 class DiffusionStatusResponse(BaseModel):
     """Current diffusion backend state."""
 
+    multi_gpu: Optional[Dict[str, Any]] = Field(
+        None,
+        description = "Multi-GPU placement (component -> card, primary, secondary) and CFG-parallel state (armed, "
+        "call counts, or why it declined); null on one card.",
+    )
     loaded: bool = Field(False, description = "Whether a diffusion model is loaded")
     evicted: List[str] = Field(
         default_factory = list,
@@ -7053,6 +7058,11 @@ class VideoGenerationDefaults(BaseModel):
 class VideoStatusResponse(BaseModel):
     """Current video backend state."""
 
+    multi_gpu: Optional[Dict[str, Any]] = Field(
+        None,
+        description = "Multi-GPU placement (component -> card, primary, secondary) and CFG-parallel state (armed, "
+        "call counts, or why it declined); null on one card.",
+    )
     loaded: bool = Field(False, description = "Whether a video model is loaded")
     evicted: List[str] = Field(
         default_factory = list,
