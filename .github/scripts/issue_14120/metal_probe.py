@@ -41,6 +41,8 @@ virtual = _metal_device_is_paravirtual()
 if virtual:
     os.environ["UNSLOTH_ALLOW_PARAVIRTUAL_METAL"] = "1"
     print("INFO virtualized Metal: explicitly enabling UNSLOTH_ALLOW_PARAVIRTUAL_METAL=1")
+_metal_device_is_paravirtual.cache_clear()
+assert not _metal_device_is_paravirtual(), "VM opt-in did not enable the Metal path"
 backend = LlamaCppBackend()
 model = args.model.resolve()
 intent = GgufLoadIntent(

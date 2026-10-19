@@ -28,6 +28,8 @@ filelock==4.2.4
     # via huggingface-hub
 fsspec==2026.9.0
     # via huggingface-hub
+gguf==0.19.0
+    # via -r .github/scripts/issue_14120/requirements.in
 h11==0.16.0
     # via
     #   httpcore
@@ -52,10 +54,16 @@ idna==3.20
     #   requests
 iniconfig==2.3.1
     # via pytest
+jinja2==3.1.6
+    # via -r .github/scripts/issue_14120/requirements.in
+markupsafe==3.0.4
+    # via jinja2
 mlx==0.32.4
     # via -r .github/scripts/issue_14120/requirements.in
 mlx-metal==0.32.4
     # via mlx
+numpy==2.5.4
+    # via gguf
 opentelemetry-api==1.45.1
     # via fastapi
 packaging==26.3
@@ -89,15 +97,20 @@ python-multipart==0.0.32
 pyyaml==6.0.3
     # via
     #   -r .github/scripts/issue_14120/requirements.in
+    #   gguf
     #   huggingface-hub
 requests==2.34.2
-    # via -r .github/scripts/issue_14120/requirements.in
+    # via
+    #   -r .github/scripts/issue_14120/requirements.in
+    #   gguf
 starlette==1.9.0
     # via fastapi
 structlog==26.1.0
     # via -r .github/scripts/issue_14120/requirements.in
 tqdm==4.70.1
-    # via huggingface-hub
+    # via
+    #   gguf
+    #   huggingface-hub
 truststore==0.10.5
     # via
     #   httpcore2

@@ -13,3 +13,5 @@ pillow
 python-multipart
 cryptography
 mlx==0.32.4; sys_platform == "darwin"
+jinja2
+gguf
