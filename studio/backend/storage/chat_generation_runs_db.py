@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Any, Iterable, Union
 
-from storage.studio_db import get_connection
+from storage.studio_db import _CONTENDED_BUSY_TIMEOUT_SECONDS, get_connection
 
 ACTIVE_STATUSES = frozenset({"queued", "running", "cancelling"})
 TERMINAL_STATUSES = frozenset({"cancelled", "completed", "failed"})
@@ -36,10 +36,13 @@ def now_ms() -> int:
     return int(time.time() * 1000)
 
 
-def _connect() -> sqlite3.Connection:
+def _connect(*, for_write: bool = False) -> sqlite3.Connection:
     """get_connection plus the one-off progress-lease migration for this database."""
     global _schema_ready
-    conn = get_connection()
+    # Durable writes run in worker threads, so they can wait for a slow history
+    # transaction without blocking SSE delivery or failing a healthy generation.
+    # Reads and best-effort lease stamps retain the short default timeout.
+    conn = get_connection(_CONTENDED_BUSY_TIMEOUT_SECONDS) if for_write else get_connection()
     if _schema_ready:
         return conn
     try:
@@ -271,7 +274,7 @@ def create_run(
     )
     created = now_ms()
     worker_token = secrets.token_hex(16)
-    conn = _connect()
+    conn = _connect(for_write = True)
     try:
         conn.execute("BEGIN IMMEDIATE")
         existing = conn.execute(
@@ -533,7 +536,7 @@ def append_events(
     batch = list(events)
     if not batch:
         return []
-    conn = _connect()
+    conn = _connect(for_write = True)
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
@@ -559,7 +562,7 @@ def append_events(
 
 
 def mark_running(run_id: str, worker_token: str) -> bool:
-    conn = _connect()
+    conn = _connect(for_write = True)
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(
@@ -595,7 +598,7 @@ def mark_running(run_id: str, worker_token: str) -> bool:
 
 
 def request_cancel(run_id: str, owner_subject: str | None = None) -> dict[str, Any] | None:
-    conn = _connect()
+    conn = _connect(for_write = True)
     try:
         conn.execute("BEGIN IMMEDIATE")
         sql = "SELECT * FROM chat_generation_runs WHERE id=?"
@@ -657,7 +660,7 @@ def finish_run(
 ) -> dict[str, Any] | None:
     if status not in TERMINAL_STATUSES:
         raise ValueError(f"Invalid terminal status: {status}")
-    conn = _connect()
+    conn = _connect(for_write = True)
     try:
         conn.execute("BEGIN IMMEDIATE")
         row = conn.execute(

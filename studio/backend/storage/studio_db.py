@@ -1205,8 +1205,8 @@ def is_sqlite_busy_error(exc: sqlite3.OperationalError) -> bool:
 # sqlite's own default, kept for every caller that may run on the event loop
 _BUSY_TIMEOUT_SECONDS = 5.0
 
-# only for the chat history transactions that run in Starlette's threadpool, where a large clear
-# can hold the writer lock past the default and the failure escapes as an unmapped 500
+# For durable chat writes running in worker threads. A history clear or a slow disk
+# can hold the writer lock past the default; waiting here must not block the event loop.
 _CONTENDED_BUSY_TIMEOUT_SECONDS = 30.0
 
 
@@ -3560,7 +3560,7 @@ def upsert_chat_message(
     expected_research_run_id: str | None = None,
     expected_research_attempt: int | None = None,
 ) -> dict | None:
-    conn = get_connection()
+    conn = get_connection(_CONTENDED_BUSY_TIMEOUT_SECONDS)
     try:
         conn.execute("BEGIN IMMEDIATE")
         if expected_research_run_id is not None:
@@ -3669,7 +3669,7 @@ def sync_chat_messages(
     allow_research_update: bool = False,
     deleted_message_ids: Iterable[str] = (),
 ) -> list[dict]:
-    conn = get_connection()
+    conn = get_connection(_CONTENDED_BUSY_TIMEOUT_SECONDS)
     try:
         conn.execute("BEGIN IMMEDIATE")
         _ensure_chat_attachment_inventory_current(conn)
