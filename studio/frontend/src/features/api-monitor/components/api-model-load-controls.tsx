@@ -22,12 +22,12 @@ import {
 } from "@/features/hub";
 import {
   type LoraModelOption,
+  type ModelConfigHandoffRequest,
   type ModelOption,
   ModelSelector,
   type ModelSelectorChangeMeta,
   currentRuntimePerModelConfig,
   resolveResidentInitialConfig,
-  splitQuantSuffix,
   useActiveModelConfig,
 } from "@/features/model-picker";
 import { isNpuModelId } from "@/features/npu";
@@ -47,6 +47,7 @@ import {
   RELOAD_MISSING_HISTORY_MESSAGE,
   reloadLastModel,
 } from "../reload-last-model";
+import { monitorSelection } from "../use-resident-run-target";
 import { ToolbarTooltip } from "./toolbar-tooltip";
 
 // A pick superseded by a newer one rejects too; the newer pick owns the outcome.
@@ -122,22 +123,6 @@ function localSelection(
     previousConfig: currentRuntimePerModelConfig({ includeMaxSeqLength: true }),
     throwOnError: true,
   };
-}
-
-// The monitor reports a llama.cpp model as "<id>:<quant>"; Ollama ids carry their own ":<tag>".
-function monitorSelection(activeModel: string | null | undefined): {
-  id: string;
-  ggufVariant: string | null;
-} {
-  if (!activeModel) {
-    return { id: "", ggufVariant: null };
-  }
-  const split = activeModel.startsWith("ollama/")
-    ? null
-    : splitQuantSuffix(activeModel);
-  return split
-    ? { id: split[0], ggufVariant: split[1] }
-    : { id: activeModel, ggufVariant: null };
 }
 
 type PendingDownload = {
@@ -226,12 +211,16 @@ export function ApiModelLoadControls({
   onSettled,
   onUnloadActive,
   unloading,
+  configRequest = null,
+  onConfigRequestAdopted,
 }: {
   activeModel: string | null | undefined;
   onSettled: () => void;
   onUnloadActive: () => void;
   // The page's unload rereads the resident on its second pass, so a load started meanwhile would be unloaded.
   unloading: boolean;
+  configRequest?: ModelConfigHandoffRequest | null;
+  onConfigRequestAdopted?: (requestId: string) => void;
 }): ReactElement {
   const { selectModel, loadNpuModel, refresh, ejectModel } =
     useChatModelRuntime();
@@ -272,6 +261,13 @@ export function ApiModelLoadControls({
     refreshLocalModels();
     refreshLastLoadLabel();
   }, [refresh, refreshLocalModels, refreshLastLoadLabel]);
+
+  // Opened during render, as the picker adopts the request, so the same pass mounts its page.
+  const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
+  if (configRequest && configRequest.requestId !== openedRequestId) {
+    setOpenedRequestId(configRequest.requestId);
+    setSelectorOpen(true);
+  }
 
   // An API auto-switch changes the resident model behind Chat's store; this page's own loads
   // reconcile themselves.
@@ -438,6 +434,8 @@ export function ApiModelLoadControls({
         activeLoadedContextLength={
           runtimeIsResident ? loadedContextLength : null
         }
+        configRequest={configRequest}
+        onConfigRequestAdopted={onConfigRequestAdopted}
         onValueChange={(value, meta) => {
           handlePick(value, meta);
         }}

@@ -276,10 +276,12 @@ export const BUDGET = {
   // its strings join the eager English catalog and settings search index. #14223 and #14232 add no raw bytes.
   // Raised by that growth, to the measured build at 6ccf0e4e74 (6,842,532 B raw / 2,060,400 B transfer) plus a
   // 160 B raw / 189 B transfer margin.
-  // The Loaded models card's eject confirmation (#14161, eager shell) adds 356 B raw / 158 B transfer over 28a222f20
-  // (6,842,874 B raw, 2,060,540 B transfer); limits = that build plus the same margin.
-  transferBytes: 2_060_729,
-  rawBytes: 6_843_034,
+  // Opening Parallel Slots from the API page's Slots readout (#14225) adds 546 B raw / 212 B transfer (6,842,518 ->
+  // 6,843,064 B raw, 2,060,427 -> 2,060,639 B transfer against bff0a25b4, one machine and build, Node 24, 96 chunks):
+  // the field focus and per-visit Advanced reveal live in the Run settings page and the picker, both in the eager chat
+  // chunk. Raised to the measured build plus the same 160 B raw / 189 B transfer margin.
+  transferBytes: 2_060_828,
+  rawBytes: 6_843_224,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
