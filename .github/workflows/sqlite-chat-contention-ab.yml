@@ -1,0 +1,40 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "Studio SQLite chat contention A-B"
+
+on:
+  push:
+    branches:
+      - "fix/studio-chat-write-contention-repro-20261019"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "windows-latest"
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.13.5"
+
+      - name: "Install minimal pinned test dependencies"
+        shell: pwsh
+        run: |
+          python -m pip install --disable-pip-version-check pytest==9.1.1 structlog==26.1.0
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: "Verify pinned A fails for contention and pinned B passes"
+        shell: pwsh
+        run: |
+          python .ci/sqlite_contention_ab.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
