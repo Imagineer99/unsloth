@@ -1,0 +1,81 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "Issue 14120 Metal admission A-B"
+
+on:
+  push:
+    branches:
+      - "fix/issue-14120-metal-repro"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "Targeted repro"
+    runs-on: "macos-15-xlarge"
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12"
+
+      - name: "Install pinned test dependencies"
+        shell: bash
+        run: |
+          python -m pip install -r .github/scripts/issue_14120/requirements.txt
+
+      - name: "Prove expected base failure and fixed-head success"
+        shell: bash
+        run: |
+          python .github/scripts/issue_14120/run_ab.py
+
+      - name: "Verify Apple Silicon GPU availability"
+        shell: bash
+        run: |
+          python - <<'PY'
+          import platform
+          import mlx.core as mx
+          assert platform.machine() == 'arm64' and mx.metal.is_available()
+          mx.set_default_device(mx.gpu)
+          x = mx.ones((16, 16))
+          mx.eval(x @ x)
+          print(mx.device_info())
+          PY
+
+      - name: "Install pinned llama.cpp and download small GGUF"
+        shell: bash
+        run: |
+          python studio/install_llama_prebuilt.py --install-dir "$GITHUB_WORKSPACE/.issue-14120-runtime" --published-repo unslothai/llama.cpp --published-release-tag b11719-mix-e614faa
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          hf_hub_download('unsloth/gemma-3-270m-it-GGUF', 'gemma-3-270m-it-Q4_K_M.gguf', revision='c90975dbd40c0c7b275fefaae758c3415c906238', local_dir='.issue-14120-model')
+          PY
+
+      - name: "Metal low-budget A/B and real small-model control"
+        shell: bash
+        run: |
+          set -euo pipefail
+          export UNSLOTH_LLAMA_CPP_PATH="$GITHUB_WORKSPACE/.issue-14120-runtime"
+          MODEL="$GITHUB_WORKSPACE/.issue-14120-model/gemma-3-270m-it-Q4_K_M.gguf"
+          for SIDE in before after; do
+            UNSLOTH_STUDIO_HOME="$GITHUB_WORKSPACE/issue-14120-results/$SIDE-metal-home" python .github/scripts/issue_14120/metal_probe.py --tree ".issue-14120-$SIDE" --model "$MODEL" --mode "$SIDE" --output "issue-14120-results/$SIDE-metal.json"
+          done
+          UNSLOTH_STUDIO_HOME="$GITHUB_WORKSPACE/issue-14120-results/control-metal-home" python .github/scripts/issue_14120/metal_probe.py --tree .issue-14120-after --model "$MODEL" --mode control --output issue-14120-results/control-metal.json
+
+      - name: Retain test results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: issue-14120-metal-results
+          retention-days: 7
+          path: |
+            issue-14120-results/*.json
+            issue-14120-results/*.xml
+            issue-14120-results/*.log

@@ -1,0 +1,15 @@
+pytest
+httpx
+huggingface-hub
+psutil
+pydantic
+fastapi
+structlog
+pyjwt
+python-dotenv
+pyyaml
+requests
+pillow
+python-multipart
+cryptography
+mlx==0.32.4; sys_platform == "darwin"
