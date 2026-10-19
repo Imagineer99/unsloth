@@ -66,7 +66,9 @@ facts = {
 try:
     if args.mode == "control":
         assert backend.load_model(intent), "Small-model control failed to load"
-        assert backend._gpu_offload_active is True, "CPU fallback does not prove Metal"
+        # Metal has no enumerated GPU rows, so this field may be None.
+        # Require the actual runtime offload count below instead.
+        facts["studio_gpu_status"] = backend._gpu_offload_active
         log_path = Path(backend._llama_log_path)
         log_text = log_path.read_text(errors = "replace")
         assert "metal" in log_text.lower() and re.search(
