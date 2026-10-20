@@ -22,6 +22,7 @@ import base64
 import contextlib
 import json
 import logging
+import functools
 import os
 import re
 import shutil
@@ -297,14 +298,75 @@ def _cgroup_cpu_limit(
         path = os.path.dirname(path)
 
 
+@functools.lru_cache(maxsize = 1)
+def _libc() -> Any:
+    """The C library with ``sysctlbyname`` typed (looked up once; ``find_library`` walks the filesystem)."""
+    import ctypes
+    import ctypes.util
+
+    libc = ctypes.CDLL(ctypes.util.find_library("c") or "libc.dylib")
+    libc.sysctlbyname.argtypes = [
+        ctypes.c_char_p,
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.c_void_p,
+        ctypes.c_size_t,
+    ]
+    libc.sysctlbyname.restype = ctypes.c_int
+    return libc
+
+
+def _sysctl(name: str, as_str: bool = False) -> Any:
+    """``sysctlbyname`` on macOS: an int (or str with ``as_str``), None when it cannot answer."""
+    try:
+        import ctypes
+
+        libc = _libc()
+        if as_str:
+            buf = ctypes.create_string_buffer(64)
+            size = ctypes.c_size_t(len(buf))
+            ok = libc.sysctlbyname(name.encode(), buf, ctypes.byref(size), None, 0) == 0
+            return buf.value.decode(errors = "replace") if ok else None
+        value = ctypes.c_int(0)
+        size = ctypes.c_size_t(ctypes.sizeof(value))
+        ok = libc.sysctlbyname(name.encode(), ctypes.byref(value), ctypes.byref(size), None, 0) == 0
+        return int(value.value) if ok and value.value > 0 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+# Lower performance levels counted as fast cores, by name (M5 Pro / Max: perflevel0 "Super", perflevel1 "Performance").
+_FAST_PERF_LEVELS = ("super", "performance")
+
+
+def _apple_performance_cores() -> Optional[int]:
+    """macOS fast physical cores: perflevel0 (the fastest tier by definition) plus every lower tier named Super or
+    Performance, so M5 Pro / Max count both of their fast tiers (sd.cpp's own default reads perflevel0 only). Efficiency
+    and unnamed or unknown lower tiers are left out. No SMT, so ``cpu_count() // 2`` undercounts."""
+    if sys.platform != "darwin":
+        return None
+    levels = _sysctl("hw.nperflevels") or 0
+    total = 0
+    for level in range(levels):
+        if level > 0:
+            name = _sysctl(f"hw.perflevel{level}.name", as_str = True)
+            if name is None or name.strip().lower() not in _FAST_PERF_LEVELS:
+                continue
+        total += _sysctl(f"hw.perflevel{level}.physicalcpu") or 0
+    return total or _sysctl("hw.perflevel0.physicalcpu") or _sysctl("hw.physicalcpu")
+
+
 def _default_threads() -> int:
-    """``UNSLOTH_CPU_THREADS``, else ``os.cpu_count() // 2`` capped by the cgroup quota ``os.cpu_count()`` ignores."""
+    """``UNSLOTH_CPU_THREADS``, else macOS P-cores, else ``os.cpu_count() // 2`` capped by the cgroup quota."""
     try:
         configured = int(os.environ.get("UNSLOTH_CPU_THREADS") or 0)
     except ValueError:
         configured = 0
     if configured > 0:
         return configured
+    performance_cores = _apple_performance_cores()
+    if performance_cores:
+        return performance_cores
     cpu = os.cpu_count()
     threads = cpu // 2 if cpu else 8
     limit = _cgroup_cpu_limit() if sys.platform.startswith("linux") else None
