@@ -299,8 +299,12 @@ export const BUDGET = {
   // 2,060,319 -> 2,060,524 B transfer against 26e246d407, one machine and build, Node 24, 96 chunks): the
   // first-run checkbox lives in the eager startup screen and the Train hint in the eager sidebar. Raised by that.
   // Explicit browser download names retain the prior startup margin.
-  transferBytes: 2_062_292,
-  rawBytes: 6_847_855,
+  // Token usage tracking (#14076) adds 8,936 B raw / 2,391 B transfer against 39efb789eb: the saved-count
+  // matching and recount scheduling live in the eager chat runtime. Raised by that measured growth.
+  // Reviewing it added the prompt-change and recovery guards: measured 6,856,868 B raw / 2,064,539 B transfer
+  // (Node 24, 96 chunks), raw raised to that plus the 160 B margin.
+  transferBytes: 2_064_683,
+  rawBytes: 6_857_028,
 };
 
 // The chunk count is reported but not budgeted. Splitting a page out of the entry raises it while lowering the
