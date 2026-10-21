@@ -627,3 +627,50 @@ def test_mxfp8_e8m0_scales_are_priced_one_byte(tmp_path):
     path = _layer_file(tmp_path, "mxfp8", rows = 4096, cols = 8192)
     # 32 MiB of fp8 codes + 1 MiB of e8m0 block scales + the comfy_quant bytes, rounded up (35 at 2 bytes)
     assert cq.comfy_resident_mib(path, keep_int8 = False, keep_fp8 = False, keep_mxfp8 = True) == 34
+
+
+def test_dequantized_nvfp4_is_priced_at_its_unpacked_width(block_file, monkeypatch):
+    """nvfp4 packs two columns per byte, so the header's numel is half the dense N x K the dequantization
+    allocates; the host RAM check must price the dense weight."""
+    import core.inference.diffusion_single_file_converters as conv
+
+    path, _tensors, expected = block_file("nvfp4")
+    seen = []
+    monkeypatch.setattr(conv.HostRamBudget, "check", lambda self, need: seen.append(need))
+    _load(path)
+    dense = sum(t.numel() for t in expected.values()) * 4  # float32 compute
+    assert seen and seen[0] >= dense
+
+
+def _tight_host(monkeypatch, headroom_mib):
+    """A host whose free RAM leaves ``headroom_mib`` above the small-host reserve; every byte priced."""
+    import core.inference.diffusion_single_file_converters as conv
+    import core.inference.diffusion_small_host as small_host
+
+    total = 32768
+    monkeypatch.setattr(conv, "HOST_RAM_CHECK_MIN_MIB", 0)
+    monkeypatch.delenv(small_host.HOST_RAM_CHECK_ENV, raising = False)
+    monkeypatch.setattr(
+        small_host,
+        "host_ram_mib",
+        lambda: (total, small_host.host_reserve_mib(total) + headroom_mib),
+    )
+    return conv
+
+
+def test_layers_the_runtime_filter_rejects_are_charged_as_dequantized(block_file, monkeypatch):
+    """A runtime for the format keeps only layers passing its filter (size, name exclusions, ...); the
+    rest are expanded to the compute dtype and must count against host RAM (4 MiB dense here)."""
+    conv = _tight_host(monkeypatch, headroom_mib = 2)
+    path, _tensors, _expected = block_file("mxfp8")
+    with pytest.raises(conv.HostRamShortfallError, match = "Not enough system RAM"):
+        _load(path, dtype = torch.bfloat16, mxfp8_backend = "kept", min_features = 1 << 20)
+
+
+def test_kept_nvfp4_codes_are_charged_for_their_nibble_swapped_copy(block_file, monkeypatch):
+    """With an nvfp4 runtime the codes are kept, but decode_layer writes a nibble-swapped uint8 copy of
+    the packed weight (plus untiled scales): new host RAM even though nothing is dequantized."""
+    conv = _tight_host(monkeypatch, headroom_mib = 1)
+    path, _tensors, _expected = block_file("nvfp4")
+    with pytest.raises(conv.HostRamShortfallError, match = "Not enough system RAM"):
+        _load(path, dtype = torch.bfloat16, nvfp4_backend = "kept")
