@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-21T08:19:22.206735+00:00",
+  "scene": "project-new-chat-native-document-drop",
+  "expect": "Dropping the same text document onto a project landing composer before its first message is rejected on base (one rejection toast, zero attachment cards, zero native registration/read calls) and accepted on head (zero rejection toasts, one attachment card, one registration and one read).",
+  "verified": {
+    "assertions_passed": true,
+    "manual_visual_review": true
+  },
+  "base_commit": "37f53745d15141de71711772c8bb301b6467c968",
+  "head_commit": "1107b7ad447c0867d71da54a4fcc5b5442c47d19",
+  "before_ref": "PR merge base",
+  "after_ref": "Committed final fix",
+  "ref_overrides": null,
+  "browser": {
+    "engine": "Chromium",
+    "version": "156.0.8078.4"
+  },
+  "facts": {
+    "before": {
+      "project": "Drop demo",
+      "file": "project-notes.txt",
+      "file_bytes": 62,
+      "selected_model": null,
+      "attachment_cards": 0,
+      "rejection_visible": true,
+      "native_registrations": 0,
+      "native_reads": 0,
+      "page_errors": [],
+      "drop_position": {
+        "x": 832,
+        "y": 250
+      },
+      "native_errors": [],
+      "active_thread_id": null
+    },
+    "after": {
+      "project": "Drop demo",
+      "file": "project-notes.txt",
+      "file_bytes": 62,
+      "selected_model": null,
+      "attachment_cards": 1,
+      "rejection_visible": false,
+      "native_registrations": 1,
+      "native_reads": 1,
+      "page_errors": [],
+      "drop_position": {
+        "x": 832,
+        "y": 250
+      },
+      "native_errors": [],
+      "active_thread_id": null
+    }
+  },
+  "fact_diff": {
+    "attachment_cards": {
+      "before": 0,
+      "after": 1
+    },
+    "rejection_visible": {
+      "before": true,
+      "after": false
+    },
+    "native_registrations": {
+      "before": 0,
+      "after": 1
+    },
+    "native_reads": {
+      "before": 0,
+      "after": 1
+    }
+  },
+  "source_sha256": {
+    "before": {
+      "studio/frontend/src/features/chat/chat-page.tsx": "05ee66efa67f0173ff0067c5864e7e77243fd7629556aa1463cc50f389003a41",
+      "studio/frontend/src/components/assistant-ui/thread.tsx": "870a23dd1a82eb706f446877d37cbe4fe25e4d637017943b17400b16566e4a32",
+      "studio/frontend/src/features/chat/runtime-provider.tsx": "c12c96dc935639a05db864ebad735f78582c8ad08da2f9f2108e9cde5beb6528",
+      "studio/frontend/src/features/chat/draft-attachment-adapter.ts": null,
+      "studio/frontend/src/features/native-intents/attachment-target.ts": "1a7472346f6df177ad6eaf28bf43dfeea8aaca0088172590e3ee38071dcd37c7",
+      "studio/frontend/src/features/native-intents/index.ts": "a141502341ff37a135baec502f86a33601ecf053a8892f23264165b8f1970cd2"
+    },
+    "after": {
+      "studio/frontend/src/features/chat/chat-page.tsx": "5fafe34dc4ea10295f219823d4975e62dd938e233a9c6ea8aa80485b6cf7f46b",
+      "studio/frontend/src/components/assistant-ui/thread.tsx": "148b99a7cfd34be449b46e063a49e2afaed3ea68c6280362f73f3127c19d263e",
+      "studio/frontend/src/features/chat/runtime-provider.tsx": "22195a6c927a70a7e6fc3ff38e78e67f7d11b3b005e5f863ff8b384d8a007455",
+      "studio/frontend/src/features/chat/draft-attachment-adapter.ts": "3d073e37327b0bcb218ef011e6235a853068f8fdb449bf5fe9a76558ccf36560",
+      "studio/frontend/src/features/native-intents/attachment-target.ts": "6968afeaf5a665831a2d7a2d24c28a1ebc71871666cd88c163d02bf842113579",
+      "studio/frontend/src/features/native-intents/index.ts": "43195bf894ca3c388fb3720904094a572f5e945277b9e99017f59f9b111fab6b"
+    }
+  },
+  "source_verification": {
+    "each_side_matches_its_committed_content": true,
+    "source_unchanged_during_capture": true,
+    "head_matches_final_acceptance_source": true
+  },
+  "capture": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "fixed_clip": {
+      "x": 210,
+      "y": 0,
+      "width": 1230,
+      "height": 570
+    },
+    "artifacts": [
+      {
+        "filename": "project-drop-before.png",
+        "sha256": "92631ccdf5b542e68ceeab867807b79d35a713cf83403c269330a8cf74b40758",
+        "width": 1230,
+        "height": 570
+      },
+      {
+        "filename": "project-drop-after.png",
+        "sha256": "66d53ba7870b214f8e504bdae3ddf57f4bd1f48cc18f9a75608254108873a822",
+        "width": 1230,
+        "height": 570
+      },
+      {
+        "filename": "project-drop-before-after.png",
+        "sha256": "4323ffc6953ab5bb299f020d6b3442feba07f23ea449892595f4aca405af4929",
+        "width": 1280,
+        "height": 1506
+      }
+    ],
+    "composition": "Labels and unchanged raw clips rendered in a browser; PNG screenshot of that HTML"
+  },
+  "isolation": {
+    "separate_source_trees": true,
+    "separate_processes": true,
+    "separate_cache_config_and_temp_directories": true,
+    "fresh_browser_contexts": true,
+    "sequential_sides": true
+  },
+  "limitations": [
+    "Browser replay of native Tauri drag/drop and deterministic local API/native fixtures, not an actual operating-system drag.",
+    "No model inference; text document dropped before any chat has been persisted.",
+    "This comparison is merge-base to final committed fix. The separate saved-chat regression comparison uses a prior intermediate patch and is secondary evidence."
+  ]
+}

@@ -1,0 +1,133 @@
+{
+  "head_commit": "1107b7ad447c0867d71da54a4fcc5b5442c47d19",
+  "merge_base": "37f53745d15141de71711772c8bb301b6467c968",
+  "upstream_main_at_review": "664fe02d8c59509450a2ddecda9eb2f660aa06f4",
+  "upstream_commits_since_merge_base": 115,
+  "merge_tree": {
+    "reviewed": true,
+    "clean": true,
+    "tested": false
+  },
+  "verified_hashes_match_head": true,
+  "sha256_by_repository_path": {
+    "studio/frontend/src/components/assistant-ui/thread.tsx": "148b99a7cfd34be449b46e063a49e2afaed3ea68c6280362f73f3127c19d263e",
+    "studio/frontend/src/features/chat/chat-page.tsx": "5fafe34dc4ea10295f219823d4975e62dd938e233a9c6ea8aa80485b6cf7f46b",
+    "studio/frontend/src/features/chat/runtime-provider.tsx": "22195a6c927a70a7e6fc3ff38e78e67f7d11b3b005e5f863ff8b384d8a007455",
+    "studio/frontend/src/features/native-intents/attachment-target.ts": "6968afeaf5a665831a2d7a2d24c28a1ebc71871666cd88c163d02bf842113579",
+    "studio/frontend/src/features/native-intents/index.ts": "43195bf894ca3c388fb3720904094a572f5e945277b9e99017f59f9b111fab6b",
+    "studio/frontend/tests/native-drop-paths.test.ts": "fefa9ea83eccd2f2e9768d6e3f8b6f50ab5f58c376f75ba4b9460dad38cb2af8",
+    "studio/frontend/src/features/chat/draft-attachment-adapter.ts": "3d073e37327b0bcb218ef011e6235a853068f8fdb449bf5fe9a76558ccf36560",
+    "studio/frontend/tests/draft-attachment-adapter.test.ts": "06c5b9d2feed85235261446948038f3c9ff3f7a5219cd9647a1da98f574d3fec",
+    "studio/frontend/tests/native-drop-consumer-ownership.test.ts": "710a396923b035409b0b7fdcde62a4e8905adfb74e48bcdf80d754b0d3193f78",
+    "studio/frontend/tests/project-native-drop.test.ts": "5435a7373efdcf9e88f06dde23981dd4079682a8ace64fb89db23959b6cf35e3"
+  },
+  "results": {
+    "full_frontend": {
+      "runtime": "Node 24.14.0 in WSL2",
+      "passed": 12953,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Windows-only npm bun.cmd shim test; passed separately on native Windows"
+    },
+    "native_windows_node": {
+      "passed": 100,
+      "failed": 0,
+      "skipped": 0,
+      "committed_regression_tests": 59,
+      "adapter_tests_included": 19,
+      "consumer_ownership_tests_included": 32,
+      "project_drop_tests_included": 8,
+      "supplementary_compatibility_simulations": 40,
+      "windows_only_test": 1
+    },
+    "wsl2_browser_scenarios": {
+      "passed": 60,
+      "failed": 0,
+      "saved_picker": 3,
+      "unsaved_picker": 3,
+      "navigation": 48,
+      "persistence": 6,
+      "versions_recorded_per_run": {
+        "chromium": "156.0.8078.4",
+        "firefox": "157.0",
+        "webkit": "27.2"
+      }
+    },
+    "windows_browser_scenarios": {
+      "passed": 22,
+      "failed": 0,
+      "chrome": 11,
+      "edge": 11,
+      "installed_versions_observed_at_final_verification": {
+        "chrome": "155.0.8059.85",
+        "edge": "155.0.4283.62"
+      },
+      "versions_recorded_per_run": false
+    },
+    "tests_inclusive_typecheck": "passed",
+    "production_build": "passed; Vite chunk-size advisory only"
+  },
+  "count_note": "Committed regression tests overlap the full suite; supplementary harness cases and browser scenarios are separate checks, not unique application test totals. The two fresh original project-drop A/B scenes are listed separately.",
+  "original_project_drop": {
+    "merge_base": {
+      "visible_cards": 0,
+      "rejection_visible": true,
+      "native_registrations": 0,
+      "native_reads": 0
+    },
+    "final_head": {
+      "visible_cards": 1,
+      "rejection_visible": false,
+      "native_registrations": 1,
+      "native_reads": 1
+    },
+    "publication_refresh": "complete",
+    "comparison": "project-drop-before-after.png",
+    "fresh_ab_scenarios_passed": 2,
+    "browser": "Chromium 156.0.8078.4",
+    "active_thread_id": null,
+    "selected_model": null,
+    "page_and_native_errors": 0,
+    "committed_hashes_stable": true,
+    "facts": "project-drop-facts.json",
+    "publication_visual_review": true
+  },
+  "saved_picker_regression": {
+    "merge_base_visible_cards": 1,
+    "intermediate_implementation_visible_cards": 0,
+    "final_implementation_visible_cards": 1,
+    "final_unsaved_control_visible_cards": 0,
+    "is_preexisting_merge_base_bug": false,
+    "comparison": "saved-chat-regression-before-after.png"
+  },
+  "reproduction": {
+    "working_directory": "studio/frontend",
+    "node": "24.14.0",
+    "commands": [
+      "node --experimental-strip-types --test \"tests/**/*.test.ts\"",
+      "node scripts/typecheck.mjs --tests",
+      "npm run build",
+      "node --experimental-strip-types --test tests/project-native-drop.test.ts tests/native-drop-consumer-ownership.test.ts tests/draft-attachment-adapter.test.ts"
+    ],
+    "supplementary_harnesses_committed": false
+  },
+  "retained_attempt_notes": [
+    "Initial unsaved-control assertions incorrectly required typed text to clear. Removed only that assertion; retained nonce, identity, pending read, attachment and error assertions. Original attempts retained.",
+    "A Windows Python console encoding error occurred while printing a completed passing Node test; its saved Node exit code was zero."
+  ],
+  "limitations": [
+    "Browser HTTP, Tauri/native IPC and deliberate read-delay boundaries were fixtures; no physical OS drop or packaged desktop application was exercised.",
+    "No native macOS Safari, independent native Linux host, real model inference/GPU run, or old binary was exercised.",
+    "Cross-platform path and old-capability checks were simulations through frontend code.",
+    "Windows executable versions were observed at final verification rather than recorded per app run.",
+    "The clean merge-tree with newer upstream main was reviewed but not tested."
+  ],
+  "owned_process_cleanup_complete": true,
+  "contract_scope_limitations": [
+    {
+      "area": "attachment cancellation notification",
+      "classification": "API contract scope; no natural UI reproducer found",
+      "detail": "Adapter contract scope: resource cleanup is per operation, but cancellation notification is keyed by File. Overlapping adds that reuse the identical File cannot independently query completion status. Native readers create fresh File instances; no natural UI reproducer was found."
+    }
+  ]
+}
