@@ -1335,11 +1335,12 @@ export function AppSidebar() {
         ? `Training needs MLX: ${chatOnlyDetail}. Run \`unsloth studio update\` to enable Train.`
         : "Training needs MLX. Run `unsloth studio update` to enable Train."
       : chatOnlyReason === "no_torch"
-        ? // GGUF-only by request. `unsloth studio update` keeps no-torch, so it is not the fix;
-          // on Desktop the manual repair reruns the installer with PyTorch.
-          canRepair
-          ? "Training was left out of this install (Chat only). Use Repair installation in Settings to add it."
-          : "Training was left out of this install (--no-torch). Reinstall without --no-torch to enable Train."
+        ? // `unsloth studio update` keeps no-torch. chatOnlyHint: a Mac the MLX wheels skip.
+          chatOnlyHint
+          ? chatOnlyHint
+          : canRepair
+            ? "Training was left out of this install (Chat only). Use Upgrade to full install in Settings to add it."
+            : "Training was left out of this install (--no-torch). Reinstall without --no-torch to enable Train."
         : chatOnlyReason === "rosetta"
         ? "Unsloth is running under Rosetta (x86_64 Python). Re-run the installer from a native arm64 terminal to enable training."
         : chatOnlyReason === "intel_mac"
