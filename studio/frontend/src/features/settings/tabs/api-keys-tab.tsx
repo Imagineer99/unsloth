@@ -26,15 +26,16 @@ import { CreateKeyForm } from "../components/create-key-form";
 import { DecisionApiSection } from "../components/decision-api-section";
 import { KeyRevealCard } from "../components/key-reveal-card";
 import { KeylessApiAccessSection } from "../components/keyless-api-access-section";
-import { McpAccessSection } from "../components/mcp-access-section";
 import { ModelAliasesSection } from "../components/model-aliases-section";
 import { ModelAutoSwitchSection } from "../components/model-auto-switch-section";
 import { MonitorLink } from "../components/monitor-link";
 import { RemoteLanSummary } from "../components/remote-lan-summary";
+import { UnslothStudioMcpRow } from "../components/unsloth-studio-mcp-row";
 import {
   UsageExamples,
   useApiTunnelPref,
 } from "../components/usage-examples";
+import { useSettingsDialogStore } from "../stores/settings-dialog-store";
 
 export function ApiKeysTab() {
   const t = useT();
@@ -45,6 +46,7 @@ export function ApiKeysTab() {
   const [revokeTarget, setRevokeTarget] = useState<ApiKey | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [revealed, setRevealed] = useState<string | null>(null);
+  const setNewApiKey = useSettingsDialogStore((s) => s.setNewApiKey);
   const [useTunnel, setUseTunnel] = useApiTunnelPref();
   const [keyless, setKeyless] = useState<{
     scope: KeylessApiAccessScope;
@@ -136,7 +138,13 @@ export function ApiKeysTab() {
             exit={{ opacity: 0, y: -4 }}
             transition={transition}
           >
-            <KeyRevealCard rawKey={revealed} onDone={() => setRevealed(null)} />
+            <KeyRevealCard
+              rawKey={revealed}
+              onDone={() => {
+                setRevealed(null);
+                setNewApiKey(null);
+              }}
+            />
           </motion.div>
         ) : (
           <motion.div
@@ -149,6 +157,7 @@ export function ApiKeysTab() {
             <CreateKeyForm
               onCreated={(raw) => {
                 setRevealed(raw);
+                setNewApiKey(raw);
                 void load();
               }}
               onError={setError}
@@ -229,7 +238,7 @@ export function ApiKeysTab() {
 
       {isOwner ? <DecisionApiSection /> : null}
 
-      {isOwner ? <McpAccessSection apiKey={revealed} /> : null}
+      {isOwner ? <UnslothStudioMcpRow /> : null}
 
       <Dialog
         open={revokeTarget !== null}
