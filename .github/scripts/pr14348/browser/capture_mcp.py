@@ -30,17 +30,34 @@ def identity(side):
     assert run('git','rev-parse','HEAD',cwd=root)==side['sha'],'worktree SHA mismatch'
     assert not run('git','diff','--name-only',cwd=root),'tracked working-tree edits invalidate evidence'
     assert (home/'.uidiff_sha').read_text().strip()==side['sha'],'home build stamp mismatch'
-    proc=psutil.Process(int(side['pid']))
-    cwd=Path(proc.cwd()).resolve();assert cwd==root or root in cwd.parents,'server cwd outside worktree'
+    launcher=psutil.Process(int(side['pid']))
+    launcher_started=launcher.create_time()
+    proc=launcher
     port=urlsplit(side['url']).port
     assert port,'server port missing'
     identity_method='direct-process-environment-and-listener'
+    if sys.platform=='win32':
+        # A Windows venv redirector owns the child interpreter, not its socket.
+        # Resolve only within our launcher tree; never trust an unrelated listener.
+        listeners=[]
+        for candidate in [launcher,*launcher.children(recursive=True)]:
+            try:
+                if any(c.status==psutil.CONN_LISTEN and c.laddr.port==port for c in candidate.net_connections(kind='inet')):
+                    listeners.append(candidate)
+            except psutil.NoSuchProcess:
+                continue
+        assert len(listeners)==1,'owned launcher tree must have exactly one server listener'
+        proc=listeners[0]
+        assert proc.pid==launcher.pid or launcher.pid in [parent.pid for parent in proc.parents()],'server listener left owned launcher tree'
+        identity_method='owned-launcher-tree-environment-and-listener'
+    server_started=proc.create_time()
+    cwd=Path(proc.cwd()).resolve();assert cwd==root or root in cwd.parents,'server cwd outside worktree'
     try:
         env=proc.environ()
         assert Path(env.get('UNSLOTH_STUDIO_HOME','')).resolve()==home,'server home mismatch'
         assert any(c.status==psutil.CONN_LISTEN and c.laddr.port==port for c in proc.net_connections(kind='inet')),'PID is not listening on expected port'
     except (psutil.AccessDenied, NotImplementedError):
-        assert sys.platform in ('win32','darwin'),'Linux identity must remain strict'
+        assert sys.platform=='darwin','Linux and Windows identity checks must remain strict'
         record=json.loads(Path(side['launch_record_path']).read_text(encoding='utf-8-sig'))
         for key in ('pid','sha','url'):
             assert str(record[key])==str(side[key]),'launcher record mismatch: '+key
@@ -49,7 +66,12 @@ def identity(side):
         assert side.get('studio_root_id'),'native fallback needs known per-home server root id'
         identity_method='owner-runner-record-plus-health-root-and-assets'
     start_token=Path('/proc/'+str(proc.pid)+'/stat').read_text().rsplit(')',1)[1].split()[19] if sys.platform.startswith('linux') else str(proc.create_time())
-    return {'sha':side['sha'],'worktree':str(root),'home':str(home),'pid':proc.pid,'port':port,'process_start_token':start_token,'process_cwd':str(cwd),'home_stamp_verified':True,'identity_method':identity_method}
+    result={'sha':side['sha'],'worktree':str(root),'home':str(home),'pid':proc.pid,'port':port,'process_start_token':start_token,'process_cwd':str(cwd),'home_stamp_verified':True,'identity_method':identity_method}
+    if sys.platform=='win32':
+        assert psutil.Process(launcher.pid).create_time()==launcher_started,'launcher PID identity changed'
+        assert psutil.Process(proc.pid).create_time()==server_started,'server PID identity changed'
+        result.update(launcher_pid=launcher.pid,launcher_start_token=str(launcher_started))
+    return result
 
 async def verify_assets(client,side):
     if side.get('studio_root_id'):

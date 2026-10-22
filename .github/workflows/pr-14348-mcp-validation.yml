@@ -13,6 +13,10 @@ on:
         type: choice
         default: all
         options: [all, native, ubuntu-latest, windows-latest, macos-latest]
+      skip_backend:
+        description: Reuse previously verified backend results for these exact pins
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -69,6 +73,7 @@ jobs:
           node-version: '22'
       - name: Isolated backend dependencies
         id: backend_setup
+        if: ${{ !inputs.skip_backend }}
         shell: python
         run: |
           import subprocess, sys

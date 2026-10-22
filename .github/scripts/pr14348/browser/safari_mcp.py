@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 import httpx
 from selenium import webdriver
+from selenium.common.exceptions import StaleElementReferenceException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -110,9 +111,17 @@ def named_button(driver, name):
 def open_settings(driver, side, tab):
     set_stage('settings:navigate:' + tab)
     driver.get(side['url'] + '/chat')
-    wait = WebDriverWait(driver, 60)
+    wait = WebDriverWait(driver, 60, ignored_exceptions=(StaleElementReferenceException,))
     set_stage('settings:open-dialog:' + tab)
-    wait.until(lambda current: named_button(current, 'Settings')).click()
+    def click_settings(current):
+        # React can replace this element between lookup and click. Retry both
+        # operations together within the bounded wait, without caching elements.
+        button = named_button(current, 'Settings')
+        if not button:
+            return False
+        button.click()
+        return True
+    wait.until(click_settings)
     wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, '[data-settings-dialog]')))
     set_stage('settings:select-tab:' + tab)
     wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, f'[data-testid="settings-tab-{tab}"]'))).click()
