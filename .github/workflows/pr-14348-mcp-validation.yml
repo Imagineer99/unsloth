@@ -1,0 +1,142 @@
+# Prepared locally; no workflow run has been dispatched.
+# Adapted from the pr-repro-ci make_workflow.py generator.
+name: PR 14348 targeted MCP validation
+
+on:
+  push:
+    branches:
+      - 'fix/pr-14348-mcp-validation-*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr14348-mcp-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.repository == 'Imagineer99/unsloth' && startsWith(github.ref, 'refs/heads/fix/pr-14348-mcp-validation-')
+    name: MCP (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/temp/pr14348/cache/browsers
+      PIP_CACHE_DIR: ${{ github.workspace }}/temp/pr14348/cache/pip
+      npm_config_cache: ${{ github.workspace }}/temp/pr14348/cache/npm
+    steps:
+      - name: Checkout validation package
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Checkout pinned baseline
+        id: base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: unslothai/unsloth
+          ref: 588e1c4ffefc7ee74a8474da2d4791ea2c44313b
+          path: temp/pr14348/base
+          persist-credentials: false
+      - name: Checkout pinned PR head
+        id: head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: unslothai/unsloth
+          ref: bf573a6117540e6187cf8427e3971e97bd74636f
+          path: temp/pr14348/head
+          persist-credentials: false
+      - name: Python
+        id: python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.11.15'
+      - name: Node
+        id: node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+      - name: Isolated backend dependencies
+        id: backend_setup
+        shell: python
+        run: |
+          import subprocess, sys
+          subprocess.run([sys.executable, '.github/scripts/pr14348/prepare_env.py', '--root', 'temp/pr14348', '--mode', 'backend'], check=True)
+      - name: Real backend feature A/B and compatibility
+        if: ${{ !cancelled() && steps.backend_setup.outcome == 'success' }}
+        shell: python
+        run: |
+          import os, subprocess
+          from pathlib import Path
+          root = Path('temp/pr14348').resolve()
+          python = root / 'env-backend' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+          subprocess.run([str(python), '.github/scripts/pr14348/run_backend.py', '--base', str(root/'base'), '--head', str(root/'head'), '--output', str(root/'run/backend'), '--phase', 'compatibility'], check=True)
+      - name: Isolated real app dependencies and pinned frontend builds
+        id: browser_setup
+        if: ${{ !cancelled() && steps.base.outcome == 'success' && steps.head.outcome == 'success' && steps.python.outcome == 'success' && steps.node.outcome == 'success' }}
+        shell: python
+        run: |
+          import subprocess, sys
+          subprocess.run([sys.executable, '.github/scripts/pr14348/prepare_env.py', '--root', 'temp/pr14348', '--mode', 'browser'], check=True)
+      - name: Install Linux browser engines and their system libraries
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.browser_setup.outcome == 'success' }}
+        shell: python
+        run: |
+          import subprocess
+          from pathlib import Path
+          python = Path('temp/pr14348/env-browser/bin/python').absolute()
+          subprocess.run([str(python), '-m', 'playwright', 'install', '--with-deps', 'chromium', 'firefox', 'webkit'], check=True)
+      - name: Enable native Safari automation
+        if: ${{ !cancelled() && runner.os == 'macOS' && steps.browser_setup.outcome == 'success' }}
+        shell: bash
+        run: sudo safaridriver --enable
+      - name: New MCP controls on platform browsers with real backend
+        if: ${{ !cancelled() && steps.browser_setup.outcome == 'success' }}
+        shell: python
+        run: |
+          import os, subprocess
+          from pathlib import Path
+          root = Path('temp/pr14348').resolve()
+          python = root / 'env-browser' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+          subprocess.run([str(python), '.github/scripts/pr14348/run_browser_matrix.py', '--root', str(root)], check=True)
+      - name: Real browser save invariant (sequential and overlapping reads)
+        if: ${{ !cancelled() && runner.os == 'Linux' && steps.browser_setup.outcome == 'success' }}
+        shell: python
+        run: |
+          import subprocess
+          from pathlib import Path
+          root = Path('temp/pr14348').resolve()
+          python = root / 'env-browser' / 'bin/python'
+          subprocess.run([str(python), '.github/scripts/pr14348/run_browser_matrix.py', '--root', str(root), '--phase', 'concurrency'], check=True)
+      - name: Upload only public reports and verified captures
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: pr14348-mcp-${{ runner.os }}
+          retention-days: 1
+          if-no-files-found: warn
+          path: |
+            temp/pr14348/run/reports/setup-backend.json
+            temp/pr14348/run/reports/setup-browser.json
+            temp/pr14348/run/backend/reports/environment.json
+            temp/pr14348/run/backend/reports/base-feature.json
+            temp/pr14348/run/backend/reports/head-feature.json
+            temp/pr14348/run/backend/reports/head-compatibility.json
+            temp/pr14348/run/backend/reports/head-focused-suite.json
+            temp/pr14348/run/backend/reports/compatibility-summary.json
+            temp/pr14348/run/browser/reports/browser-summary.json
+            temp/pr14348/run/browser/reports/*/meta.json
+            temp/pr14348/run/browser/reports/*/before.png
+            temp/pr14348/run/browser/reports/*/after.png
+            temp/pr14348/run/browser/reports/*/after-overview.png
+            temp/pr14348/run/browser/reports/*/comparison.png
+
+
+
+            temp/pr14348/run/concurrency/reports/concurrent-save-chromium.json
+            temp/pr14348/run/concurrency/reports/browser-summary.json

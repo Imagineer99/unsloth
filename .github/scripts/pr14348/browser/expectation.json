@@ -1,0 +1,26 @@
+{
+  "scene": "settings-mcp-tool-access",
+  "pr": 14348,
+  "before_sha": "588e1c4ffefc7ee74a8474da2d4791ea2c44313b",
+  "after_sha": "bf573a6117540e6187cf8427e3971e97bd74636f",
+  "expect": "BEFORE offers the MCP access switch on Settings > API, no MCP settings tab and all 23 tools. AFTER offers a dedicated MCP tab with 23 rendered DOM tool rows; disabling chat there changes the actual backend tools/list to 22 tools and refuses chat calls immediately.",
+  "definitions": {
+    "rendered_tool_rows": "Count of [data-mcp-tool] elements in the rendered settings panel, including rows outside the scroll viewport. It is not the number simultaneously visible.",
+    "advertised_tools": "Count of tool objects returned by tools/list from the same base URL photographed, authenticated with an actual API key.",
+    "chat_off": "The chat row switch has aria-checked=false, GET /api/settings/mcp-access reports chat enabled=false, tools/list excludes chat, and tools/call chat returns tool_disabled."
+  },
+  "controlled": {
+    "viewport": {"width": 1440, "height": 1100},
+    "device_scale_factor": 1,
+    "theme": "light",
+    "locale": "en",
+    "reduced_motion": "reduce",
+    "distinct_homes_processes_ports": true,
+    "actual_built_frontend_and_backend": true,
+    "mocked_responses": false,
+    "gpu_execution": false
+  },
+  "layout": "Capture same dialog-sized crop on both sides. Preserve original pixels, pad without scaling and vertically stack with readable labels. Also retain the after overview before scrolling to chat.",
+  "verified": null,
+  "adapter_note": "The reviewed repo has no scripts/pr_ui_scenes registry/common implementation; this is a task-local explicit adapter, not an invocation of an absent upstream scene framework."
+}
