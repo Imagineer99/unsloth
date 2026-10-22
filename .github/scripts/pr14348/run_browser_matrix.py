@@ -206,7 +206,7 @@ def main() -> int:
                 meta_path = target / 'meta.json'
                 if meta_path.is_file():
                     meta = json.loads(meta_path.read_text(encoding='utf-8'))
-                    diagnostic = {key: meta[key] for key in ('stage', 'error_type', 'sides_completed', 'traceback_frames') if key in meta}
+                    diagnostic = {key: meta[key] for key in ('stage', 'error_type', 'sides_completed', 'traceback_frames', 'capture_geometry') if key in meta}
                     serialized = json.dumps(diagnostic)
                     known_secrets = [side.get(key) for side in config.values() for key in ('access_token', 'refresh_token', 'api_key')]
                     if any(secret and secret in serialized for secret in known_secrets):

@@ -20,6 +20,7 @@ from selenium.webdriver.support import expected_conditions as EC
 BASE = '588e1c4ffefc7ee74a8474da2d4791ea2c44313b'
 HEAD = 'bf573a6117540e6187cf8427e3971e97bd74636f'
 STAGE = 'initialization'
+CAPTURE_GEOMETRY = None
 
 
 def set_stage(value):
@@ -40,7 +41,8 @@ def failure_diagnostic(exc, report):
                        'function': function if re.fullmatch(r'[A-Za-z0-9_<>]{1,120}', function) else 'redacted'})
         current = current.tb_next
     return {'stage': STAGE, 'error_type': type(exc).__name__,
-            'traceback_frames': frames[-12:], 'sides_completed': list(report['sides'])}
+            'traceback_frames': frames[-12:], 'sides_completed': list(report['sides']),
+            'capture_geometry': CAPTURE_GEOMETRY}
 
 
 def scroll_panel(driver, element, bottom=False):
@@ -129,15 +131,36 @@ def open_settings(driver, side, tab):
 
 
 def screenshot(driver, path, secrets):
+    global CAPTURE_GEOMETRY
+    CAPTURE_GEOMETRY = None
     set_stage('capture:secret-check')
     text = driver.find_element(By.TAG_NAME, 'body').text
     values = driver.execute_script('return [...document.querySelectorAll("input,textarea")].map(e=>e.value).join("\\n")')
     require(all(not value or (value not in text and value not in values) for value in secrets), 'secret rendered in capture surface')
     dialog = driver.find_element(By.CSS_SELECTOR, '[data-settings-dialog]')
-    require(dialog.size['width'] > 800, 'unexpected dialog dimensions')
-    set_stage('capture:native-element-screenshot')
-    require(dialog.screenshot(str(path)), 'native Safari screenshot failed')
-    return {'file': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest()}
+    set_stage('capture:measure-visible-geometry')
+    geometry = driver.execute_script("""
+        const rect=arguments[0].getBoundingClientRect();
+        return {
+            viewport:{width:window.innerWidth,height:window.innerHeight,scrollX:window.scrollX,scrollY:window.scrollY},
+            devicePixelRatio:window.devicePixelRatio,
+            dialog:{left:rect.left,top:rect.top,right:rect.right,bottom:rect.bottom,width:rect.width,height:rect.height},
+            visualViewport:window.visualViewport ? {width:window.visualViewport.width,height:window.visualViewport.height,offsetLeft:window.visualViewport.offsetLeft,offsetTop:window.visualViewport.offsetTop,scale:window.visualViewport.scale} : null
+        };
+    """, dialog)
+    geometry['window'] = driver.get_window_rect()
+    CAPTURE_GEOMETRY = geometry
+    set_stage('capture:verify-visible-geometry')
+    bounds, viewport = geometry['dialog'], geometry['viewport']
+    require(bounds['width'] > 800 and bounds['height'] > 0, 'unexpected dialog dimensions')
+    require(bounds['left'] >= -1 and bounds['top'] >= -1
+            and bounds['right'] <= viewport['width'] + 1
+            and bounds['bottom'] <= viewport['height'] + 1,
+            'dialog is not fully inside viewport')
+    set_stage('capture:native-viewport-screenshot')
+    require(driver.save_screenshot(str(path)), 'native Safari screenshot failed')
+    return {'file': path.name, 'sha256': hashlib.sha256(path.read_bytes()).hexdigest(),
+            'capture': 'full-viewport', 'geometry': geometry}
 
 
 def main() -> int:
