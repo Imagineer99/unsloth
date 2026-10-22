@@ -636,7 +636,7 @@ def test_speed_default_respects_family_cudnn_benchmark_opt_out(monkeypatch):
 def test_cudnn_benchmark_opt_out_image_families():
     from core.inference.diffusion_families import _FAMILIES
     off = {fam.name for fam in _FAMILIES if not fam.cudnn_benchmark}
-    assert off == {"qwen-image", "flux.1", "flux.2-dev", "z-image", "sdxl"}
+    assert off == {"qwen-image", "flux.1", "flux.2-dev", "z-image", "sdxl", "moss-image"}
 
 
 @pytest.mark.parametrize(
