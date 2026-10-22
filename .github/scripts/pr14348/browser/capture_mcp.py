@@ -3,7 +3,7 @@ Private JSON: {before:{url,home,worktree,sha,pid,access_token,refresh_token?,api
 Each home must contain .uidiff_sha. Sources must remain clean at the pinned SHA.
 """
 from __future__ import annotations
-import argparse, asyncio, hashlib, json, os, re, subprocess, sys, time
+import argparse, asyncio, hashlib, json, os, re, subprocess, sys, time, traceback
 from pathlib import Path
 from urllib.parse import urlsplit
 import httpx, psutil
@@ -12,6 +12,8 @@ from playwright.async_api import async_playwright, expect
 
 STAGE='startup'
 SECRETS=[]
+OUT=None
+COMPLETED=[]
 
 def digest(data): return hashlib.sha256(data).hexdigest()
 def run(*args,cwd=None): return subprocess.check_output(args,cwd=cwd,text=True).strip()
@@ -180,7 +182,9 @@ def compose(out,data):
     canvas.save(out/'comparison.png')
 
 async def main():
+    global OUT, STAGE
     parser=argparse.ArgumentParser();parser.add_argument('--config',required=True,type=Path);parser.add_argument('--out',required=True,type=Path);parser.add_argument('--engine',choices=['chromium','firefox','webkit'],default='chromium');parser.add_argument('--channel',choices=['chrome','msedge']);args=parser.parse_args()
+    OUT=args.out.resolve()
     cfg=json.loads(args.config.read_text(encoding='utf-8-sig'));out=args.out.resolve();out.mkdir(parents=True,exist_ok=True)
     expectation=json.loads((Path(__file__).parent/'expectation.json').read_text(encoding='utf-8-sig'))
     assert cfg['before']['sha']==expectation['before_sha'] and cfg['after']['sha']==expectation['after_sha'],'config refs differ from original plan'
@@ -191,11 +195,13 @@ async def main():
         kwargs={'headless':True}
         if args.channel:
             assert args.engine=='chromium','channel requires Chromium';kwargs['channel']=args.channel
+        STAGE='launch-browser'
         browser=await getattr(pw,args.engine).launch(**kwargs)
         data={}
         try:
             for label in ('before','after'):
                 data[label]=await drive(browser,cfg[label],label,out)
+                COMPLETED.append(label)
                 print(label+' verified: '+json.dumps(data[label]['facts']),flush=True)
             diffs={key:{'before':data['before']['facts'].get(key),'after':data['after']['facts'].get(key)} for key in sorted(set(data['before']['facts'])|set(data['after']['facts'])) if data['before']['facts'].get(key)!=data['after']['facts'].get(key)}
             assert diffs,'facts unexpectedly identical'
@@ -208,5 +214,8 @@ async def main():
 if __name__=='__main__':
     try:asyncio.run(main())
     except Exception as exc:
+        if OUT is not None:
+            diagnostic={'status':'FAIL','stage':STAGE,'error_type':type(exc).__name__,'sides_completed':COMPLETED,'traceback_frames':[{'file':Path(frame.filename).name,'line':frame.lineno,'function':frame.name} for frame in traceback.extract_tb(exc.__traceback__)]}
+            (OUT/'meta.json').write_text(json.dumps(diagnostic,indent=2)+'\n',encoding='utf-8')
         print('FAILED at '+STAGE+': '+type(exc).__name__+': '+scrub(exc),file=sys.stderr)
         sys.exit(1)

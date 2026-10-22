@@ -1,4 +1,4 @@
-# Prepared locally; no workflow run has been dispatched.
+# Pinned validation package; no product source changes.
 # Adapted from the pr-repro-ci make_workflow.py generator.
 name: PR 14348 targeted MCP validation
 
@@ -7,6 +7,12 @@ on:
     branches:
       - 'fix/pr-14348-mcp-validation-*'
   workflow_dispatch:
+    inputs:
+      target_os:
+        description: Platform checks to run
+        type: choice
+        default: all
+        options: [all, native, ubuntu-latest, windows-latest, macos-latest]
 
 permissions:
   contents: read
@@ -24,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: ${{ fromJSON((github.event_name != 'workflow_dispatch' || inputs.target_os == 'all') && '["ubuntu-latest","windows-latest","macos-latest"]' || inputs.target_os == 'native' && '["windows-latest","macos-latest"]' || format('["{0}"]', inputs.target_os)) }}
     env:
       PYTHONDONTWRITEBYTECODE: '1'
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/temp/pr14348/cache/browsers

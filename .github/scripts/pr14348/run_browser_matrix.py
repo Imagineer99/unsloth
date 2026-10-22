@@ -200,6 +200,19 @@ def main() -> int:
                     if artifact.is_file():
                         shutil.copy2(artifact, public / name)
             result = {'browser': browser, 'status': 'PASS' if run.returncode == 0 else 'FAIL', 'exit_code': run.returncode}
+            if run.returncode != 0 and args.phase == 'feature':
+                # Public failures expose only controlled diagnostic fields, never raw
+                # exception messages, browser logs, failed images or partial metadata.
+                meta_path = target / 'meta.json'
+                if meta_path.is_file():
+                    meta = json.loads(meta_path.read_text(encoding='utf-8'))
+                    diagnostic = {key: meta[key] for key in ('stage', 'error_type', 'sides_completed', 'traceback_frames') if key in meta}
+                    serialized = json.dumps(diagnostic)
+                    known_secrets = [side.get(key) for side in config.values() for key in ('access_token', 'refresh_token', 'api_key')]
+                    if any(secret and secret in serialized for secret in known_secrets):
+                        raise RuntimeError('credential present in browser failure diagnostic')
+                    result['diagnostic'] = diagnostic
+                    print('Browser failure diagnostic: ' + serialized, flush=True)
             results.append(result)
             failed = failed or run.returncode != 0
             print(f"{result['status']} real MCP UI on {browser}", flush=True)
