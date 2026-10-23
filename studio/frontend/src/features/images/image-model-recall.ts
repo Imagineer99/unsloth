@@ -102,6 +102,233 @@ export function rememberImageModel(model: RememberedImageModel): void {
   }
 }
 
+export type ImageModelKey = Pick<RememberedImageModel, "repoId" | "kind" | "filename">;
+export type ImageComponentFiles = Pick<RememberedImageModel, "textEncoderFiles" | "vaeFile">;
+
+// The encoder / VAE paths each model last loaded with, most recent last, so a pick can refill the Advanced fields.
+const COMPONENTS_KEY = "unsloth:images:component-files";
+const COMPONENTS_CAP = 50;
+
+type ComponentEntry = ImageComponentFiles & { key: string };
+
+const componentsKey = ({ repoId, kind, filename }: ImageModelKey): string =>
+  [repoId, kind, kind === "pipeline" ? "" : (filename ?? "")].join("\n");
+
+function cleanComponentFiles(value: unknown): ImageComponentFiles {
+  const raw = (value ?? {}) as { textEncoderFiles?: unknown; vaeFile?: unknown };
+  const encoders = Array.isArray(raw.textEncoderFiles)
+    ? raw.textEncoderFiles.filter((f): f is string => typeof f === "string" && f.trim().length > 0)
+    : [];
+  const vae = typeof raw.vaeFile === "string" ? raw.vaeFile.trim() : "";
+  return {
+    ...(encoders.length > 0 ? { textEncoderFiles: encoders } : {}),
+    ...(vae ? { vaeFile: vae } : {}),
+  };
+}
+
+function readComponentEntries(): ComponentEntry[] {
+  try {
+    const value = JSON.parse(localStorage.getItem(COMPONENTS_KEY) ?? "[]");
+    return Array.isArray(value)
+      ? value.filter((e): e is ComponentEntry => Boolean(e) && typeof e.key === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export function sameComponentFiles(a: ImageComponentFiles, b: ImageComponentFiles): boolean {
+  const x = cleanComponentFiles(a);
+  const y = cleanComponentFiles(b);
+  return (x.textEncoderFiles ?? []).join("\n") === (y.textEncoderFiles ?? []).join("\n") && x.vaeFile === y.vaeFile;
+}
+
+export function readImageComponents(model: ImageModelKey): ImageComponentFiles | null {
+  const key = componentsKey(model);
+  const entry = readComponentEntries().find((e) => e.key === key);
+  const files = cleanComponentFiles(entry);
+  return files.textEncoderFiles || files.vaeFile ? files : null;
+}
+
+const sameEncoders = (a: ImageComponentFiles, b: ImageComponentFiles): boolean =>
+  (cleanComponentFiles(a).textEncoderFiles ?? []).join("\n") === (cleanComponentFiles(b).textEncoderFiles ?? []).join("\n");
+const sameVae = (a: ImageComponentFiles, b: ImageComponentFiles): boolean =>
+  cleanComponentFiles(a).vaeFile === cleanComponentFiles(b).vaeFile;
+
+/** What a load of `model` sends from the Advanced fields, the encoder and VAE field each on its own: a field still
+ *  holding `owner`'s value (what was filled in or loaded last) is not the user's edit, so it gives way to the model's
+ *  own saved file, and no entry sends none. `owner` is the new owner (an edited field keeps its old one, so it stays an
+ *  edit until a load takes it); `replaceEncoders` / `replaceVae` say which fields to refill. */
+export function componentFilesForModel(
+  typed: ImageComponentFiles,
+  owner: ImageComponentFiles,
+  model: ImageModelKey,
+): { files: ImageComponentFiles; owner: ImageComponentFiles; replaceEncoders: boolean; replaceVae: boolean } {
+  const replaceEncoders = sameEncoders(typed, owner);
+  const replaceVae = sameVae(typed, owner);
+  if (!replaceEncoders && !replaceVae) return { files: typed, owner, replaceEncoders, replaceVae };
+  const saved = readImageComponents(model) ?? {};
+  const pick = (encoders: ImageComponentFiles, vae: ImageComponentFiles) =>
+    cleanComponentFiles({ textEncoderFiles: encoders.textEncoderFiles, vaeFile: vae.vaeFile });
+  return {
+    files: pick(replaceEncoders ? saved : typed, replaceVae ? saved : typed),
+    owner: pick(replaceEncoders ? saved : owner, replaceVae ? saved : owner),
+    replaceEncoders,
+    replaceVae,
+  };
+}
+
+/** The files a recalled model loads with: its per-model entry (which keeps what a native load strips from the
+ *  request), else the last-model slot's, which an older build or an evicted entry leaves as the only record. */
+export function recalledComponentFiles(model: RememberedImageModel): ImageComponentFiles {
+  return readImageComponents(model) ?? cleanComponentFiles(model);
+}
+
+/** The remembered model's files on page open, copying the last-model slot's into the map when it has no entry (an
+ *  older build kept them only there), so a pick of that model with the fields untouched keeps them. */
+export function seedImageComponents(model: RememberedImageModel): ImageComponentFiles {
+  const saved = readImageComponents(model);
+  if (saved) return saved;
+  const slot = cleanComponentFiles(model);
+  if (slot.textEncoderFiles || slot.vaeFile) rememberImageComponents(model, slot);
+  return slot;
+}
+
+/** Forget a model's saved files when its resident build (status ``component_files``, basenames) uses others, e.g. a
+ *  reload by another client without them, so a later recall or pick does not bring back what no longer engages. A
+ *  native (sd_cpp) build never takes supplied files, so there the entry records the request and stays. */
+export function forgetStaleImageComponents(
+  model: ImageModelKey,
+  status: { engine?: string | null; component_files?: Record<string, string> | null },
+): void {
+  if (status.engine === "sd_cpp") return;
+  const saved = readImageComponents(model);
+  if (saved && !componentFilesMatch(saved, status.component_files))
+    rememberImageComponents(model, engagedComponentFiles(saved, status.component_files));
+}
+
+/** The part of `files` the resident build (status ``component_files``, basenames) still engages: the encoders and the
+ *  VAE each on their own, so a reload that changed only one override keeps the other's full path. */
+function engagedComponentFiles(
+  files: ImageComponentFiles,
+  componentFiles: Record<string, string> | null | undefined,
+): ImageComponentFiles {
+  const { vae, ...encoders } = componentFiles ?? {};
+  const clean = cleanComponentFiles(files);
+  return cleanComponentFiles({
+    textEncoderFiles: componentFilesMatch({ textEncoderFiles: clean.textEncoderFiles }, encoders)
+      ? clean.textEncoderFiles
+      : undefined,
+    vaeFile: componentFilesMatch({ vaeFile: clean.vaeFile }, vae ? { vae } : {}) ? clean.vaeFile : undefined,
+  });
+}
+
+/** Forget the resident model's own saved files when its build does not use them, on every settled loaded status: the
+ *  page may remember another model, or the resident build may change after the first status, and a pick or Reapply of
+ *  the resident model would otherwise send paths the status shows it no longer loads. The last-model slot loses them
+ *  too when it names the resident model, since recall falls back to it: returns that slot without its files when it
+ *  dropped them, else null. */
+export function forgetStaleResidentComponents(status: {
+  loaded: boolean;
+  repo_id?: string | null;
+  model_kind?: string | null;
+  gguf_filename?: string | null;
+  engine?: string | null;
+  component_files?: Record<string, string> | null;
+}): RememberedImageModel | null {
+  const kind = status.model_kind;
+  if (!status.loaded || !status.repo_id) return null;
+  let resident: ImageModelKey;
+  if (kind === "pipeline") resident = { repoId: status.repo_id, kind };
+  else if ((kind === "gguf" || kind === "single_file") && status.gguf_filename)
+    resident = { repoId: status.repo_id, kind, filename: status.gguf_filename };
+  else return null;
+  forgetStaleImageComponents(resident, status);
+  if (status.engine === "sd_cpp") return null;
+  const slot = readImageModel();
+  if (!slot || componentsKey(slot) !== componentsKey(resident)) return null;
+  const files = cleanComponentFiles(slot);
+  if ((!files.textEncoderFiles && !files.vaeFile) || componentFilesMatch(files, status.component_files)) return null;
+  const { textEncoderFiles: _te, vaeFile: _vae, ...bare } = slot;
+  const next = { ...bare, ...engagedComponentFiles(files, status.component_files) };
+  rememberImageModel(next);
+  return next;
+}
+
+/** On the first loaded status: forget the remembered model's saved files when that same model is resident on a
+ *  build that does not use them (another client reloaded it without them), so the page does not reload them as
+ *  untouched fields. The last-model slot loses them too, since seed and recall fall back to it. Returns the model
+ *  with only the files the build still engages when any were dropped, else null. */
+export function reconcileRememberedComponents<T extends ImageModelKey & ImageComponentFiles>(
+  model: T,
+  status: {
+    loaded: boolean;
+    repo_id?: string | null;
+    model_kind?: string | null;
+    gguf_filename?: string | null;
+    engine?: string | null;
+    component_files?: Record<string, string> | null;
+  },
+): (Omit<T, "textEncoderFiles" | "vaeFile"> & ImageComponentFiles) | null {
+  const saved = status.loaded && matchesRememberedModel(model, status) ? readImageComponents(model) : null;
+  if (!saved) return null;
+  forgetStaleImageComponents(model, status);
+  // What the build still engages (one part when a reload changed only the other), or nothing.
+  const kept = readImageComponents(model) ?? {};
+  if (sameComponentFiles(kept, saved)) return null;
+  const slot = readImageModel();
+  if (slot && componentsKey(slot) === componentsKey(model)) {
+    const { textEncoderFiles: _te, vaeFile: _vae, ...bare } = slot;
+    rememberImageModel({ ...bare, ...engagedComponentFiles(slot, status.component_files) });
+  }
+  const { textEncoderFiles: _te, vaeFile: _vae, ...rest } = model;
+  return { ...rest, ...kept };
+}
+
+/** Record a finished load's files: a load this page started stores what it asked for (`fieldFiles`, which a native
+ *  load strips from the request), and returns them. A load it only resumed (re-entered mid-load, so `lastLoad` is the
+ *  resident descriptor) carries no request, so the saved entry is kept if the build engages it and forgotten if not. */
+export function rememberLoadedImageComponents(
+  load: ImageModelKey & { fieldFiles?: ImageComponentFiles },
+  status: { engine?: string | null; component_files?: Record<string, string> | null },
+): ImageComponentFiles | null {
+  if (!load.fieldFiles) {
+    forgetStaleImageComponents(load, status);
+    return null;
+  }
+  rememberImageComponents(load, load.fieldFiles);
+  return load.fieldFiles;
+}
+
+/** Who owns the fields after a load finished, field by field: that load, only while the field shows its file. A load that never touched
+ *  them (an adapter deploy, a recalled generation) leaves them with the model that filled them, and so does a load of
+ *  a `kind` that ignores the fields (a pipeline), whose empty request would otherwise match a field the user cleared. */
+export function componentFieldsOwnerAfterLoad(
+  shown: ImageComponentFiles,
+  loaded: ImageComponentFiles,
+  owner: ImageComponentFiles,
+  kind: RememberedImageModel["kind"],
+): ImageComponentFiles {
+  if (kind !== "gguf" && kind !== "single_file") return cleanComponentFiles(owner);
+  return cleanComponentFiles({
+    textEncoderFiles: (sameEncoders(shown, loaded) ? loaded : owner).textEncoderFiles,
+    vaeFile: (sameVae(shown, loaded) ? loaded : owner).vaeFile,
+  });
+}
+
+/** Store the paths a load succeeded with; a load with none forgets the model's entry. */
+export function rememberImageComponents(model: ImageModelKey, files: ImageComponentFiles): void {
+  const key = componentsKey(model);
+  const clean = cleanComponentFiles(files);
+  const entries = readComponentEntries().filter((e) => e.key !== key);
+  if (clean.textEncoderFiles || clean.vaeFile) entries.push({ key, ...clean });
+  try {
+    localStorage.setItem(COMPONENTS_KEY, JSON.stringify(entries.slice(-COMPONENTS_CAP)));
+  } catch {
+    // storage can be unavailable in private browsing
+  }
+}
+
 export function matchesRememberedModel(
   model: RememberedImageModel,
   status: {
@@ -134,4 +361,50 @@ export function componentFilesMatch(
     remembered.length === resident.length &&
     remembered.every((name, i) => name === resident[i])
   );
+}
+
+// The load this page last started, with the paths it asked for, until that load ends: the backend load outlives a page
+// reload, and status names only basenames, so a resumed load can still record the paths when it finishes.
+const PENDING_KEY = "unsloth:images:pending-load";
+
+export type PendingImageLoad = RememberedImageModel & { displayRepoId?: string; baseRepo?: string; fieldFiles?: ImageComponentFiles };
+
+export function rememberPendingImageLoad(load: PendingImageLoad): void {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify(load));
+  } catch {
+    // storage can be unavailable in private browsing
+  }
+}
+
+export function clearPendingImageLoad(): void {
+  try {
+    localStorage.removeItem(PENDING_KEY);
+  } catch {
+    // storage can be unavailable in private browsing
+  }
+}
+
+function readPendingImageLoad(): PendingImageLoad | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(PENDING_KEY) ?? "null");
+    if (!value || typeof value.repoId !== "string" || !value.repoId) return null;
+    if (!["gguf", "single_file", "pipeline"].includes(value.kind)) return null;
+    return { ...value, fieldFiles: cleanComponentFiles(value.fieldFiles) };
+  } catch {
+    return null;
+  }
+}
+
+/** The descriptor a finished load reconciles with, consuming the pending one: the page's own load when it carries its
+ *  request, else (a load resumed after a reload) the pending load when the now-resident build is that model. */
+export function finishedLoadTarget<T extends ImageModelKey & { fieldFiles?: ImageComponentFiles }>(
+  current: T | null,
+  status: Parameters<typeof matchesRememberedModel>[1],
+): T | PendingImageLoad | null {
+  const pending = readPendingImageLoad();
+  clearPendingImageLoad();
+  if (current?.fieldFiles) return current;
+  if (pending && matchesRememberedModel(pending, status)) return pending;
+  return current;
 }
