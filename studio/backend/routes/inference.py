@@ -51535,6 +51535,17 @@ def _refuse_native_component_files(request: DiffusionLoadRequest) -> None:
         )
 
 
+def _mlx_load_blocker(request: DiffusionLoadRequest) -> Optional[str]:
+    """The load option, if any, that keeps this pick off the MLX engine under UNSLOTH_DIFFUSION_MLX=auto."""
+    from core.inference.diffusion_engine_router import mlx_load_blocker
+    return mlx_load_blocker(
+        loras = request.loras,
+        component_files = _component_file_kwargs(request),
+        transformer_quant = request.transformer_quant,
+        text_encoder_quant = request.text_encoder_quant,
+    )
+
+
 def _has_active_loras(loras: Any) -> bool:
     from core.inference.diffusion_engine_router import has_active_loras
     return has_active_loras(loras)
@@ -51652,6 +51663,7 @@ async def diffusion_download_plan(
                 gguf_filename = request.gguf_filename,
                 engine = request.engine,
                 with_loras = _has_active_loras(request.loras),
+                mlx_blocker = _mlx_load_blocker(request),
             )
             if fam is not None
             else None
@@ -51661,7 +51673,7 @@ async def diffusion_download_plan(
             from core.inference.sd_cpp_backend import get_sd_cpp_backend
             planner = get_sd_cpp_backend()
         elif predicted == ENGINE_MLX:
-            # Opt-in MLX engine (UNSLOTH_DIFFUSION_MLX=1): same single-GGUF contract as native.
+            # MLX engine (Apple Silicon): same single-GGUF contract as native.
             _refuse_native_component_files(request)
             _refuse_mlx_loras(request)
             from core.inference.mlx_diffusion_backend import get_mlx_diffusion_backend
@@ -51978,6 +51990,7 @@ async def load_diffusion_model_gated(
                     gguf_filename = request.gguf_filename,
                     engine = request.engine,
                     with_loras = _has_active_loras(request.loras),
+                    mlx_blocker = _mlx_load_blocker(request),
                 )
                 if fam is not None
                 else None
@@ -52122,7 +52135,10 @@ async def load_diffusion_model_gated(
                 gguf_filename = request.gguf_filename,
                 # The load's own engine pick (auto when absent); refused there rather than swapped.
                 engine = request.engine,
+                # MLX applies no LoRA: an adapter load keeps the engine it had without MLX, in every mode.
                 with_loras = _has_active_loras(request.loras),
+                # A load option the MLX engine cannot honour keeps an auto-routed Apple Silicon load on diffusers.
+                mlx_blocker = _mlx_load_blocker(request),
             ),
         )
         # predict_engine is selection's read-only twin: it never installs, so a host whose sd-cli
@@ -52787,6 +52803,7 @@ async def _generate_diffusion_image_run(
         IMAGE_REFUSAL_HEADER,
         IMAGE_REFUSAL_MEMORY_ESTIMATE,
         ImageActivationShortfallError,
+        unified_memory_refusal_code,
     )
 
     backend = get_active_diffusion_engine()
@@ -52918,6 +52935,15 @@ async def _generate_diffusion_image_run(
             msg = str(exc)
             if msg in (DIFFUSION_NOT_LOADED_MSG, DIFFUSION_CANCELLED_MSG):
                 raise HTTPException(status_code = 409, detail = msg)
+            refusal = unified_memory_refusal_code(exc)
+            if refusal is not None:
+                # A fallback engine this request needed was refused by the unified-memory load guard: tagged with
+                # the load path's error code, not reported as a generation failure.
+                raise HTTPException(
+                    status_code = 400,
+                    detail = msg,
+                    headers = {IMAGE_REFUSAL_HEADER: refusal},
+                )
             logger.error("diffusion.generate_failed: %s", exc, exc_info = True)
             raise HTTPException(status_code = 500, detail = _generate_failure_detail(msg))
         except Exception as exc:
@@ -52967,6 +52993,7 @@ async def _generate_diffusion_image_run(
                         # The batch shares one seed, so reproducing a batch_index>0 image needs the original batch_size.
                         "batch_size": 1 if list_driven else request.batch_size,
                         "model": result.get("repo_id"),
+                        **({"engine": result["engine"]} if result.get("engine") else {}),
                         # The BUILD the image came off, not just the repo id: a GGUF repo holds many quants, a dense load may be torchao-
                         # quantised, and a bake is not the same build as the adapter-less one. Absent on records written before this existed.
                         "model_kind": result.get("model_kind"),
@@ -54659,6 +54686,7 @@ async def _generate_openai_images(
     want_b64 = body.response_format == "b64_json"
     # Persist each image with its full recipe, like /images/generate, so url links resolve and images show in the gallery.
     recipe = {
+        **({"engine": result["engine"]} if result.get("engine") else {}),
         "prompt": body.prompt,
         "negative_prompt": result.get("negative_prompt"),
         "width": width,
