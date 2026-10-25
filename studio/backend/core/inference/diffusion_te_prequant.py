@@ -1007,7 +1007,10 @@ def te_prequant_sources_for_base(
 
     A variant base whose encoder is a different model (``te_prequant_variant_repos``) resolves
     against that variant's rows and files only, never the family base's.
+
+    An automatic pick on a local folder keeps the folder's own encoder: a name match says nothing about its weights.
     """
+    auto_local = _auto_pick(te_quant_mode) and _is_local_base(base)
     fam = te_variant_family_view(fam, base)
     sources = te_prequant_sources(
         fam,
@@ -1021,9 +1024,22 @@ def te_prequant_sources_for_base(
     for component, source in sources.items():
         checkpoint_base = standalone.get(component) or registered_base
         selected_base = standalone.get(component) or base
+        if auto_local and component not in standalone:
+            continue
         if checkpoint_base and selected_base and te_base_equivalent(checkpoint_base, selected_base):
             compatible[component] = source
     return compatible
+
+
+def _is_local_base(base: Optional[str]) -> bool:
+    """Whether ``base`` is a folder on disk rather than a Hub id (the loaders' own rule)."""
+    if not base:
+        return False
+    try:
+        from .diffusion_families import _is_local_path
+        return bool(_is_local_path(str(base)))
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def te_variant_family_view(fam: Any, base: Optional[str]) -> Any:
