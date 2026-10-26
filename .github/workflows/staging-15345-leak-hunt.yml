@@ -1,0 +1,828 @@
+name: "staging-15345 leak-hunt"
+on:
+  push:
+    branches: ["pr-15345-xplat-ci"]
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: bash
+jobs:
+  leak-ubuntu-latest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      UNSLOTH_STUDIO_DISABLE_PUBLIC_CHECK: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/lh-uv-python
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: src-head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ba161f54fa24800322605c21ee9ccc286b09d316
+          path: src-base
+          persist-credentials: false
+      - name: "leak hunt: bubblewrap + unprivileged user namespaces"
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bash src-head/.github/scripts/retry-with-apt-lock.sh sudo apt-get install -y -qq bubblewrap
+          bwrap --version
+      - name: "leak hunt: install Studio (head)"
+        working-directory: src-head
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (head)"
+        id: lh-py-head
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (head)"
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+          LH_PY: ${{ steps.lh-py-head.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_head_ubuntu-latest.json --label head --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_head_ubuntu-latest.rc
+      - name: "leak hunt: install Studio (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        working-directory: src-base
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        id: lh-py-base
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+          LH_PY: ${{ steps.lh-py-base.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_base_ubuntu-latest.json --label base --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_base_ubuntu-latest.rc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: leak-hunt-ubuntu-latest
+          path: |
+            leak_hunt_*.json
+            leak_hunt_*.md
+            leak_hunt_*.rc
+          if-no-files-found: warn
+      - name: "leak hunt: gate on the head arm (ubuntu-latest)"
+        if: ${{ always() }}
+        run: |
+          for f in leak_hunt_*_ubuntu-latest.rc; do if [ -f "$f" ]; then echo "$f: $(cat "$f")"; fi; done
+          [ -f leak_hunt_head_ubuntu-latest.rc ] || { echo "::error::head arm never ran"; exit 1; }
+          rc=$(sed -n 's/^rc=//p' leak_hunt_head_ubuntu-latest.rc)
+          case "$rc" in
+            0) echo "head CLEAN" ;;
+            1) echo "::error::head LEAK (exit 1), see leak_hunt_head_ubuntu-latest.json"; exit 1 ;;
+            2) echo "::error::head VOID (exit 2), no evidence"; exit 1 ;;
+            *) echo "::error::head arm exited $rc"; exit 1 ;;
+          esac
+  leak-macos-15:
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      UNSLOTH_STUDIO_DISABLE_PUBLIC_CHECK: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/lh-uv-python
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: src-head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ba161f54fa24800322605c21ee9ccc286b09d316
+          path: src-base
+          persist-credentials: false
+      - name: "leak hunt: can RLIMIT_NOFILE go unlimited here"
+        run: |
+          (ulimit -n unlimited && echo "shell ulimit -n after raise: $(ulimit -n)") || echo "shell could not raise ulimit -n"
+          python - <<'EOF'
+          import resource as r
+          print("before", r.getrlimit(r.RLIMIT_NOFILE))
+          try:
+              r.setrlimit(r.RLIMIT_NOFILE, (r.RLIM_INFINITY, r.RLIM_INFINITY))
+          except (ValueError, OSError) as e:
+              print("cannot set unlimited:", e)
+          print("achieved", r.getrlimit(r.RLIMIT_NOFILE), "RLIM_INFINITY =", r.RLIM_INFINITY)
+          EOF
+      - name: "leak hunt: install Studio (head)"
+        working-directory: src-head
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (head)"
+        id: lh-py-head
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (head)"
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+          LH_PY: ${{ steps.lh-py-head.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_head_macos-15.json --label head --inject nofile-unlimited --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_head_macos-15.rc
+      - name: "leak hunt: install Studio (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        working-directory: src-base
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        id: lh-py-base
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+          LH_PY: ${{ steps.lh-py-base.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_base_macos-15.json --label base --inject nofile-unlimited --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_base_macos-15.rc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: leak-hunt-macos-15
+          path: |
+            leak_hunt_*.json
+            leak_hunt_*.md
+            leak_hunt_*.rc
+          if-no-files-found: warn
+      - name: "leak hunt: gate on the head arm (macos-15)"
+        if: ${{ always() }}
+        run: |
+          for f in leak_hunt_*_macos-15.rc; do if [ -f "$f" ]; then echo "$f: $(cat "$f")"; fi; done
+          [ -f leak_hunt_head_macos-15.rc ] || { echo "::error::head arm never ran"; exit 1; }
+          rc=$(sed -n 's/^rc=//p' leak_hunt_head_macos-15.rc)
+          case "$rc" in
+            0) echo "head CLEAN" ;;
+            1) echo "::error::head LEAK (exit 1), see leak_hunt_head_macos-15.json"; exit 1 ;;
+            2) echo "::error::head VOID (exit 2), no evidence"; exit 1 ;;
+            *) echo "::error::head arm exited $rc"; exit 1 ;;
+          esac
+  leak-macos-26:
+    runs-on: macos-26
+    timeout-minutes: 90
+    env:
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      UNSLOTH_STUDIO_DISABLE_PUBLIC_CHECK: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/lh-uv-python
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: src-head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ba161f54fa24800322605c21ee9ccc286b09d316
+          path: src-base
+          persist-credentials: false
+      - name: "leak hunt: can RLIMIT_NOFILE go unlimited here"
+        run: |
+          (ulimit -n unlimited && echo "shell ulimit -n after raise: $(ulimit -n)") || echo "shell could not raise ulimit -n"
+          python - <<'EOF'
+          import resource as r
+          print("before", r.getrlimit(r.RLIMIT_NOFILE))
+          try:
+              r.setrlimit(r.RLIMIT_NOFILE, (r.RLIM_INFINITY, r.RLIM_INFINITY))
+          except (ValueError, OSError) as e:
+              print("cannot set unlimited:", e)
+          print("achieved", r.getrlimit(r.RLIMIT_NOFILE), "RLIM_INFINITY =", r.RLIM_INFINITY)
+          EOF
+      - name: "leak hunt: install Studio (head)"
+        working-directory: src-head
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (head)"
+        id: lh-py-head
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (head)"
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+          LH_PY: ${{ steps.lh-py-head.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_head_macos-26.json --label head --inject nofile-unlimited --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_head_macos-26.rc
+      - name: "leak hunt: install Studio (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        working-directory: src-base
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        id: lh-py-base
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+          LH_PY: ${{ steps.lh-py-base.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_base_macos-26.json --label base --inject nofile-unlimited --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_base_macos-26.rc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: leak-hunt-macos-26
+          path: |
+            leak_hunt_*.json
+            leak_hunt_*.md
+            leak_hunt_*.rc
+          if-no-files-found: warn
+      - name: "leak hunt: gate on the head arm (macos-26)"
+        if: ${{ always() }}
+        run: |
+          for f in leak_hunt_*_macos-26.rc; do if [ -f "$f" ]; then echo "$f: $(cat "$f")"; fi; done
+          [ -f leak_hunt_head_macos-26.rc ] || { echo "::error::head arm never ran"; exit 1; }
+          rc=$(sed -n 's/^rc=//p' leak_hunt_head_macos-26.rc)
+          case "$rc" in
+            0) echo "head CLEAN" ;;
+            1) echo "::error::head LEAK (exit 1), see leak_hunt_head_macos-26.json"; exit 1 ;;
+            2) echo "::error::head VOID (exit 2), no evidence"; exit 1 ;;
+            *) echo "::error::head arm exited $rc"; exit 1 ;;
+          esac
+  leak-windows-latest:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      UNSLOTH_STUDIO_DISABLE_PUBLIC_CHECK: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/lh-uv-python
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: src-head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ba161f54fa24800322605c21ee9ccc286b09d316
+          path: src-base
+          persist-credentials: false
+      - name: "leak hunt: install Studio (head)"
+        working-directory: src-head
+        shell: pwsh
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          & ./install.ps1 --local --no-torch; exit $LASTEXITCODE
+      - name: "leak hunt: Studio python + psutil (head)"
+        id: lh-py-head
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (head)"
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+          LH_PY: ${{ steps.lh-py-head.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_head_windows-latest.json --label head --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_head_windows-latest.rc
+      - name: "leak hunt: install Studio (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        working-directory: src-base
+        shell: pwsh
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          & ./install.ps1 --local --no-torch; exit $LASTEXITCODE
+      - name: "leak hunt: Studio python + psutil (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        id: lh-py-base
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+          LH_PY: ${{ steps.lh-py-base.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_base_windows-latest.json --label base --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_base_windows-latest.rc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: leak-hunt-windows-latest
+          path: |
+            leak_hunt_*.json
+            leak_hunt_*.md
+            leak_hunt_*.rc
+          if-no-files-found: warn
+      - name: "leak hunt: gate on the head arm (windows-latest)"
+        if: ${{ always() }}
+        run: |
+          for f in leak_hunt_*_windows-latest.rc; do if [ -f "$f" ]; then echo "$f: $(cat "$f")"; fi; done
+          [ -f leak_hunt_head_windows-latest.rc ] || { echo "::error::head arm never ran"; exit 1; }
+          rc=$(sed -n 's/^rc=//p' leak_hunt_head_windows-latest.rc)
+          case "$rc" in
+            0) echo "head CLEAN" ;;
+            1) echo "::error::head LEAK (exit 1), see leak_hunt_head_windows-latest.json"; exit 1 ;;
+            2) echo "::error::head VOID (exit 2), no evidence"; exit 1 ;;
+            *) echo "::error::head arm exited $rc"; exit 1 ;;
+          esac
+  leak-ubuntu-24-04-arm:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      UNSLOTH_STUDIO_DISABLE_PUBLIC_CHECK: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/lh-uv-python
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: src-head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ba161f54fa24800322605c21ee9ccc286b09d316
+          path: src-base
+          persist-credentials: false
+      - name: "leak hunt: bubblewrap + unprivileged user namespaces"
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bash src-head/.github/scripts/retry-with-apt-lock.sh sudo apt-get install -y -qq bubblewrap
+          bwrap --version
+      - name: "leak hunt: install Studio (head)"
+        working-directory: src-head
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (head)"
+        id: lh-py-head
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (head)"
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+          LH_PY: ${{ steps.lh-py-head.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_head_ubuntu-24.04-arm.json --label head --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_head_ubuntu-24.04-arm.rc
+      - name: "leak hunt: install Studio (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        working-directory: src-base
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        id: lh-py-base
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+          LH_PY: ${{ steps.lh-py-base.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_base_ubuntu-24.04-arm.json --label base --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_base_ubuntu-24.04-arm.rc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: leak-hunt-ubuntu-24.04-arm
+          path: |
+            leak_hunt_*.json
+            leak_hunt_*.md
+            leak_hunt_*.rc
+          if-no-files-found: warn
+      - name: "leak hunt: gate on the head arm (ubuntu-24.04-arm)"
+        if: ${{ always() }}
+        run: |
+          for f in leak_hunt_*_ubuntu-24.04-arm.rc; do if [ -f "$f" ]; then echo "$f: $(cat "$f")"; fi; done
+          [ -f leak_hunt_head_ubuntu-24.04-arm.rc ] || { echo "::error::head arm never ran"; exit 1; }
+          rc=$(sed -n 's/^rc=//p' leak_hunt_head_ubuntu-24.04-arm.rc)
+          case "$rc" in
+            0) echo "head CLEAN" ;;
+            1) echo "::error::head LEAK (exit 1), see leak_hunt_head_ubuntu-24.04-arm.json"; exit 1 ;;
+            2) echo "::error::head VOID (exit 2), no evidence"; exit 1 ;;
+            *) echo "::error::head arm exited $rc"; exit 1 ;;
+          esac
+  leak-macos-15-intel:
+    runs-on: macos-15-intel
+    timeout-minutes: 90
+    env:
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      UNSLOTH_STUDIO_DISABLE_PUBLIC_CHECK: '1'
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      HF_HUB_DISABLE_TELEMETRY: '1'
+      UV_PYTHON_INSTALL_DIR: ${{ github.workspace }}/lh-uv-python
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: '3.12'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          path: src-head
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        continue-on-error: true
+        with:
+          ref: ba161f54fa24800322605c21ee9ccc286b09d316
+          path: src-base
+          persist-credentials: false
+      - name: "leak hunt: can RLIMIT_NOFILE go unlimited here"
+        run: |
+          (ulimit -n unlimited && echo "shell ulimit -n after raise: $(ulimit -n)") || echo "shell could not raise ulimit -n"
+          python - <<'EOF'
+          import resource as r
+          print("before", r.getrlimit(r.RLIMIT_NOFILE))
+          try:
+              r.setrlimit(r.RLIMIT_NOFILE, (r.RLIM_INFINITY, r.RLIM_INFINITY))
+          except (ValueError, OSError) as e:
+              print("cannot set unlimited:", e)
+          print("achieved", r.getrlimit(r.RLIMIT_NOFILE), "RLIM_INFINITY =", r.RLIM_INFINITY)
+          EOF
+      - name: "leak hunt: install Studio (head)"
+        working-directory: src-head
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (head)"
+        id: lh-py-head
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (head)"
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_head
+          LH_PY: ${{ steps.lh-py-head.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_head_macos-15-intel.json --label head --inject nofile-unlimited --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_head_macos-15-intel.rc
+      - name: "leak hunt: install Studio (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        working-directory: src-base
+        shell: bash
+        env:
+          UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          ./install.sh --local --no-torch
+      - name: "leak hunt: Studio python + psutil (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        id: lh-py-base
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+        run: |
+          # Windows: backslashed runner.temp -> D:/a/_temp/..., which Git bash and python.exe both read.
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          PY=""
+          for c in "$LH_HOME/unsloth_studio/bin/python" "$LH_HOME/unsloth_studio/Scripts/python.exe"; do
+            if [ -f "$c" ]; then PY="$c"; break; fi
+          done
+          if [ -z "$PY" ]; then echo "::error::no Studio venv python under $LH_HOME"; ls -la "$LH_HOME"; exit 1; fi
+          "$PY" -c "import fastapi, uvicorn, sys; print(sys.executable, sys.version)"
+          if "$PY" -m pip --version > /dev/null 2>&1; then
+            "$PY" -m pip install psutil
+          else
+            python -m pip install uv
+            python -m uv pip install --python "$PY" psutil
+          fi
+          "$PY" -c "import psutil; print('psutil', psutil.__version__)"
+          echo "py=$PY" >> "$GITHUB_OUTPUT"
+      - name: "leak hunt: run (base)"
+        continue-on-error: true
+        if: ${{ !cancelled() }}
+        env:
+          LH_HOME: ${{ runner.temp }}/lh_home_base
+          LH_PY: ${{ steps.lh-py-base.outputs.py }}
+          PYTHONUTF8: '1'
+        run: |
+          if command -v cygpath > /dev/null; then LH_HOME=$(cygpath -m "$LH_HOME"); fi
+          set +e
+          "$LH_PY" src-head/.github/scripts/leak_hunt/run.py --studio-python "$LH_PY" --home "$LH_HOME" --port 18931 --timers src-head/.github/scripts/leak_hunt/timers.json --compress-to 1.0 --soak 60 --post-stop 20 --out leak_hunt_base_macos-15-intel.json --label base --inject nofile-unlimited --drive api
+          rc=$?
+          echo "rc=$rc" | tee leak_hunt_base_macos-15-intel.rc
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: ${{ always() }}
+        with:
+          name: leak-hunt-macos-15-intel
+          path: |
+            leak_hunt_*.json
+            leak_hunt_*.md
+            leak_hunt_*.rc
+          if-no-files-found: warn
+      - name: "leak hunt: gate on the head arm (macos-15-intel)"
+        if: ${{ always() }}
+        run: |
+          for f in leak_hunt_*_macos-15-intel.rc; do if [ -f "$f" ]; then echo "$f: $(cat "$f")"; fi; done
+          [ -f leak_hunt_head_macos-15-intel.rc ] || { echo "::error::head arm never ran"; exit 1; }
+          rc=$(sed -n 's/^rc=//p' leak_hunt_head_macos-15-intel.rc)
+          case "$rc" in
+            0) echo "head CLEAN" ;;
+            1) echo "::error::head LEAK (exit 1), see leak_hunt_head_macos-15-intel.json"; exit 1 ;;
+            2) echo "::error::head VOID (exit 2), no evidence"; exit 1 ;;
+            *) echo "::error::head arm exited $rc"; exit 1 ;;
+          esac
