@@ -465,10 +465,9 @@ _REACHED_THROUGH_A_GATE = {
         "pin_module_in_place",
     ): "h3_te_pin_allowed / stream_h3_text_encoder",
     (
-        "core/inference/video_minimax_h3_residency.py",
-        "_pin_host_tensor",
-    ): "_H3BlockPinner._run only, built by defer_streamed_block_pins behind _background_pin_enabled / "
-    "_fast_pin_supported / h3_te_pin_allowed (the admit too), all on the target device",
+        "core/inference/video_minimax_h3_te.py",
+        "_pinned_arena",
+    ): "pin_module_in_place",
     ("core/inference/diffusion_preview.py", "_device_map"): "exempt: tiny, async preview",
     (
         "core/inference/diffusion_preview.py",
