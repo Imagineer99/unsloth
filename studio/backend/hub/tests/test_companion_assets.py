@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -215,8 +216,8 @@ def test_orphan_listing_reports_the_stranded_companions_once_the_quants_are_gone
     result = asyncio.run(companion_cleanup.orphan_companions_response())
     assert [c["repo_id"] for c in result["companions"]] == [BASE_REPO]
     assert result["total_bytes"] == COMPANION_BYTES
-    assert (
-        result["companions"][0]["cache_path"] == "/cache/models--black-forest-labs--FLUX.2-klein-4B"
+    assert result["companions"][0]["cache_path"] == str(
+        Path("/cache/models--black-forest-labs--FLUX.2-klein-4B")
     )
 
 
@@ -296,8 +297,8 @@ def test_orphan_listing_reports_one_row_per_cache(monkeypatch):
     _install(monkeypatch, first, second)
     result = asyncio.run(companion_cleanup.orphan_companions_response())
     assert [c["cache_path"] for c in result["companions"]] == [
-        "/cache/models--black-forest-labs--FLUX.2-klein-4B",
-        "/other-cache/models--black-forest-labs--FLUX.2-klein-4B",
+        str(Path("/cache/models--black-forest-labs--FLUX.2-klein-4B")),
+        str(Path("/other-cache/models--black-forest-labs--FLUX.2-klein-4B")),
     ]
     assert [c["size_bytes"] for c in result["companions"]] == [COMPANION_BYTES, 900_460]
     assert result["total_bytes"] == COMPANION_BYTES + 900_460
@@ -465,7 +466,7 @@ def test_one_full_copy_does_not_hide_an_orphaned_copy_in_another_cache(monkeypat
     _install(monkeypatch, full, orphan)
     offered = asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
     assert [c["cache_path"] for c in offered] == [
-        "/cache/models--black-forest-labs--FLUX.2-klein-4B"
+        str(Path("/cache/models--black-forest-labs--FLUX.2-klein-4B"))
     ]
 
 
@@ -626,8 +627,8 @@ def test_a_vae_only_prequant_fetch_is_not_a_dependent(monkeypatch):
     assert impact["blocked_by"] == [gguf]
 
 
-def test_a_prequant_repo_holding_its_checkpoint_still_pins_the_base(monkeypatch):
-    """A root prequant checkpoint in the same repo is an installed model and still pins it."""
+def test_a_speed_loaded_base_and_its_hosted_checkpoint_are_one_install(monkeypatch):
+    """The base stays out of Free up space, yet its own delete is not refused by the hosted repo."""
     prequant = "unsloth/Qwen-Image-2.1-FP8"
     base = "Qwen/Qwen-Image-2.1"
     _install(
@@ -641,7 +642,13 @@ def test_a_prequant_repo_holding_its_checkpoint_still_pins_the_base(monkeypatch)
         ),
         _base_repo(base),
     )
-    assert companion_cleanup.companion_dependents(base) == [prequant]
+    assert companion_cleanup.companion_dependents(base, ignore_repo_ids = [base]) == []
+    assert companion_cleanup.companion_dependents(prequant) == [base]
+    offered = asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
+    assert offered == []
+    impact = asyncio.run(companion_cleanup.delete_impact_response(base))
+    assert impact["blocked_by"] == []
+    assert [row["repo_id"] for row in impact["freeable_companions"]] == [prequant]
 
 
 def test_a_pre_cast_encoder_fetch_is_not_a_dependent(monkeypatch):
@@ -658,7 +665,7 @@ def test_a_pre_cast_encoder_fetch_is_not_a_dependent(monkeypatch):
     assert impact["blocked_by"] == []
 
 
-def test_a_prequant_repo_holding_its_checkpoint_and_encoder_still_pins_the_base(monkeypatch):
+def test_a_hosted_checkpoint_and_encoder_are_freed_with_the_last_dependent(monkeypatch):
     prequant = "unsloth/Qwen-Image-2.1-FP8"
     base = "Qwen/Qwen-Image-2.1"
     _install(
@@ -672,7 +679,11 @@ def test_a_prequant_repo_holding_its_checkpoint_and_encoder_still_pins_the_base(
         ),
         _base_repo(base),
     )
-    assert companion_cleanup.companion_dependents(base) == [prequant]
+    assert companion_cleanup.companion_dependents(prequant) == [base]
+    impact = asyncio.run(companion_cleanup.delete_impact_response(base))
+    assert impact["freeable_companions"] == [
+        {"repo_id": prequant, "size_bytes": 16_520_000_000, "needed_by": []}
+    ]
 
 
 def test_a_borrowed_chat_repo_is_never_advertised_as_freeable(monkeypatch):
@@ -866,7 +877,9 @@ def test_the_orphan_precondition_is_scoped_to_the_cache_being_deleted(monkeypatc
         _repo(dev, [("model_index.json", 460)], cache = "/c2"),
     )
     rows = asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
-    assert [r["cache_path"] for r in rows] == ["/c2/models--black-forest-labs--FLUX.2-dev"]
+    assert [r["cache_path"] for r in rows] == [
+        str(Path("/c2/models--black-forest-labs--FLUX.2-dev"))
+    ]
     try:
         deletion._delete_cached_model_blocking(
             dev, None, None, rows[0]["cache_path"], only_if_orphan = True
@@ -1026,3 +1039,252 @@ def test_a_link_to_a_retired_sd_cli_repack_no_longer_pins_it(monkeypatch):
     assert required["tongyi-mai/z-image-turbo"] == {gguf}
     offered = asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
     assert retired.lower() in [c["repo_id"].lower() for c in offered]
+
+
+H3_BASE = "unsloth/MiniMax-H3"
+H3_QUANT = "unsloth/MiniMax-H3-FP8"
+H3_ASSETS = [
+    ("MiniMax-H3-INT8-ConvRot.pt", 20_250_000_000),
+    ("text_encoders/official/qwen3vl_32b_minimax_h3_int8_convrot.safetensors", 27_140_000_000),
+]
+
+
+def test_h3_orphan_sidecars_are_offered_with_actual_blob_bytes(monkeypatch):
+    _install(monkeypatch, _repo(H3_QUANT, H3_ASSETS))
+    result = asyncio.run(companion_cleanup.orphan_companions_response())
+    assert result["companions"] == [
+        {
+            "repo_id": H3_QUANT,
+            "size_bytes": 47_390_000_000,
+            "cache_path": str(Path("/cache/models--unsloth--MiniMax-H3-FP8")),
+        }
+    ]
+    assert result["total_bytes"] == 47_390_000_000
+
+
+@pytest.mark.parametrize("base", [H3_BASE, "MiniMaxAI/MiniMax-H3"])
+def test_h3_speed_loaded_pipeline_protects_hosted_components_without_links(monkeypatch, base):
+    # Speed load: only VAEs land in the pipeline repo; DiT and TE live in the FP8 repo.
+    _install(
+        monkeypatch,
+        _repo(base, [("vae/diffusion_pytorch_model.safetensors", 11_100_000_000)]),
+        _repo(H3_QUANT, H3_ASSETS),
+    )
+    assert companion_cleanup.companion_dependents(H3_QUANT) == [base]
+    assert H3_QUANT not in {
+        row["repo_id"]
+        for row in asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
+    }
+    with pytest.raises(HTTPException) as excinfo:
+        deletion._delete_cached_model_blocking(H3_QUANT, None, None)
+    assert excinfo.value.status_code == 400
+
+
+def test_h3_delete_preview_shows_sidecars_as_separate_reclaimable_assets(monkeypatch):
+    _install(
+        monkeypatch,
+        _repo(H3_BASE, [("vae/diffusion_pytorch_model.safetensors", 11_100_000_000)]),
+        _repo(H3_QUANT, H3_ASSETS),
+    )
+    result = asyncio.run(companion_cleanup.delete_impact_response(H3_BASE, None))
+    assert result["reclaimed_bytes"] == 11_100_000_000
+    assert result["retained_companions"] == []
+    assert result["freeable_companions"] == [
+        {"repo_id": H3_QUANT, "size_bytes": 47_390_000_000, "needed_by": []}
+    ]
+
+
+def test_h3_delete_preview_retains_sidecars_for_another_cached_checkpoint(monkeypatch):
+    gguf = "unsloth/MiniMax-H3-GGUF"
+    _install(
+        monkeypatch,
+        _repo(H3_BASE, [("vae/diffusion_pytorch_model.safetensors", 11_100)]),
+        _repo(H3_QUANT, H3_ASSETS),
+        _repo(gguf, [("MiniMax-H3-Q4_K_M.gguf", 99_000)]),
+    )
+    result = asyncio.run(companion_cleanup.delete_impact_response(H3_BASE, None))
+    assert result["freeable_companions"] == []
+    assert result["retained_companions"] == [
+        {"repo_id": H3_QUANT, "size_bytes": 47_390_000_000, "needed_by": [gguf]}
+    ]
+
+
+@pytest.mark.parametrize(
+    "name", ["custom-model.safetensors", "transformer/model.safetensors", "custom/model.pt"]
+)
+def test_h3_cleanup_preserves_unknown_weights_alongside_sidecars(monkeypatch, name):
+    _install(monkeypatch, _repo(H3_QUANT, [*H3_ASSETS, (name, 90_000)]))
+    assert asyncio.run(companion_cleanup.orphan_companions_response())["companions"] == []
+    with pytest.raises(HTTPException) as excinfo:
+        deletion._delete_cached_model_blocking(H3_QUANT, None, None, only_if_orphan = True)
+    assert excinfo.value.status_code == 409
+
+
+def test_h3_metadata_only_pipeline_does_not_pin_orphan_sidecars(monkeypatch):
+    _install(monkeypatch, _repo(H3_BASE, [("model_index.json", 400)]), _repo(H3_QUANT, H3_ASSETS))
+    assert companion_cleanup.companion_dependents(H3_QUANT) == []
+    assert H3_QUANT in {
+        row["repo_id"]
+        for row in asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
+    }
+
+
+def test_h3_legacy_conditioner_copy_is_also_a_companion(monkeypatch):
+    legacy = H3_ASSETS[1][0].replace("/official/", "/")
+    _install(monkeypatch, _repo(H3_QUANT, [(legacy, 27_140_000_000)]))
+    assert (
+        asyncio.run(companion_cleanup.orphan_companions_response())["total_bytes"] == 27_140_000_000
+    )
+
+
+# (hosted repo, its cached files, reading install, its files, a second install sharing a file in the repo)
+_VAE = [("vae/diffusion_pytorch_model.safetensors", 300_000)]
+HOSTED_CASES = {
+    "image-prequant": (
+        "unsloth/Z-Image-Turbo-FP8",
+        [("Z-Image-Turbo-FP8.safetensors", 6_100_000)],
+        "Tongyi-MAI/Z-Image-Turbo",
+        [("model_index.json", 400), *_VAE, ("text_encoder/model.safetensors", 800_000)],
+        ("unsloth/Z-Image-Turbo", [("model_index.json", 400), *_VAE]),
+    ),
+    "hosted-te": (
+        "unsloth/Qwen-Image-FP8",
+        [("Qwen-Image-text_encoder-FP8.safetensors", 9_400_000)],
+        "unsloth/Qwen-Image-GGUF",
+        [("qwen-image-Q4_K_M.gguf", 12_000_000)],
+        ("unsloth/HunyuanImage-2.1-GGUF", [("hunyuanimage2.1-Q4_K_M.gguf", 11_000_000)]),
+    ),
+    "video-nvfp4": (
+        "unsloth/HunyuanVideo-1.5-NVFP4",
+        [("HunyuanVideo-1.5-NVFP4.pt", 4_800_000)],
+        "hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-480p_t2v",
+        [("model_index.json", 400), *_VAE],
+        ("hunyuanvideo-community/HunyuanVideo-1.5-Diffusers-720p_t2v", [*_VAE]),
+    ),
+    "video-mirror-fp8": (
+        "unsloth/Wan2.2-TI2V-5B-FP8",
+        [
+            ("Wan2.2-TI2V-5B-FP8.safetensors", 5_000_000),
+            ("Wan2.2-TI2V-5B-text_encoder-FP8.safetensors", 6_000_000),
+        ],
+        "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        [("model_index.json", 400), *_VAE],
+        ("unsloth/Wan2.2-TI2V-5B-GGUF", [("Wan2.2-TI2V-5B-Q4_K_M.gguf", 3_000_000)]),
+    ),
+    "minimax-h3": (
+        H3_QUANT,
+        H3_ASSETS,
+        H3_BASE,
+        [("model_index.json", 400), *_VAE],
+        ("unsloth/MiniMax-H3-GGUF", [("MiniMax-H3-Q4_K_M.gguf", 99_000)]),
+    ),
+}
+_CASE_IDS = list(HOSTED_CASES)
+
+
+def _offered() -> dict:
+    rows = asyncio.run(companion_cleanup.orphan_companions_response())["companions"]
+    return {row["repo_id"]: row["size_bytes"] for row in rows}
+
+
+@pytest.mark.parametrize("case", _CASE_IDS)
+def test_hosted_component_with_no_dependent_is_offered_with_its_bytes(monkeypatch, case):
+    hosted, files, *_ = HOSTED_CASES[case]
+    _install(monkeypatch, _repo(hosted, files))
+    assert _offered() == {hosted: sum(size for _n, size in files)}
+
+
+@pytest.mark.parametrize("case", _CASE_IDS)
+def test_hosted_component_stays_protected_while_its_install_remains(monkeypatch, case):
+    hosted, files, dependent, dependent_files, _second = HOSTED_CASES[case]
+    _install(monkeypatch, _repo(hosted, files), _repo(dependent, dependent_files))
+    assert companion_cleanup.companion_dependents(hosted) == [dependent]
+    assert hosted not in _offered()
+    with pytest.raises(HTTPException) as excinfo:
+        deletion._delete_cached_model_blocking(hosted, None, None)
+    assert excinfo.value.status_code == 400
+
+
+@pytest.mark.parametrize("case", _CASE_IDS)
+def test_deleting_the_last_install_previews_the_hosted_component_as_freeable(monkeypatch, case):
+    hosted, files, dependent, dependent_files, _second = HOSTED_CASES[case]
+    _install(monkeypatch, _repo(hosted, files), _repo(dependent, dependent_files))
+    impact = asyncio.run(companion_cleanup.delete_impact_response(dependent, None))
+    assert impact["reclaimed_bytes"] == sum(size for _n, size in dependent_files)
+    assert impact["blocked_by"] == []
+    assert impact["retained_companions"] == []
+    assert impact["freeable_companions"] == [
+        {"repo_id": hosted, "size_bytes": sum(size for _n, size in files), "needed_by": []}
+    ]
+
+
+@pytest.mark.parametrize("case", _CASE_IDS)
+def test_a_shared_hosted_component_is_retained_for_the_other_install(monkeypatch, case):
+    hosted, files, dependent, dependent_files, (second, second_files) = HOSTED_CASES[case]
+    _install(
+        monkeypatch,
+        _repo(hosted, files),
+        _repo(dependent, dependent_files),
+        _repo(second, second_files),
+    )
+    assert companion_cleanup.companion_dependents(hosted) == sorted([dependent, second])
+    impact = asyncio.run(companion_cleanup.delete_impact_response(dependent, None))
+    assert impact["freeable_companions"] == []
+    assert impact["retained_companions"] == [
+        {"repo_id": hosted, "size_bytes": sum(size for _n, size in files), "needed_by": [second]}
+    ]
+    assert hosted not in _offered()
+
+
+@pytest.mark.parametrize("case", _CASE_IDS)
+@pytest.mark.parametrize("extra", ["custom-model.safetensors", "transformer/model.safetensors"])
+def test_a_hosted_repo_with_an_unknown_weight_is_preserved(monkeypatch, case, extra):
+    hosted, files, *_ = HOSTED_CASES[case]
+    _install(monkeypatch, _repo(hosted, [*files, (extra, 90_000)]))
+    assert hosted not in _offered()
+    with pytest.raises(HTTPException) as excinfo:
+        deletion._delete_cached_model_blocking(hosted, None, None, only_if_orphan = True)
+    assert excinfo.value.status_code == 409
+
+
+def test_a_shared_repo_is_pinned_only_by_the_families_whose_files_are_cached(monkeypatch):
+    """unsloth/Qwen-Image-FP8 serves HunyuanImage-2.1 its encoder, but only Qwen-Image's DiT is cached there."""
+    hosted = "unsloth/Qwen-Image-FP8"
+    gguf = "unsloth/HunyuanImage-2.1-GGUF"
+    dit = [("Qwen-Image-FP8.safetensors", 20_000_000)]
+    _install(monkeypatch, _repo(hosted, dit), _repo(gguf, [("hunyuanimage2.1-Q4_K_M.gguf", 9)]))
+    assert companion_cleanup.companion_dependents(hosted) == []
+    assert _offered() == {hosted: 20_000_000}
+    encoder = [("Qwen-Image-text_encoder-INT8-ConvRot.safetensors", 7_000_000)]
+    _install(
+        monkeypatch,
+        _repo(hosted, [*dit, *encoder]),
+        _repo(gguf, [("hunyuanimage2.1-Q4_K_M.gguf", 9)]),
+    )
+    assert companion_cleanup.companion_dependents(hosted) == [gguf]
+    assert _offered() == {}
+
+
+def test_a_gguf_install_does_not_pin_a_hosted_denoiser(monkeypatch):
+    """A GGUF pick brings its own denoiser; only a speed load beside the base reads the hosted one."""
+    hosted = "unsloth/Z-Image-Turbo-FP8"
+    _install(
+        monkeypatch,
+        _repo(hosted, [("Z-Image-Turbo-FP8.safetensors", 6_100_000)]),
+        _repo("unsloth/Z-Image-Turbo-GGUF", [("z-image-turbo-Q4_K_M.gguf", 3_000_000)]),
+    )
+    assert companion_cleanup.companion_dependents(hosted) == []
+    assert hosted in _offered()
+
+
+def test_a_speed_loaded_image_base_is_never_offered_as_unused(monkeypatch):
+    """The base minus its denoiser plus the hosted DiT is the install: neither half is an unused leftover."""
+    base = "Tongyi-MAI/Z-Image-Turbo"
+    _install(
+        monkeypatch,
+        _repo(base, [("model_index.json", 400), *_VAE]),
+        _repo("unsloth/Z-Image-Turbo-FP8", [("Z-Image-Turbo-FP8.safetensors", 6_100_000)]),
+    )
+    assert _offered() == {}
+    _install(monkeypatch, _repo(base, [("model_index.json", 400), *_VAE]))
+    assert base in _offered()
