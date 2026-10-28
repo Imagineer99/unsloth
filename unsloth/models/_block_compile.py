@@ -57,7 +57,6 @@ def _new_cudagraph_state():
         "off": None,
         "release": None,
         "ours": set(),
-        "built": set(),
         "managers": {},
         "notes": set(),
         "auto": _new_auto_state(),
@@ -1425,6 +1424,7 @@ def _wrap(
     state = {"reported": set(), "start": {}}
     # Under Unsloth checkpointing each block call is a new cudagraph generation: the next replay
     # overwrites this block's outputs and gradients, so they are cloned out of the pool.
+    graphs = bool(compile_options.get("triton.cudagraphs"))
     # Auto: `compiled` stays the graphs-off region; the graphed one is compiled once graphs turn on.
     auto = not graphs and _CUDAGRAPH_MODE == "auto"
     if graphs:
@@ -1441,15 +1441,11 @@ def _wrap(
 
     def graphed():
         if graphed_box[0] is None:
-            options = {**compile_options, "triton.cudagraphs": True}
-            backend = _block_backend(options)
-            owned = {} if backend is None else {"backend": backend}
             graphed_box[0] = torch.compile(
                 original,
                 fullgraph = False,
                 dynamic = None,
-                options = options,
-                **owned,
+                options = {**compile_options, "triton.cudagraphs": True},
                 **isolate,
             )
         return graphed_box[0]
