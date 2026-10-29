@@ -147,6 +147,7 @@ from core.inference.memory_contract import (
 from core.inference.stream_errors import (
     KV_STARVATION_MESSAGE,
     LlamaStreamError,
+    error_message_from_chunk,
     is_kv_starvation,
 )
 from core.inference.orchestrator import (
@@ -314,6 +315,7 @@ _LOST_CONNECTION_MSG = (
 _OVERSIZE_TOKENS_RE = _re.compile(
     r"request \((\d+) tokens?\) exceeds the available context size \((\d+) tokens?\)"
 )
+_LLAMA_CLIENT_ERROR_RE = _re.compile(r"llama-server returned 4\d\d: (.*)", _re.DOTALL)
 
 
 def _friendly_error(exc: Exception) -> str:
@@ -353,6 +355,14 @@ def _friendly_error(exc: Exception) -> str:
     # After the token-count regex, before the catch-all, so stream failures keep their cause.
     if isinstance(exc, LlamaStreamError):
         return exc.friendly
+    client_error = _LLAMA_CLIENT_ERROR_RE.match(msg)
+    if client_error:
+        body = client_error.group(1)
+        try:
+            body = error_message_from_chunk(json.loads(body)) or body
+        except ValueError:
+            pass
+        return _friendly_upstream_error(body[:500])
     return "An internal error occurred"
 
 
@@ -1440,6 +1450,11 @@ def _chat_content_chunk(completion_id, created, model_name, text) -> str:
     )
 
 
+def _speech_reply_audio(item: dict) -> dict:
+    """A backend speech item as the message / delta ``audio`` part (OpenAI's field, carrying the WAV inline)."""
+    return {"data": item.get("speech"), "format": "wav", "sample_rate": item.get("sample_rate")}
+
+
 def _chat_reasoning_chunk(completion_id, created, model_name, text) -> str:
     """Reasoning delta with empty content alongside, so strict OpenAI adapters do not drop it."""
     return _chat_chunk_sse(
@@ -1663,6 +1678,7 @@ try:
         detect_dspark_file,
         detect_mtp_file,
         load_model_defaults,
+        shared_hub_model_info,
     )
     from utils.native_path_leases import (
         NativePathLeaseError,
@@ -1727,6 +1743,7 @@ except ImportError:
         detect_dspark_file,
         detect_mtp_file,
         load_model_defaults,
+        shared_hub_model_info,
     )
     from utils.native_path_leases import (
         NativePathLeaseError,
@@ -8060,6 +8077,7 @@ def _llama_runtime_fields(llama_backend: LlamaCppBackend) -> dict:
         # Not MLX, so the MLX runtime fields report as absent.
         is_mlx = False,
         is_npu = False,
+        speaks = False,
         mlx_kv_quant = None,
         mlx_kv_quant_requested = None,
         mlx_kv_bits = None,
@@ -11812,13 +11830,16 @@ def _chat_fit_kwargs(
     placement,
     policy: Optional[str] = None,
     credit_gb: Optional[dict] = None,
+    mlx_need_mib: Optional[int] = None,
+    mlx_credit_mib: int = 0,
 ) -> dict:
     """How the CHAT acquire shares the GPU under When they fit / Always.
 
-    audio.cpp and native audio are priced from the placement estimate. A GGUF launch prices itself (it refuses a
-    partial fit and load_model_gated makes room). Anything else has no estimate before launch: When they fit
-    evicts first, Always tries the load and turns an out-of-memory failure into its refusal. ``credit_gb`` is what
-    the outgoing primary frees per GPU when this load replaces it.
+    audio.cpp and native audio are priced from the placement estimate, an MLX load on Apple Silicon from
+    ``mlx_need_mib``. A GGUF launch prices itself (it refuses a partial fit and load_model_gated makes room).
+    Anything else has no estimate before launch: When they fit evicts first, Always tries the load and turns an
+    out-of-memory failure into its refusal. ``credit_gb`` is what the outgoing primary frees per GPU when this
+    load replaces it.
     """
     if policy is None:
         from core.inference.gpu_residency import current_policy
@@ -11840,9 +11861,40 @@ def _chat_fit_kwargs(
             int(g): int((placement.native_required_gb / len(gpus) - credit.get(int(g), 0.0)) * 1024)
             for g in gpus
         }
-    elif policy == "fit" and not (config.is_gguf and _primary_can_retry_fit.get()):
+    elif mlx_need_mib is not None:
+        from core.inference.gpu_residency import ChatNeed
+        kwargs["need_mib"] = ChatNeed({0: int(mlx_need_mib)}, credit_mib = mlx_credit_mib)
+    elif not (config.is_gguf and _primary_can_retry_fit.get()) and (
+        policy == "fit" or (not config.is_gguf and _unified_metal_host())
+    ):
+        # Unified memory pages past the budget: Always gets no OOM to refuse on.
         kwargs["evict_first"] = True
     return kwargs
+
+
+def _unified_metal_host() -> bool:
+    from core.inference.gpu_residency import _on_metal
+    return _on_metal()
+
+
+def _mlx_cache_bounded(entry: dict, slots: int = 1) -> bool:
+    from core.inference.gpu_residency import mlx_cache_bounded
+    return mlx_cache_bounded(entry, slots)
+
+
+def _note_mlx_slots(backend, slots: int) -> None:
+    """A batch opened at a wider setting keeps its width after the setting drops, so the reservation never shrinks."""
+    entry = backend.models.get(backend.active_model_name or "") or {}
+    growth = entry.get("mlx_growth")
+    if isinstance(growth, dict):
+        growth["slots"] = max(int(growth.get("slots", 1)), int(slots))
+        if not _mlx_cache_bounded(entry, growth["slots"]):
+            entry.pop("mlx_growth")
+
+
+def _mlx_slots_outgrow_price(backend, n_parallel) -> bool:
+    from core.inference.gpu_residency import mlx_slots_outgrow_price
+    return mlx_slots_outgrow_price(backend, n_parallel)
 
 
 def _outgoing_chat_credit_gb(
@@ -14676,13 +14728,14 @@ def _mlx_estimate_drafter(
     offload_route: Optional[dict] = None,
     baseline: Optional[dict] = None,
 ):
-    """``((path, builtin), fitted context, speculates)`` of an MLX load of *request*: the drafter it
-    would attach, chosen as the load chooses it, and whether it speculates at all (so loads through mlx-vlm)."""
+    """``((path, builtin), fitted context, speculates, stretched)`` of an MLX load of *request*: the drafter it
+    would attach, chosen as the load chooses it, whether it speculates at all (so loads through mlx-vlm), and
+    whether that drafter fits only by spending the prompt cache's share."""
     from core.inference import mlx_speculative
     from core.inference.mlx_inference import mlx_drafter_fit
 
     if not _mlx_estimate_speculates(request, model_dir):
-        return None, None, False
+        return None, None, False, False
     mode = mlx_speculative.mlx_spec_mode(request.speculative_type)
     resolution = mlx_speculative.resolve_speculation(
         request.speculative_type,
@@ -14691,8 +14744,9 @@ def _mlx_estimate_drafter(
         target_name = model_identifier,
         allowed = _discoverable_drafters(model_identifier),
     )
-    for source in resolution.sources:
-        attaches, fitted = mlx_drafter_fit(
+
+    def fit(source, **kwargs):
+        return mlx_drafter_fit(
             model_dir,
             ceiling,
             request.max_seq_length or None,
@@ -14700,11 +14754,148 @@ def _mlx_estimate_drafter(
             load_in_4bit = load_in_4bit,
             costless = mode == "auto",
             baseline = baseline,
+            **kwargs,
             **(offload_route or {}),
         )
+
+    for source in resolution.sources:
+        attaches, fitted = fit(source)
         if attaches:
-            return (source.path, source.builtin), fitted, True
-    return None, None, True
+            return (source.path, source.builtin), fitted, True, False
+    # Like the load: a chosen mode with none that fits attaches the first MLX's own cap admits.
+    for source in resolution.sources if mode != "auto" else ():
+        attaches, fitted = fit(source, reserve = False)
+        if attaches is not False:
+            return (source.path, source.builtin), fitted, True, True
+    return None, None, True, False
+
+
+class _MlxLoadEstimate(NamedTuple):
+    breakdown: Any
+    fitted_ctx: Optional[int]
+    offloadable: tuple
+    retains_history: bool
+    offloaded: bool = False
+    cache_room: Optional[int] = None
+
+
+def _mlx_load_estimate(
+    request, config, model_identifier
+) -> tuple[Optional[str], Optional[_MlxLoadEstimate]]:
+    """``(refusal reason, None)`` or ``(None, estimate)`` of what an MLX load of *request* occupies."""
+    if not _mlx_estimate_available():
+        return "not_gguf", None
+    from core.inference.native_audio import is_native_audio_model
+
+    if getattr(config, "audio_cpp", None) is not None or is_native_audio_model(model_identifier):
+        return "not_gguf", None
+    if getattr(config, "is_lora", False):
+        return "unsizable", None
+    model_dir = _local_mlx_model_dir(config)
+    if not model_dir:
+        return "not_downloaded", None
+    from core.inference.mlx_inference import (
+        mlx_kv_quant_is_refused,
+        mlx_vlm_snapshot_store_available,
+    )
+    from core.inference.mlx_memory import mlx_memory_breakdown
+
+    load_in_4bit = _mlx_estimate_load_in_4bit(config, request)
+    kv_bits = _mlx_estimate_kv_bits(request.mlx_kv_quant, request.mlx_kv_bits)
+    # A width the cache takes makes the window a budget, pinned or fit.
+    if kv_bits is not None and mlx_kv_quant_is_refused(model_dir, kv_bits):
+        kv_bits = None
+    named_ctx = request.max_seq_length or 0
+    offload, offloadable, offload_baseline = _mlx_estimate_offload(
+        request, config, model_identifier, model_dir, load_in_4bit, kv_bits
+    )
+    drafter, fitted_ctx, speculates, stretched = _mlx_estimate_drafter(
+        request,
+        model_identifier,
+        model_dir,
+        _mlx_estimate_ceiling(model_dir),
+        load_in_4bit,
+        offload,
+        offload_baseline,
+    )
+    route = {**({"vision": True} if speculates else {}), **offload}
+    if not named_ctx and fitted_ctx is None:
+        fitted_ctx = _mlx_estimate_fitted_context(config, model_dir, load_in_4bit, kv_bits, **route)
+    priced_ctx = named_ctx or fitted_ctx or _mlx_estimate_ceiling(model_dir)
+    if not priced_ctx:
+        return "unsizable", None
+    priced = dict(n_ctx = priced_ctx, kv_bits = kv_bits, load_in_4bit = load_in_4bit, **route)
+    breakdown = mlx_memory_breakdown(
+        model_dir, **priced, **({} if drafter is None else {"drafter": drafter})
+    )
+    cache_room = None
+    if breakdown is None and drafter is not None:
+        # A chosen drafter attaches even where it cannot be sized: price the rest of the load.
+        breakdown = mlx_memory_breakdown(model_dir, **priced)
+    elif stretched:
+        from types import SimpleNamespace
+
+        from core.inference.mlx_inference import mlx_prompt_cache_room
+
+        # The load caps the prompt cache to what MLX's own cap leaves beside this drafter.
+        cache_room = mlx_prompt_cache_room(
+            model_dir,
+            priced_ctx,
+            SimpleNamespace(path = drafter[0], builtin = drafter[1]),
+            load_in_4bit = load_in_4bit,
+            **offload,
+        )
+    if breakdown is None:
+        return "unsizable", None
+    retains_history = (
+        not (getattr(config, "is_vision", False) or speculates)
+        or mlx_vlm_snapshot_store_available()
+    )
+    return None, _MlxLoadEstimate(
+        breakdown, fitted_ctx, offloadable, retains_history, "offload" in offload, cache_room
+    )
+
+
+def _mlx_chat_need(
+    request,
+    config,
+    model_identifier,
+    slots: int = 1,
+) -> Optional[tuple[int, dict]]:
+    """``(need MiB, growth)`` of an MLX chat load serving ``slots`` rows, or None; rows prefill as one batch."""
+    if getattr(config, "is_gguf", False) or not _unified_metal_host():
+        return None
+    try:
+        _, estimate = _mlx_load_estimate(request, config, model_identifier)
+        # Offload workspaces allocate at prefill but are priced as weights.
+        if estimate is None or estimate.offloaded:
+            return None
+        from core.inference.mlx_inference import mlx_memory_budget
+
+        reserve = 0
+        if estimate.retains_history:
+            without, within = (
+                mlx_memory_budget(retains_history = False),
+                mlx_memory_budget(retains_history = True),
+            )
+            reserve = max(0, (without or 0) - (within or 0))
+            if estimate.cache_room is not None:
+                reserve = min(reserve, estimate.cache_room)
+    except Exception as exc:
+        logger.info("MLX load of %s left unpriced: %s", model_identifier, exc)
+        return None
+    from core.inference.llama_server_args import clamp_parallel_slots
+
+    mib = 1024 * 1024
+    one_row = -(-(int(estimate.breakdown.total_bytes) + reserve) // mib)
+    row = -(-int(estimate.breakdown.kv_bytes + estimate.breakdown.compute_bytes) // mib)
+    slots = clamp_parallel_slots(slots)
+    growth = {
+        "mib": max(0, one_row - int(estimate.breakdown.weights_bytes) // mib),
+        "row_mib": row,
+        "slots": slots,
+    }
+    return one_row + (slots - 1) * row, growth
 
 
 def _mlx_estimate_available() -> bool:
@@ -18454,6 +18645,21 @@ async def _load_model_impl(
             _inherit_resident_load_in_4bit(backend, request, model_identifier)
             await asyncio.to_thread(reap_dead_worker, backend)
             if (
+                not request.max_seq_length
+                and _same_loaded_identifier(backend.active_model_name, model_identifier)
+                and _mlx_slots_outgrow_price(backend, _n_parallel)
+            ):
+                # A reload for more rows keeps the context the resident was asked for.
+                request.max_seq_length = (
+                    int(
+                        (backend.models.get(backend.active_model_name) or {}).get(
+                            "max_seq_length_requested"
+                        )
+                        or 0
+                    )
+                    or request.max_seq_length
+                )
+            if (
                 _same_loaded_identifier(backend.active_model_name, model_identifier)
                 and (backend.models.get(backend.active_model_name) or {}).get("engine", "auto")
                 == request.engine
@@ -18469,10 +18675,11 @@ async def _load_model_impl(
                 )
                 # Without this the route reports already_loaded and nothing moves.
                 and _resident_audio_placement_matches(backend, request)
+                and not _mlx_slots_outgrow_price(backend, _n_parallel)
             ):
                 api_monitor.discard(_load_event)  # nothing loaded, no monitor row
                 logger.info(f"Model already loaded (Unsloth): {model_log_label}, skipping reload")
-                backend.set_parallel_slots(_n_parallel)
+                _note_mlx_slots(backend, backend.set_parallel_slots(_n_parallel))
                 # A no-op Unsloth load of a preview-owned checkpoint still claims it.
                 _set_preview_resident(None)
                 inference_config = load_inference_config(backend.active_model_name)
@@ -18496,6 +18703,12 @@ async def _load_model_impl(
                     account_access.join_resident("chat")
                 if request._advertised_id:
                     backend._openai_advertised_id = request._advertised_id
+                _requires_rc = await asyncio.to_thread(
+                    _resolve_loaded_trust_remote_code,
+                    backend.active_model_name,
+                    _model_info,
+                    inference_config,
+                )
                 return LoadResponse(
                     engine = request.engine,
                     engine_parallelism = request.engine_parallelism,
@@ -18517,6 +18730,7 @@ async def _load_model_impl(
                     audio_type = _model_info.get("audio_type"),
                     has_audio_input = _model_info.get("has_audio_input", False),
                     has_video_input = _model_info.get("has_video_input", False),
+                    speaks = bool(_model_info.get("speaks", False)),
                     is_mlx = bool(_model_info.get("is_mlx", False)),
                     mlx_kv_quant = _model_info.get("mlx_kv_quant"),
                     mlx_kv_quant_requested = _model_info.get("mlx_kv_quant_requested"),
@@ -18536,9 +18750,7 @@ async def _load_model_impl(
                     chat_template_override = _model_info.get("chat_template_override_requested"),
                     chat_template_override_reason = _model_info.get("chat_template_override_reason"),
                     inference = inference_config,
-                    requires_trust_remote_code = _resolve_loaded_trust_remote_code(
-                        backend.active_model_name, _model_info, inference_config
-                    ),
+                    requires_trust_remote_code = _requires_rc,
                     supports_reasoning = _sf_supports_reasoning,
                     reasoning_style = _sf_reasoning_style,
                     reasoning_effort_levels = _sf_flags.get("reasoning_effort_levels", []),
@@ -18560,7 +18772,7 @@ async def _load_model_impl(
         # Offline guard skips soft-failed network checks before the worker starts; off-loop, as its DNS/HEAD can take seconds.
 
         def _resolve_config():
-            with _hf_offline_if_unreachable_for(model_identifier):
+            with _hf_offline_if_unreachable_for(model_identifier), shared_hub_model_info():
                 return ModelConfig.from_identifier(
                     model_id = model_identifier,
                     hf_token = request.hf_token,
@@ -18822,6 +19034,7 @@ async def _load_model_impl(
                 logger.warning("Loading an oversized GGUF: %s", _host_offload_warning)
 
         expected_native_owner = None
+        mlx_chat_need = None
         post_media_handoff_gpu = None
         post_media_handoff_needed_gb = None
         post_chat_handoff_expected_free_gb = None
@@ -18875,8 +19088,24 @@ async def _load_model_impl(
                 )
                 if post_chat_handoff_expected_free_gb is None:
                     post_chat_handoff_expected_free_gb = chat_wait_gb
+                mlx_chat_need = await asyncio.to_thread(
+                    _mlx_chat_need, request, config, model_identifier, _n_parallel
+                )
+                mlx_credit_mib = 0
+                if mlx_chat_need is not None:
+                    from core.inference.gpu_residency import mlx_replaced_credit_mib
+
+                    # No llama-server credit: its footprint mixes CPU-only buffers with Metal ones.
+                    mlx_credit_mib = await asyncio.to_thread(mlx_replaced_credit_mib, backend)
                 handoff_kwargs.update(
-                    _chat_fit_kwargs(config, placement, multi_model_mode, outgoing_chat_gb)
+                    _chat_fit_kwargs(
+                        config,
+                        placement,
+                        multi_model_mode,
+                        outgoing_chat_gb,
+                        mlx_need_mib = None if mlx_chat_need is None else mlx_chat_need[0],
+                        mlx_credit_mib = mlx_credit_mib,
+                    )
                 )
                 await asyncio.to_thread(
                     acquire_for_request,
@@ -19255,6 +19484,29 @@ async def _load_model_impl(
             _resident_entry["gpu_ids_requested"] = (
                 list(request.gpu_ids) if request.gpu_ids else None
             )
+            if mlx_chat_need is not None and _mlx_cache_bounded(
+                _resident_entry, mlx_chat_need[1]["slots"]
+            ):
+                from core.inference.gpu_residency import mlx_worker_footprint_mib
+                _resident_entry["mlx_growth"] = {
+                    **mlx_chat_need[1],
+                    "footprint_mib": mlx_worker_footprint_mib(backend),
+                }
+            elif mlx_chat_need is not None:
+                # Admitted at a price the loaded cache does not keep to: settle as an unpriced load would have.
+                from core.inference.gpu_arbiter import (
+                    GpuBusyForAnotherAccountError,
+                    MultiModelAlwaysRefusal,
+                )
+                from core.inference.gpu_residency import settle_unpriced_chat_beside_media
+                try:
+                    await asyncio.to_thread(settle_unpriced_chat_beside_media, multi_model_mode)
+                except (MultiModelAlwaysRefusal, GpuBusyForAnotherAccountError) as exc:
+                    await asyncio.to_thread(backend.unload_model, config.identifier)
+                    await asyncio.to_thread(backend._shutdown_subprocess, 5.0)
+                    if isinstance(exc, GpuBusyForAnotherAccountError):
+                        raise exc.as_http_exception() from exc
+                    raise
 
         if request._advertised_id:
             backend._openai_advertised_id = request._advertised_id
@@ -19291,7 +19543,8 @@ async def _load_model_impl(
         _sf_flags, _ = _sf_rendered_features(backend, _model_info)
 
         # Persist trust_remote_code so a retry/rollback doesn't send false for a custom-code model.
-        _requires_rc = _resolve_loaded_trust_remote_code(
+        _requires_rc = await asyncio.to_thread(
+            _resolve_loaded_trust_remote_code,
             config.identifier,
             None,
             inference_config,
@@ -19320,7 +19573,7 @@ async def _load_model_impl(
             status = "loaded",
             model = model_log_label if native_grant_backed else config.identifier,
             display_name = model_log_label if native_grant_backed else config.display_name,
-            is_vision = config.is_vision,
+            is_vision = _model_info.get("is_vision", config.is_vision),
             is_lora = config.is_lora,
             is_gguf = False,
             is_local_model = config.is_local,
@@ -19329,6 +19582,7 @@ async def _load_model_impl(
             audio_type = _model_info.get("audio_type", config.audio_type),
             has_audio_input = _model_info.get("has_audio_input", config.has_audio_input),
             has_video_input = _model_info.get("has_video_input", False),
+            speaks = bool(_model_info.get("speaks", False)),
             audio_family = _model_info.get("audio_family"),
             audio_options = _model_info.get("audio_options"),
             audio_workflows = _model_info.get("audio_workflows"),
@@ -19675,7 +19929,7 @@ async def validate_model(
         _caller_is_owner = _owner_session(fastapi_request)
 
         def _resolve_config():
-            with _hf_offline_if_unreachable_for(model_identifier):
+            with _hf_offline_if_unreachable_for(model_identifier), shared_hub_model_info():
                 return ModelConfig.from_identifier(
                     model_id = model_identifier,
                     hf_token = request.hf_token,
@@ -20618,64 +20872,15 @@ async def estimate_memory(
         if config is None:
             return EstimateMemoryResponse(available = False, reason = "unsizable")
         if not getattr(config, "is_gguf", False):
-            if not _mlx_estimate_available():
-                return EstimateMemoryResponse(available = False, reason = "not_gguf")
-            from core.inference.native_audio import is_native_audio_model
-
-            if getattr(config, "audio_cpp", None) is not None or is_native_audio_model(
-                model_identifier
-            ):
-                return EstimateMemoryResponse(available = False, reason = "not_gguf")
-            if getattr(config, "is_lora", False):
-                return EstimateMemoryResponse(available = False, reason = "unsizable")
-            model_dir = _local_mlx_model_dir(config)
-            if not model_dir:
-                return EstimateMemoryResponse(available = False, reason = "not_downloaded")
-            from core.inference.mlx_inference import mlx_kv_quant_is_refused
-            from core.inference.mlx_memory import mlx_memory_breakdown
-
-            mlx_load_in_4bit = _mlx_estimate_load_in_4bit(config, request)
-            mlx_kv_bits = _mlx_estimate_kv_bits(request.mlx_kv_quant, request.mlx_kv_bits)
-            # A width the cache takes applies under a pin or a fit alike: the window is then a budget.
-            if mlx_kv_bits is not None and mlx_kv_quant_is_refused(model_dir, mlx_kv_bits):
-                mlx_kv_bits = None
-            mlx_named_ctx = request.max_seq_length or 0
-            mlx_offload, mlx_offloadable, mlx_offload_baseline = _mlx_estimate_offload(
-                request, config, model_identifier, model_dir, mlx_load_in_4bit, mlx_kv_bits
-            )
-            mlx_drafter, mlx_fitted_ctx, mlx_speculates = _mlx_estimate_drafter(
-                request,
-                model_identifier,
-                model_dir,
-                _mlx_estimate_ceiling(model_dir),
-                mlx_load_in_4bit,
-                mlx_offload,
-                mlx_offload_baseline,
-            )
-            mlx_route = {**({"vision": True} if mlx_speculates else {}), **mlx_offload}
-            if not mlx_named_ctx and mlx_drafter is None:
-                mlx_fitted_ctx = _mlx_estimate_fitted_context(
-                    config, model_dir, mlx_load_in_4bit, mlx_kv_bits, **mlx_route
-                )
-            mlx_priced_ctx = mlx_named_ctx or mlx_fitted_ctx or _mlx_estimate_ceiling(model_dir)
-            if not mlx_priced_ctx:
-                return EstimateMemoryResponse(available = False, reason = "unsizable")
-            mlx_breakdown = mlx_memory_breakdown(
-                model_dir,
-                n_ctx = mlx_priced_ctx,
-                kv_bits = mlx_kv_bits,
-                load_in_4bit = mlx_load_in_4bit,
-                **mlx_route,
-                **({} if mlx_drafter is None else {"drafter": mlx_drafter}),
-            )
-            if mlx_breakdown is None:
-                return EstimateMemoryResponse(available = False, reason = "unsizable")
+            reason, mlx = _mlx_load_estimate(request, config, model_identifier)
+            if mlx is None:
+                return EstimateMemoryResponse(available = False, reason = reason)
             return EstimateMemoryResponse(
                 **project_estimate_memory_response(
                     build_memory_estimate(
-                        dataclasses.replace(mlx_breakdown, offloadable = mlx_offloadable),
+                        dataclasses.replace(mlx.breakdown, offloadable = mlx.offloadable),
                         quant_file_bytes = 0,
-                        context_fitted = mlx_fitted_ctx,
+                        context_fitted = mlx.fitted_ctx,
                     )
                 )
             )
@@ -21905,6 +22110,7 @@ async def _slot_status(current_subject: str):
             audio_type = audio_type,
             has_audio_input = has_audio_input,
             has_video_input = has_video_input,
+            speaks = bool(model_info.get("speaks", False)),
             audio_family = model_info.get("audio_family"),
             audio_options = model_info.get("audio_options"),
             audio_workflows = model_info.get("audio_workflows"),
@@ -30416,6 +30622,8 @@ async def produce_openai_chat_completions(
     normalized_stop = _normalize_stop_sequences(payload.stop)
 
     if using_gguf:
+        if "audio" in (payload.modalities or ()):
+            raise HTTPException(status_code = 400, detail = "The loaded model cannot answer in speech.")
         # Advertised repo id after an auto-switch load, else a clean public id,
         # never the absolute .gguf path.
         model_name = _llama_public_model_id(llama_backend, payload.model)
@@ -30565,9 +30773,83 @@ async def produce_openai_chat_completions(
             api_monitor.fail(monitor_id, _MLX_MULTI_AUDIO_DETAIL)
             raise HTTPException(status_code = 400, detail = _MLX_MULTI_AUDIO_DETAIL)
 
+        _speak = "audio" in (payload.modalities or ())
+        _speak_detail = None
+        if _speak and not model_info.get("speaks"):
+            _speak_detail = "The loaded model cannot answer in speech."
+        elif _speak and not payload.audio_base64:
+            _speak_detail = "A spoken reply answers a spoken question: send it as audio_base64."
+        elif _speak and _normalize_stop_sequences(payload.stop):
+            # The speech cannot be cut at a text marker, so the stop would not hold.
+            _speak_detail = "Stop sequences do not apply to a spoken reply."
+        if _speak_detail is not None:
+            api_monitor.fail(monitor_id, _speak_detail)
+            raise HTTPException(status_code = 400, detail = _speak_detail)
+
         # ── Audio INPUT path: decode WAV and route to audio input generation ──
         if payload.audio_base64 and model_info.get("has_audio_input"):
             _refuse_unused_mcp_image(_mcp_image)
+            # Client tools as the text path takes them: none under tool_choice none, the forced one alone.
+            _audio_tools = None
+            if payload.tools and payload.tool_choice != "none":
+                from core.inference.chat_template_helpers import forced_tool_name
+
+                if model_info.get("audio_type") == "whisper" or _speak:
+                    _detail = "Tools do not apply to a transcription or a spoken reply."
+                    api_monitor.fail(monitor_id, _detail)
+                    _raise_unsupported_openai_parameter("tools", _detail)
+                _forced = forced_tool_name(payload.tool_choice)
+                _audio_tools = [
+                    tool
+                    for tool in payload.tools
+                    if not _forced
+                    or ((tool.get("function") or {}) if isinstance(tool, dict) else {}).get("name")
+                    == _forced
+                ]
+                # Heal and render the same catalogue: a tool dropped for markup was never shown (#7066).
+                from core.inference.chat_template_helpers import (
+                    chat_render_target,
+                    renderable_tool_catalog_for_targets,
+                )
+
+                _audio_target = chat_render_target(
+                    model_info.get("processor"), model_info.get("tokenizer")
+                )
+                _audio_tools = await asyncio.to_thread(
+                    renderable_tool_catalog_for_targets,
+                    _audio_tools,
+                    (_audio_target, getattr(_audio_target, "tokenizer", _audio_target)),
+                    model_info,
+                    active_model_name = backend.active_model_name,
+                )
+                _tool_refusal = None
+                if _forced and not _audio_tools:
+                    _tool_refusal = (
+                        "tool_choice",
+                        f"Invalid 'tool_choice': function '{_forced}' is not enabled.",
+                    )
+                elif not _sf_rendered_features(backend, model_info, payload.tools)[0].get(
+                    "supports_tools"
+                ):
+                    _tool_refusal = (
+                        "tools",
+                        "Client-supplied tools require a chat template with tool-call "
+                        "support; the current model/template does not advertise tools.",
+                    )
+                if _tool_refusal is not None:
+                    api_monitor.fail(monitor_id, _tool_refusal[1])
+                    _raise_unsupported_openai_parameter(*_tool_refusal)
+            # Tool calls and results reach the template as sent, which alternating turns would drop.
+            _audio_tool_kwargs = (
+                {"tools": _audio_tools or []}
+                if _audio_tools or _has_openai_tool_history(payload.messages)
+                else {}
+            )
+            _audio_heal = (
+                heal_gate(payload.auto_heal_tool_calls, _audio_tools, payload.tool_choice)
+                if _audio_tools
+                else None
+            )
             # No boundary to resume from: this route re-listens and answers afresh.
             if _continue_final_message(payload):
                 raise HTTPException(
@@ -30595,7 +30877,12 @@ async def produce_openai_chat_completions(
                 system_prompt, chat_messages, _ = await _extract_content_parts_async(
                     payload.messages
                 )
-                system_prompt = _audio_input_system_prompt(system_prompt, request)
+                # A spoken reply answers the question, so the transcription default does not apply.
+                system_prompt = (
+                    _apply_current_date_prompt(system_prompt, request)
+                    if _speak
+                    else _audio_input_system_prompt(system_prompt, request)
+                )
             except _DecodedAudioTooLongError as e:
                 # A limit the caller can act on, not a server fault.
                 api_monitor.fail(monitor_id, str(e))
@@ -30643,6 +30930,8 @@ async def produce_openai_chat_completions(
                     stats_holder = _audio_stats_holder,
                     stop = normalized_stop,
                     **extra_audio_kwargs,
+                    **({"speak": True} if _speak else {}),
+                    **_audio_tool_kwargs,
                 )
 
             if payload.stream:
@@ -30658,6 +30947,10 @@ async def produce_openai_chat_completions(
                         from core.inference.llama_keepwarm import mark_current_response_failed
 
                         yield _chat_role_chunk(completion_id, created, model_name)
+                        healer = (
+                            StreamToolCallHealer(_audio_heal, _audio_tools) if _audio_heal else None
+                        )
+                        heal_state = {"idx": 0}
 
                         gen = audio_input_generate()
                         gen_step = ThreadStepper(gen).next
@@ -30687,14 +30980,52 @@ async def produce_openai_chat_completions(
                                     {"error": {"message": _msg, "type": "server_error"}}
                                 )
                                 return
-                            if chunk_text:
+                            if isinstance(chunk_text, dict):
+                                yield _chat_chunk_sse(
+                                    completion_id,
+                                    created,
+                                    model_name,
+                                    delta = ChoiceDelta(audio = _speech_reply_audio(chunk_text)),
+                                    finish_reason = None,
+                                )
+                                continue
+                            if chunk_text and healer is not None:
+                                for line in _sf_heal_events_to_sse(
+                                    healer.feed(chunk_text),
+                                    completion_id,
+                                    created,
+                                    model_name,
+                                    heal_state,
+                                    payload.parallel_tool_calls,
+                                    monitor_id,
+                                ):
+                                    yield line
+                            elif chunk_text:
                                 api_monitor.append_reply(monitor_id, chunk_text)
                                 yield _chat_content_chunk(
                                     completion_id, created, model_name, chunk_text
                                 )
+                        # A cancelled stream must not heal incomplete markup into a call.
+                        if healer is not None and not cancelled:
+                            for line in _sf_heal_events_to_sse(
+                                healer.finalize(),
+                                completion_id,
+                                created,
+                                model_name,
+                                heal_state,
+                                payload.parallel_tool_calls,
+                                monitor_id,
+                            ):
+                                yield line
 
                         _audio_stats = _audio_stats_holder.get("stats")
-                        _audio_finish = "stop" if cancelled else _stats_finish_reason(_audio_stats)
+                        _audio_finish = (
+                            "stop"
+                            if cancelled
+                            else "tool_calls"
+                            if healer is not None and healer.healed
+                            else _stats_finish_reason(_audio_stats)
+                        )
                         # The worker fills these stats for both backends (MLX adds timings), so the row has counts and speed.
                         if isinstance(_audio_stats, dict):
                             _monitor_usage(
@@ -30738,12 +31069,16 @@ async def produce_openai_chat_completions(
                 _tracker = _TrackedCancel.for_payload(cancel_event, payload, *_cancel_keys)
                 _tracker.__enter__()
                 try:
+                    _speech_reply = {}
 
                     def _drain_audio_input():
                         text_parts = []
                         for chunk_text in audio_input_generate():
                             if isinstance(chunk_text, GenStreamError):
                                 return chunk_text
+                            if isinstance(chunk_text, dict):
+                                _speech_reply.update(_speech_reply_audio(chunk_text))
+                                continue
                             text_parts.append(chunk_text)
                         return "".join(text_parts)
 
@@ -30771,10 +31106,27 @@ async def produce_openai_chat_completions(
                 finally:
                     # Nested under the except arms too: api_monitor.fail() can throw, and a leaked entry 409s swaps.
                     _tracker.__exit__(None, None, None)
-                api_monitor.set_reply(monitor_id, full_text)
                 _audio_json_stats = _audio_stats_holder.get("stats")
                 _audio_json_finish = (
                     "stop" if cancel_event.is_set() else _stats_finish_reason(_audio_json_stats)
+                )
+                _audio_msg = {"role": "assistant", "content": full_text}
+                if (
+                    _audio_heal
+                    and not cancel_event.is_set()
+                    and heal_openai_message(_audio_msg, _audio_heal, _audio_tools)
+                ):
+                    _audio_json_finish = "tool_calls"
+                    if payload.parallel_tool_calls is False:
+                        _audio_msg["tool_calls"] = _audio_msg["tool_calls"][:1]
+                _audio_calls = "; ".join(
+                    f"{call['function']['name']}({call['function']['arguments']})"
+                    for call in _audio_msg.get("tool_calls") or []
+                )
+                api_monitor.set_reply(
+                    monitor_id,
+                    (_audio_msg["content"] or "")
+                    + (f"[tool_calls] {_audio_calls}" if _audio_calls else ""),
                 )
                 _mark_cancelled_json_response_failed(request, cancel_event)
                 if isinstance(_audio_json_stats, dict):
@@ -30793,7 +31145,11 @@ async def produce_openai_chat_completions(
                     model = model_name,
                     choices = [
                         CompletionChoice(
-                            message = CompletionMessage(content = full_text),
+                            message = CompletionMessage(
+                                content = _audio_msg["content"],
+                                audio = _speech_reply or None,
+                                tool_calls = _audio_msg.get("tool_calls"),
+                            ),
                             finish_reason = _audio_json_finish,
                         )
                     ],
@@ -38673,9 +39029,11 @@ class _ResponsesStreamTranslator:
         self.healer = healer
         self.healed_tc_index = 0
         self.terminated = False
+        self.sequence_number = 0
 
-    @staticmethod
-    def sse(event_name: str, payload: dict) -> str:
+    def sse(self, event_name: str, payload: dict) -> str:
+        payload = {**payload, "sequence_number": self.sequence_number}
+        self.sequence_number += 1
         return f"event: {event_name}\ndata: {json.dumps(payload)}\n\n"
 
     def _healed_tc(self, call: dict):
@@ -39710,6 +40068,7 @@ async def _responses_stream(
             + json.dumps(
                 {
                     "type": "response.failed",
+                    "sequence_number": 0,
                     "response": {
                         "id": resp_id,
                         "object": "response",
@@ -46821,6 +47180,7 @@ def _mlx_fallback_load_gate(request, gpu_ordinal, multi_model_mode):
     from core.inference.gpu_arbiter import DIFFUSION
     from core.inference.gpu_residency import (
         ChatLoadInFlightRefusal,
+        forget_media_price,
         media_fit_kwargs,
         refuse_unless_fits,
     )
@@ -46837,7 +47197,8 @@ def _mlx_fallback_load_gate(request, gpu_ordinal, multi_model_mode):
                     DIFFUSION,
                     policy = fit.get("policy", "off"),
                     gpu_ids = fit.get("gpu_ids"),
-                    need_mib = fit.get("need_mib"),
+                    # The price is the MLX load's; this diffusers load has none.
+                    need_mib = None,
                     cancel = cancel,
                 )
             except (HTTPException, ChatLoadInFlightRefusal, RuntimeError) as exc:
@@ -46855,6 +47216,7 @@ def _mlx_fallback_load_gate(request, gpu_ordinal, multi_model_mode):
             ):
                 if ref and _repo_is_in_the_hub_cache(ref) is not True:
                     _note_load_fetched_with_a_request_token(ref, request.hf_token)
+            forget_media_price(DIFFUSION, cancel)
             return start()
 
     return gate
@@ -48098,25 +48460,27 @@ async def _external_image_generation(
         created_at = time.time()
 
         def _persist() -> list[dict]:
-            return [
-                image_gallery.save(
-                    image,
-                    {
-                        "prompt": body.prompt,
-                        "width": image.width,
-                        "height": image.height,
-                        "steps": body.steps,
-                        "guidance": body.guidance,
-                        "seed": body.seed or 0,
-                        "batch_index": index,
-                        "batch_size": body.batch_size,
-                        "model": external_model,
-                        "model_kind": "connection",
-                        "created_at": created_at,
-                    },
+            return list(
+                image_gallery.save_many(
+                    (
+                        image,
+                        {
+                            "prompt": body.prompt,
+                            "width": image.width,
+                            "height": image.height,
+                            "steps": body.steps,
+                            "guidance": body.guidance,
+                            "seed": body.seed or 0,
+                            "batch_index": index,
+                            "batch_size": body.batch_size,
+                            "model": external_model,
+                            "model_kind": "connection",
+                            "created_at": created_at,
+                        },
+                    )
+                    for index, image in enumerate(images)
                 )
-                for index, image in enumerate(images)
-            ]
+            )
 
         try:
             records = await asyncio.to_thread(_persist)
@@ -48398,7 +48762,7 @@ async def _generate_diffusion_image_run(
     list_driven = bool(request.prompts or request.seeds)
 
     def _persist() -> list[dict]:
-        records = []
+        items = []
         for index, image in enumerate(result["images"]):
             seed = (
                 per_image_seeds[index]
@@ -48411,8 +48775,8 @@ async def _generate_diffusion_image_run(
                 if request.prompts and index < len(request.prompts)
                 else request.prompt
             )
-            records.append(
-                image_gallery.save(
+            items.append(
+                (
                     image,
                     {
                         "prompt": typed_prompt,
@@ -48512,7 +48876,7 @@ async def _generate_diffusion_image_run(
                     },
                 )
             )
-        return records
+        return list(image_gallery.save_many(items))
 
     # Hold generate-progress "active" across the persist so a reload mount probe cannot refresh the gallery before these records exist.
     _diffusion_persist_active += 1
@@ -50383,6 +50747,7 @@ async def _generate_openai_images(
 
     def _persist() -> list[ImageGenerationData]:
         items: list[ImageGenerationData] = []
+        saves = []
         for index, image in enumerate(result["images"]):
             seed = (
                 per_image_seeds[index]
@@ -50390,10 +50755,13 @@ async def _generate_openai_images(
                 else result["seed"]
             )
             # batch_seed is the base the native engine derives per-image seeds from, so restore does not double-advance.
-            record = image_gallery.save(
-                image,
-                {**recipe, "batch_index": index, "seed": seed, "batch_seed": result["seed"]},
+            saves.append(
+                (
+                    image,
+                    {**recipe, "batch_index": index, "seed": seed, "batch_seed": result["seed"]},
+                )
             )
+        for record in image_gallery.save_many(saves):
             if want_b64:
                 encoded = image_gallery.image_b64(record["id"])
                 if encoded is None:  # vanished between write and read — fail the call

@@ -38,10 +38,9 @@ from core.inference.chat_template_helpers import (
     count_structured_videos as _count_vlm_videos,
     detect_reasoning_channel_markers,
     make_reasoning_normalizer,
-    markup_for_tokenizer,
     messages_have_tool_history as _vlm_messages_have_tool_history,
     messages_with_attached_image,
-    neutralize_control_markup_in_messages,
+    neutralize_for_render,
     normalize_reasoning_snapshots,
     prompt_opens_reasoning_channel,
     strip_open_reasoning_prefill,
@@ -1152,8 +1151,8 @@ def mlx_resolve_drafter_offload(model_dir, knobs, drafter, *, auto: bool, **pric
 
     room = mlx_resolve_offload(model_dir, knobs, drafter = drafter, **priced)
     if not auto:
-        # A plan the load would then refuse the drafter on (nothing fits: all on disk, no step) helps nobody.
-        if "auto" in knobs and fits(room) is False:
+        # Room a chosen drafter does not fit even under MLX's own cap would only slow the load.
+        if "auto" in knobs and fits(room, reserve = False) is False:
             return mlx_resolve_offload(model_dir, knobs, **priced), None
         return room, None
     alone = mlx_resolve_offload(model_dir, knobs, **priced)
@@ -1490,6 +1489,7 @@ def _render_registered_vlm_prompt(
     num_images,
     num_audios = 0,
     continue_final_message = False,
+    tools = None,
 ):
     """Resumes a partial from the swept messages, since a raw partial could close the turn."""
     from mlx_vlm import prompt_utils
@@ -1522,7 +1522,7 @@ def _render_registered_vlm_prompt(
     if _resumes_thought(messages, continue_final_message):
         return None
     # Recovery path: sweeps the caller's original list rather than reusing a copy (#7066).
-    swept = neutralize_control_markup_in_messages(messages, None, markup_for_tokenizer(processor))
+    swept, tools, _ = neutralize_for_render(processor, messages, tools)
     partial = trailing_assistant_text(swept) if continue_final_message else None
     rendered = prompt_utils.apply_chat_template(
         processor,
@@ -1531,6 +1531,7 @@ def _render_registered_vlm_prompt(
         add_generation_prompt = True,
         num_images = num_images,
         num_audios = num_audios,
+        **({"tools": tools} if tools else {}),
     )
     if isinstance(rendered, str) and rendered.strip():
         # A prefilled open "<think>" would resume the answer inside the reasoning block.
@@ -1732,6 +1733,35 @@ def _discard_video_clip(path: str) -> None:
         os.remove(path)
     except OSError:
         pass
+
+
+_SPEECH_REPLY_SYSTEM_PROMPT = "Respond with interleaved text and audio."
+
+
+def _mlx_lm_serves(model_type) -> bool:
+    from importlib.util import find_spec
+
+    from mlx_lm.utils import MODEL_REMAPPING
+    return find_spec(f"mlx_lm.models.{MODEL_REMAPPING.get(model_type, model_type)}") is not None
+
+
+def _zoo_declares_multimodal(model_name, hf_token = None) -> bool:
+    """unsloth_zoo's verdict from mlx-vlm's own configs, for mlx-vlm-only families the transformers
+    registry does not know (an audio-only speech model, a tower under another name)."""
+    try:
+        from utils.models.model_config import _read_raw_config_json
+
+        config = _read_raw_config_json(model_name, hf_token)
+        model_type = (config or {}).get("model_type")
+        # A type mlx-lm serves keeps its text path, and skips zoo's scan of every mlx-vlm family.
+        if not isinstance(model_type, str) or not model_type or _mlx_lm_serves(model_type):
+            return False
+        from unsloth_zoo.mlx.loader import _is_vlm
+
+        return _is_vlm(config)
+    except Exception as exc:  # noqa: BLE001 -- detection must never fail a load
+        logger.debug("unsloth_zoo multimodal detection skipped for %s (%s)", model_name, exc)
+        return False
 
 
 def _classify_mlx_audio_type(
@@ -2852,12 +2882,14 @@ def mlx_drafter_fit(
     offload = None,
     prefill_chunk = None,
     baseline = None,
+    reserve = True,
 ):
     """``(attaches, fitted context or None)`` for *source*'s drafter on an mlx-vlm load of *model_dir*:
     only a priced fit reserves it, a pinned context must fit whole, and a ``costless`` one must fit
     at least the context the load fits without it, on the *baseline* route (``mlx_offload_route``)
-    when the offload made room for it. ``attaches`` is None when the fit could not be priced."""
-    budget = mlx_memory_budget(retains_history = mlx_vlm_snapshot_store_available())
+    when the offload made room for it. ``attaches`` is None when the fit could not be priced.
+    ``reserve=False`` prices against MLX's own cap, spending the prompt cache's share."""
+    budget = mlx_memory_budget(retains_history = reserve and mlx_vlm_snapshot_store_available())
     ceiling = pinned or ceiling
     if budget is None or not ceiling or not model_dir:
         return None, None
@@ -2884,6 +2916,37 @@ def mlx_drafter_fit(
             logger.info("MLX drafter %s not priced: %s", source.path, exc)
             return None, None
     return outcome == "fits" or (outcome == "fitted" and not pinned), fitted
+
+
+def mlx_prompt_cache_room(
+    model_dir,
+    n_ctx,
+    source,
+    *,
+    load_in_4bit: bool,
+    offload = None,
+    prefill_chunk = None,
+):
+    """Bytes MLX's own cap leaves the prompt cache beside *source*'s drafter at *n_ctx*; None where unsized."""
+    budget = mlx_memory_budget(retains_history = False)
+    if budget is None or not n_ctx or not model_dir:
+        return None
+    with mlx_rng_preserved():
+        try:
+            from core.inference.mlx_memory import mlx_headroom
+            return mlx_headroom(
+                model_dir,
+                budget_bytes = budget,
+                n_ctx = int(n_ctx),
+                load_in_4bit = load_in_4bit,
+                vision = True,
+                drafter = (source.path, source.builtin),
+                offload = offload,
+                prefill_chunk = prefill_chunk,
+            )
+        except Exception as exc:
+            logger.info("MLX prompt cache room beside %s not priced: %s", source.path, exc)
+            return None
 
 
 def _kv_window_enforced(model, is_vlm, window):
@@ -3570,6 +3633,27 @@ def _stream_until_cancelled(stream_generate, cancel_event, *args, **kwargs):
         yield from stream_generate(*args, prompt_progress_callback = check, **kwargs)
     except _PrefillStopped:
         return
+
+
+@contextmanager
+def _slots_until_cancelled(model, cancel_event):
+    """mlx-vlm's ``generate_audio`` takes no stop hook; LFM3 samples through ``stream_slots``, so end that loop."""
+    slots = getattr(model, "stream_slots", None)
+    if cancel_event is None or slots is None:
+        yield
+        return
+
+    def until_cancelled(*args, **kwargs):
+        for slot in slots(*args, **kwargs):
+            if cancel_event.is_set():
+                return
+            yield slot
+
+    model.stream_slots = until_cancelled
+    try:
+        yield
+    finally:
+        del model.stream_slots
 
 
 class LogprobsUnsupported(ValueError):
@@ -4578,6 +4662,7 @@ class MLXInferenceBackend:
 
         self._prompt_cache_history = None
         self._prompt_cache_unavailable = False
+        self._prompt_cache_room = None
         self._vlm_snapshot_store = None
         self._vlm_snapshot_store_unavailable = False
         self._vlm_is_diffusion_model = None
@@ -4585,7 +4670,7 @@ class MLXInferenceBackend:
     def _prompt_cache(self):
         if self._prompt_cache_history is not None or self._prompt_cache_unavailable:
             return self._prompt_cache_history
-        max_bytes = _prompt_cache_max_bytes(self._memory_limits_applied.get("recommended_gb"))
+        max_bytes = self._prompt_cache_bytes()
         if max_bytes <= 0:
             self._prompt_cache_unavailable = True
             logger.info("MLX prompt cache disabled by budget")
@@ -4608,9 +4693,15 @@ class MLXInferenceBackend:
         )
         return self._prompt_cache_history
 
+    def _prompt_cache_bytes(self):
+        max_bytes = _prompt_cache_max_bytes(self._memory_limits_applied.get("recommended_gb"))
+        room = getattr(self, "_prompt_cache_room", None)
+        return max_bytes if room is None else min(max_bytes, room)
+
     def _clear_prompt_cache(self):
         self._prompt_cache_history = None
         self._prompt_cache_unavailable = False
+        self._prompt_cache_room = None
         self._vlm_snapshot_store = None
         self._vlm_snapshot_store_unavailable = False
         self._vlm_is_diffusion_model = None
@@ -4732,7 +4823,7 @@ class MLXInferenceBackend:
     def _vlm_prompt_cache_store(self):
         if self._vlm_snapshot_store is not None or self._vlm_snapshot_store_unavailable:
             return self._vlm_snapshot_store
-        max_bytes = _prompt_cache_max_bytes(self._memory_limits_applied.get("recommended_gb"))
+        max_bytes = self._prompt_cache_bytes()
         if max_bytes <= 0:
             self._vlm_snapshot_store_unavailable = True
             logger.info("MLX VLM prompt cache disabled by budget")
@@ -5260,6 +5351,10 @@ class MLXInferenceBackend:
         self._resume_load_args = (bool(load_in_4bit), repr(dtype), repr(tuple(offload or ())))
         model_name = config.identifier if hasattr(config, "identifier") else str(config)
         is_vision = getattr(config, "is_vision", False)
+        is_lora = getattr(config, "is_lora", False)
+        zoo_multimodal = not is_vision and _zoo_declares_multimodal(
+            getattr(config, "base_model", None) if is_lora else model_name, hf_token
+        )
         kv_bits, turboquant = parse_mlx_kv_quant(kv_quant)
         self._turboquant = turboquant
         if self._turboquant:
@@ -5271,7 +5366,6 @@ class MLXInferenceBackend:
                 ) from exc
         distributed_rank, distributed_size = _mlx_distributed_rank_size(distributed_group)
         is_distributed = distributed_group is not None and distributed_size > 1
-        is_lora = getattr(config, "is_lora", False)
         self._turboquant_refusal = (
             _turboquant_refusal(is_vision = is_vision, is_distributed = is_distributed, is_lora = is_lora)
             if self._turboquant
@@ -5303,6 +5397,7 @@ class MLXInferenceBackend:
         # Speculation runs on mlx-vlm models and caches.
         use_vlm = (
             is_vision
+            or zoo_multimodal
             or speculates
             or (self._turboquant and not self._turboquant_refusal)
             or batches_quantized_text
@@ -5476,6 +5571,9 @@ class MLXInferenceBackend:
                 FastMLXModel.from_pretrained, load_source, load_kwargs, offload
             )
 
+        zoo_loaded_multimodal = zoo_multimodal and not served_by_mlx_lm
+        if zoo_loaded_multimodal:
+            is_vision = getattr(model, "_unsloth_supports_images", None) is True
         self._reads_vision = bool(is_vision)
         if use_vlm:
             processor = tokenizer_or_processor
@@ -5501,7 +5599,7 @@ class MLXInferenceBackend:
         _audio_type = _classify_mlx_audio_type(
             model,
             self._processor,
-            is_vision,
+            is_vision or zoo_loaded_multimodal,
             config_audio_type = _config_audio_type,
         )
         _served_ctx, _native_ctx, _max_ctx = self._resolve_context_lengths(
@@ -5516,7 +5614,7 @@ class MLXInferenceBackend:
             _offloaded["prefill_chunk"] = self._prefill_step
         _priceable = not (is_distributed or is_lora or dtype is not None)
         spec_kind = _drafter_ctx = None
-        _drafter_fitted = False
+        _stretched = []
         _vlm_route = speculates and not is_vision
         if speculates and _vlm_generation_is_diffusion(self._model):
             # Neither the single path nor the resident batch may decode a diffusion model speculatively.
@@ -5536,7 +5634,7 @@ class MLXInferenceBackend:
                 allowed = spec_drafters_allowed,
             )
 
-            def _fits(source):
+            def _fits(source, reserve = True):
                 if not _priceable:
                     return None, None
                 return mlx_drafter_fit(
@@ -5547,8 +5645,15 @@ class MLXInferenceBackend:
                     load_in_4bit = load_in_4bit,
                     costless = spec_mode == "auto",
                     baseline = offload_baseline["route"],
+                    reserve = reserve,
                     **_offloaded,
                 )
+
+            def _stretch(source):
+                ok, context = _fits(source, reserve = False)
+                if ok is not False:
+                    _stretched.append(source)
+                return ok, context
 
             (
                 self._speculative_draft,
@@ -5556,10 +5661,11 @@ class MLXInferenceBackend:
                 spec_reason,
                 _drafter_ctx,
             ) = mlx_speculative.build_draft(
-                self._model, resolution, fits = _fits, draft_n_max = _positive_int(spec_draft_n_max)
-            )
-            _drafter_fitted = (
-                self._speculative_draft is not None and self._speculative_draft.drafter is not None
+                self._model,
+                resolution,
+                fits = _fits,
+                stretch = _stretch,
+                draft_n_max = _positive_int(spec_draft_n_max),
             )
             logger.info(
                 "MLX speculative decoding: %s (mode %s, reason %s)",
@@ -5572,7 +5678,7 @@ class MLXInferenceBackend:
         _requested_bits = None if self._turboquant else _normalize_mlx_kv_bits(kv_bits)
         _fitted_ctx, _eligibility = (
             (_drafter_ctx, _eligibility)
-            if _drafter_fitted
+            if _drafter_ctx is not None
             else (None, _eligibility)
             if not _priceable or _positive_int(max_seq_length) is not None
             else _fitted_context(
@@ -5592,6 +5698,20 @@ class MLXInferenceBackend:
             logger.info("MLX context fitted to %d tokens from %d", _fitted_ctx, _served_ctx or 0)
             _served_ctx = _fitted_ctx
         self._served_context = _served_ctx
+        # A stretched drafter spent the prompt cache's share: cap the cache to what is left beside it.
+        if (
+            _priceable
+            and _stretched
+            and getattr(self._speculative_draft, "drafter", None) is not None
+        ):
+            self._prompt_cache_room = mlx_prompt_cache_room(
+                model_dir, _served_ctx, _stretched[-1], load_in_4bit = load_in_4bit, **_offloaded
+            )
+            if self._prompt_cache_room is not None:
+                logger.info(
+                    "MLX prompt cache holds at most %.2f GB beside the chosen drafter",
+                    self._prompt_cache_room / 1e9,
+                )
         # Classified now so a cache the model cannot attend over is refused here, not on a token.
         (
             self._kv_quant,
@@ -5675,6 +5795,8 @@ class MLXInferenceBackend:
             "is_audio": _audio_type is not None and _audio_type != "audio_vlm",
             "audio_type": _audio_type,
             "has_audio_input": is_audio_input_type(_audio_type),
+            "speaks": _audio_type == "audio_vlm"
+            and getattr(self._model, "joint_audio_text_generation", False) is True,
             "has_video_input": is_vision and _mlx_reads_video(self._processor),
             "context_length": _served_ctx,
             # Matches llama.cpp requested_n_ctx; served window alone cannot tell if a size was asked for.
@@ -7703,11 +7825,15 @@ class MLXInferenceBackend:
         cancel_event = None,
         stop = None,
         extra_audio_arrays = None,
+        speak = False,
+        tools = None,
         **_sampler,
     ):
         """Audio-input chat (omni models): waveform in, incremental text deltas out (the audio route
         forwards deltas, unlike the snapshot-diffing text/vision paths). Greedy, so the worker's
-        sampler kwargs go unused."""
+        sampler kwargs go unused. ``speak`` answers in the model's own voice instead: the reply
+        text, then one ``{"speech": <base64 wav>, "sample_rate": ...}`` item. ``tools`` (a list,
+        empty for tool history alone) renders the catalogue and keeps ``messages`` as sent."""
         entry = self.models.get(self.active_model_name) or {}
         if entry.get("audio_type") != "audio_vlm":
             raise RuntimeError(
@@ -7719,13 +7845,19 @@ class MLXInferenceBackend:
         if extra_audio_arrays:
             raise RuntimeError("This MLX model takes one audio file per message.")
 
+        if speak:
+            yield from self._speak_audio_reply(
+                messages, system_prompt, audio_array, max_new_tokens, use_adapter, cancel_event
+            )
+            return
+
         from mlx_vlm import stream_generate as vlm_stream
 
         if not system_prompt:
             system_prompt = "You are an assistant that transcribes speech accurately."
 
         audio_messages = messages_with_attached_image(
-            alternating_turns(messages),
+            alternating_turns(messages) if tools is None else messages,
             system_prompt = system_prompt,
             fallback_user_text = "Please transcribe this audio.",
             image = 0,
@@ -7737,6 +7869,7 @@ class MLXInferenceBackend:
             audio_messages,
             num_images = 0,
             num_audios = 1,
+            **({"tools": tools} if tools else {}),
         )
         if prompt is None:
             raise RuntimeError(
@@ -7835,6 +7968,76 @@ class MLXInferenceBackend:
                 yield tail
         if stopped:
             self._mark_stopped()
+
+    def _speak_audio_reply(
+        self,
+        messages,
+        system_prompt,
+        audio_array,
+        max_new_tokens,
+        use_adapter,
+        cancel_event = None,
+    ):
+        """One spoken question answered in interleaved text and speech, not streamed."""
+        import base64
+
+        from mlx_vlm.generate import generate_audio
+
+        if not (self.models.get(self.active_model_name) or {}).get("speaks"):
+            raise RuntimeError("The loaded model cannot answer in speech.")
+        # The model card's prompt for speech chat; a user prompt still applies after it.
+        system = "\n\n".join(p for p in (_SPEECH_REPLY_SYSTEM_PROMPT, system_prompt) if p)
+        prompt = _render_registered_vlm_prompt(
+            self._processor,
+            self._model,
+            messages_with_attached_image(
+                alternating_turns(messages),
+                system_prompt = system,
+                image = 0,
+                audio = audio_array,
+            ),
+            num_images = 0,
+            num_audios = 1,
+        )
+        max_new_tokens = self._generation_limit(
+            prompt, max_new_tokens, audio = [audio_array], cap = UNSET_GENERATION_BUDGET
+        )
+        with (
+            self._generation_lock,
+            _temporary_mlx_adapter_state(self._model, use_adapter),
+            ExitStack() as generation_scope,
+        ):
+            self._release_vlm_snapshots()
+            generation_scope.enter_context(self._generation_scopes("vision", "audio"))
+            generation_scope.enter_context(_slots_until_cancelled(self._model, cancel_event))
+            result = generate_audio(
+                self._model,
+                self._processor,
+                prompt,
+                audio = [audio_array],
+                generation_mode = "interleaved",
+                max_tokens = max_new_tokens,
+            )
+            cancelled = cancel_event is not None and cancel_event.is_set()
+            # Nothing to encode once stopped, nor for a reply that ended before its first speech frame.
+            spoke = not cancelled and result.audio is not None and result.audio.size > 0
+            wav = result.to_wav_bytes() if spoke else None
+        self.last_generation_stats = _build_generation_stats(
+            result.prompt_tokens,
+            result.prompt_tps,
+            result.generation_tokens,
+            result.generation_tps,
+            finish_reason = result.finish_reason,
+        )
+        if cancelled:
+            return
+        if result.text:
+            yield result.text
+        if spoke:
+            yield {
+                "speech": base64.b64encode(wav).decode("ascii"),
+                "sample_rate": result.sample_rate,
+            }
 
     def generate_with_adapter_control(
         self,

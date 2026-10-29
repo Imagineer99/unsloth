@@ -4118,6 +4118,8 @@ function ThreadBackendAutosave({
   const aui = useAui();
   const saveChainRef = useRef(Promise.resolve());
   const pendingFirstSavesRef = useRef(new Map<string, Promise<void>>());
+  // Threads whose last whole-chat save failed: a reply-only checkpoint would leave its parent unsaved.
+  const fullSaveDueRef = useRef(new Set<string>());
   // A ref: the save may resolve after the pane is hidden, so read at publish time.
   const backgroundedRef = useRef(backgrounded);
   backgroundedRef.current = backgrounded;
@@ -4129,7 +4131,7 @@ function ThreadBackendAutosave({
   }, []);
 
   const saveThread = useCallback(
-    async (threadId: string): Promise<void> => {
+    async (threadId: string, replyOnly = false): Promise<void> => {
       const runtime = aui.threads().__internal_getAssistantRuntime?.();
       if (!runtime) {
         return;
@@ -4147,7 +4149,12 @@ function ThreadBackendAutosave({
         return;
       }
       await ensureStoredChatThread(remoteId);
-      await syncExportedRepositoryToBackend(remoteId, exported);
+      const partial = replyOnly && !fullSaveDueRef.current.has(threadId);
+      if (!partial) fullSaveDueRef.current.add(threadId);
+      await syncExportedRepositoryToBackend(remoteId, exported, {
+        replyOnly: partial,
+      });
+      if (!partial) fullSaveDueRef.current.delete(threadId);
       if (isChatThreadDeleted(remoteId)) {
         await deleteStoredChatThreads([remoteId]);
         return;
@@ -4175,12 +4182,12 @@ function ThreadBackendAutosave({
   );
 
   const queueSave = useCallback(
-    (threadId: string): Promise<void> => {
+    (threadId: string, replyOnly = false): Promise<void> => {
       const queued = saveChainRef.current
         .catch(() => {})
         .then(async () => {
           await pendingFirstSavesRef.current.get(threadId);
-          await saveThread(threadId);
+          await saveThread(threadId, replyOnly);
         })
         .catch(reportAutosaveError);
       saveChainRef.current = queued;
@@ -4237,7 +4244,7 @@ function ThreadBackendAutosave({
       (threadId) =>
         threadHasLiveGenerationRun(threadId)
           ? Promise.resolve()
-          : queueSaveRef.current(threadId),
+          : queueSaveRef.current(threadId, true),
       {
         isActive: (threadId) => isRunActiveRef.current(threadId),
         isBounded: (threadId) => threadHasDurableGenerationRun(threadId),

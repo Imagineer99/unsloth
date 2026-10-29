@@ -435,13 +435,12 @@ export const BUDGET = {
   // Full Access from a tool approval card (#15485: per-chat grant store and the card's confirm dialog) adds
   // 5,293 B raw / 1,953 B transfer to the eager chat chunk (5,940,337 -> 5,945,630 B raw, 1,835,497 ->
   // 1,837,450 B transfer against 8222149ee, Node 24, 85 chunks). Raised by that growth.
-  // Query links (#14570) defer draft persistence to a 722 B on-use chunk. Literal parsing, auth
-  // continuation and composer isolation add 2,757 B raw / 1,204 B transfer against 85676c3396:
-  // 5,977,895 -> 5,980,652 B raw; 1,849,311 -> 1,850,515 B transfer (Node 24, same lockfile, 85 chunks).
-  // That base already exceeds the old budget by 18,437 B raw / 10,490 B transfer. Rebaseline to the
-  // measured current build plus 160 B raw / 189 B transfer, keeping that drift separate from this PR.
-  transferBytes: 1_850_704,
-  rawBytes: 5_980_812,
+  // The Trick or treat row (#15678) merged in between, unmeasured, and adds 29,984 B raw / 10,952 B transfer
+  // (5,942,150 -> 5,972,134 B raw, 1,836,750 -> 1,847,702 B transfer, ed9857c0c3 -> 39b8a6ce13, Node 24,
+  // 85 chunks): its color themes are read by the theme store at startup, and loading its dialog on first
+  // open saves 3 KB transfer but adds five startup chunks. Raised by that growth.
+  transferBytes: 1_849_773,
+  rawBytes: 5_989_442,
 };
 
 // Chunk count is not budgeted: splitting a page out raises it while lowering bytes.

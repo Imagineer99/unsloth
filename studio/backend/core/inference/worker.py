@@ -284,13 +284,15 @@ def _apply_worker_hf_token_environment(config: dict) -> None:
 
 def _build_model_config(config: dict):
     from utils.models import ModelConfig
+    from utils.models.model_config import shared_hub_model_info
 
     model_name = config["model_name"]
-    mc = ModelConfig.from_identifier(
-        model_id = model_name,
-        hf_token = _config_hf_token(config),
-        gguf_variant = config.get("gguf_variant"),
-    )
+    with shared_hub_model_info():
+        mc = ModelConfig.from_identifier(
+            model_id = model_name,
+            hf_token = _config_hf_token(config),
+            gguf_variant = config.get("gguf_variant"),
+        )
     if not mc:
         raise ValueError(f"Invalid model identifier: {model_name}")
     return mc
@@ -841,6 +843,7 @@ def _handle_load(backend, config: dict, resp_queue: Any) -> None:
                         "audio_type",
                         "has_audio_input",
                         "has_video_input",
+                        "speaks",
                         "audio_family",
                         "audio_options",
                         "gguf_variant",
@@ -863,9 +866,9 @@ def _handle_load(backend, config: dict, resp_queue: Any) -> None:
                     if k in _entry
                 }
             )
-            # MLX serves a vision config mlx-lm built as text; the parent must stop accepting images.
-            if model_info["is_mlx"] and _entry.get("is_vision") is False:
-                model_info["is_vision"] = False
+            # MLX decides at load: an mlx-lm text build reads no images, an mlx-vlm-only tower does.
+            if model_info["is_mlx"] and isinstance(_entry.get("is_vision"), bool):
+                model_info["is_vision"] = _entry["is_vision"]
             # Resolved MLX runtime knobs; only the backend knows what it honored.
             model_info.update(
                 {
@@ -1943,6 +1946,10 @@ def _handle_generate_audio_input(backend, cmd: dict, resp_queue: Any, cancel_eve
                 backend, "stop", "generate_audio_input_response"
             ):
                 audio_kwargs["stop"] = cmd["stop"]
+            if cmd.get("speak"):
+                audio_kwargs["speak"] = True
+            if cmd.get("tools") is not None:
+                audio_kwargs["tools"] = cmd["tools"]
             generator = backend.generate_audio_input_response(**audio_kwargs, **extra_audio_kwargs)
 
         logger.info("Starting audio input generation for request_id=%s", request_id)
@@ -1952,6 +1959,11 @@ def _handle_generate_audio_input(backend, cmd: dict, resp_queue: Any, cancel_eve
                 logger.info("Audio input generation cancelled for request %s", request_id)
                 break
 
+            if isinstance(text_chunk, dict):
+                _send_response(
+                    resp_queue, {"type": "speech", "request_id": request_id, **text_chunk}
+                )
+                continue
             _send_response(
                 resp_queue,
                 {
