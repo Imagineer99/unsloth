@@ -13,7 +13,7 @@ import { pickSpookySloth } from "@/features/halloween/spooky-greetings";
 import { Input } from "@/components/ui/input";
 import { useT } from "@/i18n";
 import { Label } from "@/components/ui/label";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import type { SyntheticEvent } from "react";
@@ -57,6 +57,7 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
   const signalReady = useAppShellReadySignal();
   const t = useT();
   const navigate = useNavigate();
+  const { q } = useSearch({ strict: false });
   const isLoginMode = mode === "login";
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -117,11 +118,11 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
           }
 
           if (mode === "login" && requiresChange) {
-            navigate({ to: "/change-password" });
+            navigate({ to: "/change-password", search: { q } });
             return;
           }
           if (mode === "change-password" && !requiresChange) {
-            navigate({ to: "/login" });
+            navigate({ to: "/login", search: { q } });
             return;
           }
 
@@ -130,13 +131,13 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
               const refreshed = await refreshSession();
               if (refreshed) {
                 if (!canceled) setStatusLoading(false);
-                navigate({ to: getPostAuthRoute() });
+                navigate({ to: getPostAuthRoute(), search: { q } });
                 return;
               }
             }
             if (hasAuthToken()) {
               if (!canceled) setStatusLoading(false);
-              navigate({ to: getPostAuthRoute() });
+              navigate({ to: getPostAuthRoute(), search: { q } });
               return;
             }
           }
@@ -155,7 +156,7 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
     return () => {
       canceled = true;
     };
-  }, [navigate]);
+  }, [navigate, q]);
 
   useEffect(() => {
     if (statusLoading || reloadReadySent.current) return;
@@ -284,7 +285,7 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
           const bootstrapToken = await loginWithPassword(username, currentPassword);
           const replaced = await transitionBrowserAccount(
             { username, accountId: bootstrapToken.account_id },
-            "/change-password",
+            q ? `/change-password?q=${encodeURIComponent(q)}` : "/change-password",
             () => {
               storeAuthTokens(bootstrapToken.access_token, bootstrapToken.refresh_token);
               setMustChangePassword(bootstrapToken.must_change_password);
@@ -331,12 +332,12 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
       const route = isLoginMode && token.must_change_password ? "/change-password" : "/chat";
       const replaced = await transitionBrowserAccount(
         { username: signedInUsername, accountId: token.account_id },
-        route,
+        q ? `${route}?q=${encodeURIComponent(q)}` : route,
         finishSession,
       );
       pendingLogin.current = null;
       if (replaced) return;
-      navigate({ to: getPostAuthRoute() });
+      navigate({ to: getPostAuthRoute(), search: { q } });
     } catch (err: unknown) {
       // Show the backend's PATH-based command as-is; a relative Windows path only resolves in the
       // Unsloth home dir.
@@ -352,7 +353,7 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
     setLoading(true);
     try {
       if (await continueAsDesktopOwner()) {
-        navigate({ to: getPostAuthRoute() });
+        navigate({ to: getPostAuthRoute(), search: { q } });
       } else {
         setError(t("auth.signInWithUsername"));
       }
@@ -595,7 +596,7 @@ export function AuthForm({ mode }: AuthFormProps): ReactElement | null {
       {showSwitchLink && (
         <p className="text-center text-sm text-muted-foreground">
           {switchText}
-          <Link to={switchLinkTo} className="text-primary hover:underline">
+          <Link to={switchLinkTo} search={{ q }} className="text-primary hover:underline">
             {switchLinkText}
           </Link>
         </p>
