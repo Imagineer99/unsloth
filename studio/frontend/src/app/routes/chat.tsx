@@ -11,7 +11,7 @@ import { Route as rootRoute } from "./__root";
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: "/chat",
-  staticData: { title: "Chat" },
+  staticData: { titleKey: "routes.chat" },
   beforeLoad: async ({ search, preload, abortController }) => {
     await requireAuth(search.q);
     if (preload || abortController.signal.aborted) return;

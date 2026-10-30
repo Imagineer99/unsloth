@@ -15,7 +15,7 @@ const ChangePasswordPage = lazy(() =>
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: "/change-password",
-  staticData: { title: "Change Password", isAuthFlow: true },
+  staticData: { titleKey: "routes.changePassword", isAuthFlow: true },
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
     q: typeof search.q === "string" ? search.q : undefined,
   }),

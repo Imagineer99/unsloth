@@ -68,6 +68,7 @@ import { attachWheelHoverSuppression } from "@/components/assistant-ui/thread-wh
 import { threadHasResearchMessage } from "@/components/assistant-ui/thread-research-presence";
 import {
   THREAD_GUTTER_CHANGE_EVENT,
+  syncThreadGutter,
   watchThreadGutter,
 } from "@/components/assistant-ui/thread-gutter";
 import { observeThreadWidthSteps } from "@/components/assistant-ui/thread-width-steps";
@@ -327,13 +328,13 @@ import {
   snapshotQueuedChatRunSettings,
   adoptLegacyDraft,
   latestDraft,
+  latestPasteDraft,
   publishDraft,
   subscribeDraft,
   composerDraftKey,
   composerPasteDraftKey,
   createPastedTextFile,
   pastedTextOf,
-  readPasteDraft,
   writePasteDraft,
   markThreadIncognito,
   markChatThreadDeleted,
@@ -432,9 +433,6 @@ import {
   Delete02Icon,
   Download01Icon,
   Edit03Icon,
-  FolderAttachmentIcon,
-  Folder01Icon,
-  FolderAddIcon,
   Image03Icon,
   McpServerIcon,
   Refresh01Icon,
@@ -449,9 +447,11 @@ import {
   PlusSignIcon,
   Cancel01Icon,
 } from "@hugeicons/core-free-icons";
+import { FolderAddIcon, FolderAttachmentIcon } from "@/lib/folder-icons";
 import { Copy01Icon } from "@/lib/copy-icon";
 import { StopIcon } from "@/lib/media-control-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import { ProjectIcon } from "@/lib/project-icon";
 import { RefreshGlyph } from "@/lib/refresh-icon";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -2134,7 +2134,8 @@ export const Thread: FC<{
     return attachWheelHoverSuppression(viewportEl);
   }, [viewportEl]);
 
-  useEffect(() => {
+  // Layout effect: shift a remounted viewport before its first paint.
+  useLayoutEffect(() => {
     if (!viewportEl) return;
     return watchThreadGutter(viewportEl);
   }, [viewportEl]);
@@ -2601,6 +2602,8 @@ const ThreadComposerDock: FC<{
     const resizeObserver = new ResizeObserver(() => apply());
     let observedFooter: Element | null = null;
     const apply = () => {
+      // May fire before the gutter's observer, which would leave the composer a scrollbar off-centre.
+      syncThreadGutter(viewport);
       // The footer is the real column box: WebKit's both-edges gutter reserves 2x the scrollbar on the right, clientWidth 1x.
       const footer = childWithClass(viewport, "aui-thread-viewport-footer");
       if (footer && footer !== observedFooter) {
@@ -3940,7 +3943,7 @@ const Composer: FC<{
   const draftScope =
     queryDraft?.id ?? (incognito ? INCOGNITO_DRAFT_SCOPE : referenceThreadId);
   const draftKey = queryDraft?.id ?? composerDraftKey();
-  // Text that came from Compare or another tab, so saving it back can't overwrite a newer write.
+  // Text that came from Compare, so saving it back can't overwrite a newer write.
   const remoteDraftRef = useRef<string | null>(null);
   const [draftSource] = useState(() => Symbol("chat composer"));
   // Whose pastes are on screen: a temporary chat's never cross into the saved draft, nor back.
@@ -3985,7 +3988,7 @@ const Composer: FC<{
     if (queryDraft) restoringQueryTextRef.current = { id: queryDraft.id, text: draft };
     composer.setText(draft);
   }, [draftScope, draftKey, queryDraft, queryDraftReady, aui]);
-  // Compare's composer or another tab, so whichever is on screen shows the latest draft.
+  // Compare's composer, so whichever is on screen shows the latest draft.
   useEffect(() => {
     if (queryDraft || draftScope === INCOGNITO_DRAFT_SCOPE) return;
     return subscribeDraft(draftSource, (text) => {
@@ -4046,7 +4049,7 @@ const Composer: FC<{
         const text = pastedTextOf((attachment as { file?: File }).file);
         return text === undefined ? [] : [text];
       });
-    const missing = (queryDraft?.pastes ?? readPasteDraft(pasteDraftKey)).filter((text) => {
+    const missing = (queryDraft?.pastes ?? latestPasteDraft()).filter((text) => {
       const at = shown.indexOf(text);
       if (at === -1) return true;
       shown.splice(at, 1);
@@ -7149,7 +7152,7 @@ const ComposerToolsMenu: FC<{
     projects: (
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
-          <HugeiconsIcon icon={Folder01Icon} strokeWidth={2} />
+          <HugeiconsIcon icon={ProjectIcon} strokeWidth={2} />
           Projects
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="unsloth-plus-menu w-[calc(232px*var(--ui-space-scale,1))]">
@@ -7164,7 +7167,7 @@ const ComposerToolsMenu: FC<{
                 key={project.id}
                 onSelect={() => openProject(project.id)}
               >
-                <HugeiconsIcon icon={Folder01Icon} strokeWidth={2} />
+                <HugeiconsIcon icon={ProjectIcon} strokeWidth={2} />
                 <span className="truncate">{project.name}</span>
               </DropdownMenuItem>
             ))

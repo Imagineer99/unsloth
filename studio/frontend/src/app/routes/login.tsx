@@ -13,7 +13,7 @@ const LoginPage = lazy(() =>
 export const Route = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
-  staticData: { title: "Login", isAuthFlow: true },
+  staticData: { titleKey: "routes.login", isAuthFlow: true },
   validateSearch: (search: Record<string, unknown>): { q?: string } => ({
     q: typeof search.q === "string" ? search.q : undefined,
   }),

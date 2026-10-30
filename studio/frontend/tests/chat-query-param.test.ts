@@ -26,7 +26,7 @@ const store = new Map<string, string>();
 const { chatQueryParam } = await import(
   "../src/features/chat/utils/chat-query-param.ts"
 );
-const page = readText("../src/features/chat/chat-page.tsx");
+const search = readText("../src/features/chat/chat-search.ts");
 const index = readText("../src/app/routes/index.tsx");
 
 test("a query is read back as the text that was typed", () => {
@@ -47,7 +47,7 @@ test("a blank or non-text query is no query", () => {
 
 test("the chat route consumes a query before the composer mounts, without sending", () => {
   const route = readText("../src/app/routes/chat.tsx");
-  assert.match(page, /q: chatQueryParam\(search\.q\),/);
+  assert.match(search, /q: chatQueryParam\(search\.q\),/);
   assert.match(
     route,
     /if \(preload \|\| abortController.signal.aborted\) return;/,
