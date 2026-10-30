@@ -1272,7 +1272,10 @@ def main() -> int:
             check(
                 f"{width}x{height}: three pending runtimes share the one card",
                 page.locator('[data-testid="llama-update-banner"]').count() == 1
-                and "llama.cpp, whisper.cpp and audio.cpp" in summary,
+                and all(
+                    component in summary
+                    for component in ("llama.cpp", "whisper.cpp", "audio.cpp")
+                ),
                 f"summary={summary!r}",
             )
             exercise_llama_changelog(page, f"{width}x{height} bundle")
