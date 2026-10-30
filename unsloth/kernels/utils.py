@@ -1874,6 +1874,39 @@ def addmm_(
     return out.addmm_(A, B, alpha = alpha, beta = beta)
 
 
+# The rank-r product is written first and the base GEMM accumulates onto it (cuBLAS reads it in the
+# epilogue of a compute-bound GEMM), instead of a separate read-modify-write pass over the whole output.
+# UNSLOTH_LORA_FUSED_PASSES=0 restores the base-then-LoRA order everywhere.
+LORA_FUSED_PASSES = os.environ.get("UNSLOTH_LORA_FUSED_PASSES", "1") != "0"
+
+
+def _lora_fused_ok(W, W_quant, dtype):
+    # One rule for every forward and backward call site. fp16 keeps the old order: a rank-r term or a
+    # summed LoRA dX rounded on its own can overflow before the base term cancels it. FP8, INT4 (either
+    # orientation) and packed weights have their own GEMMs. The base GEMM accumulates in place, which
+    # autocast does not cast, so the weight must dequantize to `dtype` (fast_dequantize returns a 4-bit
+    # state's own dtype, not the one asked for).
+    if not LORA_FUSED_PASSES or dtype not in (torch.bfloat16, torch.float32):
+        return False
+    if isinstance(W, Float8Tensor) or W.dtype == torch.float8_e4m3fn:
+        return False
+    if type(W_quant) is Int4QuantState or _is_packed_state(W_quant):
+        return False
+    if W_quant is None:
+        return W.dtype == dtype
+    return _quant_state_dtype(W_quant) == dtype
+
+
+def _shares_storage(out, *tensors):
+    if _is_compiling():
+        return False
+    ptr = out.untyped_storage().data_ptr()
+    return any(
+        t is not None and isinstance(t, torch_Tensor) and t.untyped_storage().data_ptr() == ptr
+        for t in tensors
+    )
+
+
 def matmul_lora(
     X,
     W,
@@ -1883,7 +1916,12 @@ def matmul_lora(
     s,
     out = None,
     use_global_buffer = True,
+    XA = None,
+    fused = True,
 ):
+    # XA: X @ A.t() already computed by the caller (shared across projections reading the same X).
+    # fused = False: the caller's module needs the base-then-LoRA order (dropout, lora_bias, a weight
+    # converted before this call); _lora_fused_ok decides the rest.
     dtype = X.dtype
 
     if X.dim() == 3:
@@ -1908,6 +1946,38 @@ def matmul_lora(
         out = _int4_matmul(X, W, W_quant, out = out)
     elif _is_packed_state(W_quant):
         out = W_quant.matmul(X, W, out = out)
+    elif (
+        A is not None
+        and fused
+        and _lora_fused_ok(W, W_quant, dtype)
+        # A caller's buffer is written before the base GEMM, so it must already be the output and must
+        # not share storage with an operand the base GEMM still reads.
+        and (
+            out is None
+            or (
+                out.shape == (X.shape[0], B.shape[0])
+                and out.dtype == dtype
+                and not _shares_storage(out, W, X, A, B, XA)
+            )
+        )
+    ):
+        if XA is None:
+            XA = torch_matmul(X, A.t().to(dtype))
+        B = B.t().to(dtype)
+        caller_out = out is not None
+        if caller_out:
+            addmm_(out, XA, B, alpha = s, beta = 0)
+        else:
+            # Functional with beta = 0: an empty buffer mutated in place breaks block compiles (aliasing).
+            out = torch.addmm(XA.new_zeros(1), XA, B, beta = 0, alpha = s)
+        W = fast_dequantize(W, W_quant, use_global_buffer = use_global_buffer, dtype = dtype)
+        if _is_compiling() and not caller_out:
+            # Traced, an in-place accumulate onto a buffer the region saves for backward breaks the block
+            # compile (the saved tensor aliases a mutated intermediate); Inductor plans the buffer itself.
+            out = torch.addmm(out, X, W.t())
+        else:
+            out.addmm_(X, W.t())
+        A = None
     else:
         W = fast_dequantize(W, W_quant, use_global_buffer = use_global_buffer, dtype = dtype)
         out = torch_matmul(X, W.t(), out = out)
@@ -1916,7 +1986,8 @@ def matmul_lora(
 
     if A is not None:
         A, B = A.t(), B.t()
-        XA = torch_matmul(X, A.to(dtype))
+        if XA is None:
+            XA = torch_matmul(X, A.to(dtype))
         addmm_(out, XA, B.to(dtype), alpha = s)
 
     return out.view(batch, seq_len, -1) if reshape else out
