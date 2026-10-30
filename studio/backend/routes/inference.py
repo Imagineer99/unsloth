@@ -3464,6 +3464,8 @@ from models.inference import (
     EstimateMemoryResponse,
     Int8PrefillAvailabilityRequest,
     Int8PrefillAvailabilityResponse,
+    AnePrefillAvailabilityRequest,
+    AnePrefillAvailabilityResponse,
     MlxDraftersRequest,
     MlxDraftersResponse,
     TransformersUpgradeInfo,
@@ -8088,6 +8090,9 @@ def _llama_runtime_fields(llama_backend: LlamaCppBackend) -> dict:
         mlx_int8_prefill = None,
         mlx_int8_prefill_requested = None,
         mlx_int8_prefill_reason = None,
+        mlx_ane_prefill = None,
+        mlx_ane_prefill_requested = None,
+        mlx_ane_prefill_reason = None,
         mlx_offload = None,
         mlx_context_budget = None,
         spec_draft_model = None,
@@ -10861,6 +10866,7 @@ async def _maybe_auto_switch_model(
         resolve_trusted_cached_local_gguf,
         warm_index_soon,
     )
+    from utils.security.remote_code_approvals import approved_local_fingerprint
     from core.inference.llama_keepwarm import (
         get_last_unloaded_model,
         inference_lifecycle_gate,
@@ -11367,6 +11373,14 @@ async def _maybe_auto_switch_model(
                         param = "model",
                     ),
                 ) from None
+        # Stash restores too: the load carries this account's approval of the code on disk.
+        remote_code_fingerprint = (
+            None
+            if target_is_gguf
+            else await asyncio.to_thread(
+                approved_local_fingerprint, current_subject, (override_id, target_id), target_id
+            )
+        )
         key = _switch_key(override_id, variant)
         _note_switch_waiter(key, 1)
         waiter_noted = True
@@ -11455,6 +11469,11 @@ async def _maybe_auto_switch_model(
                         )
                         if caller_hf_token:
                             load_kwargs["hf_token"] = caller_hf_token
+                        if remote_code_fingerprint:
+                            load_kwargs["trust_remote_code"] = True
+                            load_kwargs["approved_remote_code_fingerprint"] = (
+                                remote_code_fingerprint
+                            )
                         if beside:
                             load_kwargs["alongside"] = True
                         saved_gpu_ids = load_kwargs.get("gpu_ids")
@@ -16988,6 +17007,8 @@ def _mlx_runtime_settings_match(backend, request) -> bool:
         == (request.chat_template_override or None)
         and bool(entry.get("mlx_int8_prefill_requested"))
         == bool(getattr(request, "mlx_int8_prefill", False))
+        and bool(entry.get("mlx_ane_prefill_requested"))
+        == bool(getattr(request, "mlx_ane_prefill", False))
         and all(
             normalize_mlx_offload(
                 ((entry.get("mlx_offload") or {}).get(part) or {}).get("requested")
@@ -18743,6 +18764,9 @@ async def _load_model_impl(
                     mlx_int8_prefill = _model_info.get("mlx_int8_prefill"),
                     mlx_int8_prefill_requested = _model_info.get("mlx_int8_prefill_requested"),
                     mlx_int8_prefill_reason = _model_info.get("mlx_int8_prefill_reason"),
+                    mlx_ane_prefill = _model_info.get("mlx_ane_prefill"),
+                    mlx_ane_prefill_requested = _model_info.get("mlx_ane_prefill_requested"),
+                    mlx_ane_prefill_reason = _model_info.get("mlx_ane_prefill_reason"),
                     mlx_offload = _model_info.get("mlx_offload"),
                     memory_warning = _mlx_offload_warning(_model_info),
                     # Requested, as /status reports it: a null override would read
@@ -19413,6 +19437,7 @@ async def _load_model_impl(
                 subject = current_subject,
                 mlx_kv_quant = request.mlx_kv_quant,
                 mlx_int8_prefill = request.mlx_int8_prefill,
+                mlx_ane_prefill = request.mlx_ane_prefill,
                 mlx_offload = (request.mlx_ple_offload, request.mlx_expert_offload),
                 speculative_type = request.speculative_type,
                 spec_draft_n_max = request.spec_draft_n_max,
@@ -19608,6 +19633,9 @@ async def _load_model_impl(
             mlx_int8_prefill = _model_info.get("mlx_int8_prefill"),
             mlx_int8_prefill_requested = _model_info.get("mlx_int8_prefill_requested"),
             mlx_int8_prefill_reason = _model_info.get("mlx_int8_prefill_reason"),
+            mlx_ane_prefill = _model_info.get("mlx_ane_prefill"),
+            mlx_ane_prefill_requested = _model_info.get("mlx_ane_prefill_requested"),
+            mlx_ane_prefill_reason = _model_info.get("mlx_ane_prefill_reason"),
             mlx_offload = _model_info.get("mlx_offload"),
             memory_warning = _mlx_offload_warning(_model_info),
             # Requested, as /status reports it: a null override would read as
@@ -20771,23 +20799,20 @@ def _cached_estimate_config(
     return config
 
 
-@router.post("/int8-prefill-availability", response_model = Int8PrefillAvailabilityResponse)
-async def int8_prefill_availability(
-    request: Int8PrefillAvailabilityRequest, current_subject: str = Depends(get_current_subject)
-):
-    """Whether MLX int8 prefill would apply to this model, judged from its downloaded checkpoint
-    without loading it. The first answer on a new macOS or MLX version builds the kernels once."""
+async def _mlx_prefill_option_availability(request, response, checkpoint_status):
+    """`response` for an MLX prefill option that `checkpoint_status(model_dir)` judges from the
+    downloaded checkpoint, without loading it."""
     if account_access.managed_account():
         await asyncio.to_thread(account_access.require_model_access, request.model_path)
     if is_ollama_manifest_ref(request.model_path):
-        return Int8PrefillAvailabilityResponse(available = False, reason = "unsupported_model")
+        return response(available = False, reason = "unsupported_model")
 
-    def _check() -> Int8PrefillAvailabilityResponse:
+    def _check():
         if not _mlx_estimate_available():
-            return Int8PrefillAvailabilityResponse(available = False, reason = "unsupported_model")
+            return response(available = False, reason = "unsupported_model")
         config = _cached_estimate_config(request.model_path, None, request.hf_token, False)
         if config is _ESTIMATE_NOT_ON_DISK:
-            return Int8PrefillAvailabilityResponse(available = False, reason = "not_downloaded")
+            return response(available = False, reason = "not_downloaded")
         from core.inference.native_audio import is_native_audio_model
 
         if (
@@ -20796,16 +20821,38 @@ async def int8_prefill_availability(
             or getattr(config, "is_lora", False)
             or is_native_audio_model(request.model_path)
         ):
-            return Int8PrefillAvailabilityResponse(available = False, reason = "unsupported_model")
+            return response(available = False, reason = "unsupported_model")
         model_dir = _local_mlx_model_dir(config)
         if not model_dir:
-            return Int8PrefillAvailabilityResponse(available = False, reason = "not_downloaded")
-        from core.inference.mlx_inference import mlx_int8_prefill_checkpoint_status
-
-        available, reason = mlx_int8_prefill_checkpoint_status(model_dir)
-        return Int8PrefillAvailabilityResponse(available = available, reason = reason or None)
+            return response(available = False, reason = "not_downloaded")
+        available, reason = checkpoint_status(model_dir)
+        return response(available = available, reason = reason or None)
 
     return await asyncio.to_thread(_check)
+
+
+@router.post("/int8-prefill-availability", response_model = Int8PrefillAvailabilityResponse)
+async def int8_prefill_availability(
+    request: Int8PrefillAvailabilityRequest, current_subject: str = Depends(get_current_subject)
+):
+    """Whether MLX int8 prefill would apply to this model, judged from its downloaded checkpoint
+    without loading it. The first answer on a new macOS or MLX version builds the kernels once."""
+    from core.inference.mlx_inference import mlx_int8_prefill_checkpoint_status
+    return await _mlx_prefill_option_availability(
+        request, Int8PrefillAvailabilityResponse, mlx_int8_prefill_checkpoint_status
+    )
+
+
+@router.post("/ane-prefill-availability", response_model = AnePrefillAvailabilityResponse)
+async def ane_prefill_availability(
+    request: AnePrefillAvailabilityRequest, current_subject: str = Depends(get_current_subject)
+):
+    """Whether MLX Neural Engine prefill could apply to this model, judged from its downloaded
+    checkpoint without loading it; calibration and free memory still decide at load."""
+    from core.inference.mlx_inference import mlx_ane_prefill_checkpoint_status
+    return await _mlx_prefill_option_availability(
+        request, AnePrefillAvailabilityResponse, mlx_ane_prefill_checkpoint_status
+    )
 
 
 @router.post("/estimate-memory", response_model = EstimateMemoryResponse)
@@ -22137,6 +22184,9 @@ async def _slot_status(current_subject: str):
             mlx_int8_prefill = model_info.get("mlx_int8_prefill"),
             mlx_int8_prefill_requested = model_info.get("mlx_int8_prefill_requested"),
             mlx_int8_prefill_reason = model_info.get("mlx_int8_prefill_reason"),
+            mlx_ane_prefill = model_info.get("mlx_ane_prefill"),
+            mlx_ane_prefill_requested = model_info.get("mlx_ane_prefill_requested"),
+            mlx_ane_prefill_reason = model_info.get("mlx_ane_prefill_reason"),
             mlx_offload = model_info.get("mlx_offload"),
             memory_warning = _mlx_offload_warning(model_info),
             chat_template_override = model_info.get("chat_template_override_requested"),
@@ -26686,36 +26736,31 @@ _VIDEO_INPUT_REFUSAL = (
 )
 
 
-def _local_video_clip(payload, model_info) -> str:
-    """Serves a video_url part the same as the legacy field; refuses a model with no video input."""
+def _local_video_clips(payload, model_info) -> list[str]:
+    """Serves video_url parts the same as the legacy field, in request order; refuses a model with
+    no video input."""
     if not model_info.get("has_video_input"):
         raise HTTPException(status_code = 400, detail = _VIDEO_INPUT_REFUSAL)
     clips = _request_video_clips(payload)
     if not clips:
         raise HTTPException(status_code = 400, detail = "Could not read the provided video file.")
-    # Generation takes one video kwarg; extra clips would be silently dropped.
-    if len(clips) > 1:
-        raise HTTPException(
-            status_code = 400,
-            detail = "Only one video is supported per request on this model.",
-        )
     # MLX would move an older-turn clip onto the newest turn.
     if _video_is_on_an_older_turn(payload):
         raise HTTPException(
             status_code = 400,
             detail = "A video must be attached to the latest message on this model.",
         )
-    # Refused everywhere, so the message must not send the caller to GGUF for it.
-    if _is_remote_video(clips[0]):
-        raise HTTPException(status_code = _REMOTE_VIDEO_REFUSAL[0], detail = _REMOTE_VIDEO_REFUSAL[1])
-    # _request_video_rejection may not have run; reject unsupported schemes here too.
-    scheme_rejection = _video_scheme_rejection(clips[0])
-    if scheme_rejection is not None:
-        raise HTTPException(status_code = scheme_rejection[0], detail = scheme_rejection[1])
-    video_b64, rejection = _video_b64_rejection(clips[0])
+    # The pre-switch validation may not have run; count, scheme and size are refused here too.
+    rejection = _request_video_rejection(payload)
     if rejection is not None:
         raise HTTPException(status_code = rejection[0], detail = rejection[1])
-    return video_b64
+    served = []
+    for clip in clips:
+        video_b64, rejection = _video_b64_rejection(clip)
+        if rejection is not None:
+            raise HTTPException(status_code = rejection[0], detail = rejection[1])
+        served.append(video_b64)
+    return served
 
 
 def _video_payload_chars(clip: str) -> int:
@@ -30666,9 +30711,9 @@ async def produce_openai_chat_completions(
         model_name = _orchestrator_public_model_id(backend) or payload.model
         model_info = backend.models.get(backend.active_model_name, {})
         # Before the speech and audio-input dispatches, which return before the clip is attached.
-        _video_clip = None
+        _video_clips: list[str] = []
         if _request_has_video(payload):
-            _video_clip = _local_video_clip(payload, model_info)
+            _video_clips = _local_video_clips(payload, model_info)
             # Settled here: a model without audio input never enters the audio-input path.
             if payload.audio_base64:
                 raise HTTPException(status_code = 400, detail = _AUDIO_VIDEO_INPUT_DETAIL)
@@ -30846,7 +30891,12 @@ async def produce_openai_chat_completions(
                 else {}
             )
             _audio_heal = (
-                heal_gate(payload.auto_heal_tool_calls, _audio_tools, payload.tool_choice)
+                heal_gate(
+                    payload.auto_heal_tool_calls,
+                    _audio_tools,
+                    payload.tool_choice,
+                    response_format = _extract_response_format(payload),
+                )
                 if _audio_tools
                 else None
             )
@@ -33464,7 +33514,7 @@ async def produce_openai_chat_completions(
     _sf_image_tpl = (
         (_sf_model_info.get("chat_template_info") or {}).get("processor_template")
         # A clip renders through the processor as an image does.
-        if _sf_has_any_image or _video_clip is not None
+        if _sf_has_any_image or _video_clips
         else None
     )
     # Differs from processor_template: a template-less processor still places the image.
@@ -33531,7 +33581,7 @@ async def produce_openai_chat_completions(
         and (not _sf_has_any_image or (bool(_sf_model_info.get("is_vision")) and not payload.tools))
         # A caller's several images and a video clip stay out of the loop, as on main.
         and not images
-        and _video_clip is None
+        and not _video_clips
         and not _sf_is_gptoss
         and _sf_tool_budget > 0
     )
@@ -33616,7 +33666,7 @@ async def produce_openai_chat_completions(
             request,
             include_api_key = True,
             template_default = False,
-            image = _sf_has_any_image or _video_clip is not None,
+            image = _sf_has_any_image or bool(_video_clips),
             tools = True,
             controls = _date_controls,
         )
@@ -34135,8 +34185,8 @@ async def produce_openai_chat_completions(
         stop = normalized_stop,
         response_format = _extract_response_format(payload),
     )
-    if _video_clip is not None:
-        gen_kwargs["video"] = _video_clip
+    if _video_clips:
+        gen_kwargs["videos"] = _video_clips
     # The worker/template wrapper peels off kwargs the template doesn't accept.
     if payload.enable_thinking is not None:
         gen_kwargs["enable_thinking"] = payload.enable_thinking
@@ -34170,7 +34220,7 @@ async def produce_openai_chat_completions(
     # Gate on _sf_use_tools, not mcp_enabled: an empty MCP registry must not drop client tools.
     _sf_client_tools = (
         # Read the resolved value: recomputing would undo the launcher-default withdrawal above.
-        (not _sf_tools_on or ((_sf_has_any_image or _video_clip is not None) and not _sf_use_tools))
+        (not _sf_tools_on or ((_sf_has_any_image or bool(_video_clips)) and not _sf_use_tools))
         and not _sf_use_tools
         and not _sf_is_gptoss
         and _sf_supports_tools
@@ -34248,7 +34298,7 @@ async def produce_openai_chat_completions(
         _sf_client_system_prompt = _apply_current_date_prompt(
             _user_system_prompt,
             request,
-            image = _sf_has_any_image or _video_clip is not None,
+            image = _sf_has_any_image or bool(_video_clips),
             tools = bool(_sf_client_catalog),
             controls = _date_controls,
         )
@@ -34381,7 +34431,7 @@ async def produce_openai_chat_completions(
         fitted_kwargs, events = gen_kwargs, ()
         # The count cannot price pictures or video, so those prompts are left alone.
         if _sf_fit_overflow and all(
-            gen_kwargs.get(key) is None for key in ("image", "images", "video")
+            gen_kwargs.get(key) is None for key in ("image", "images", "videos")
         ):
             fitted = backend.compact_chat_context(
                 gen_kwargs.get("messages") or [],
@@ -34828,14 +34878,14 @@ async def produce_openai_chat_completions(
                                 # or the reverse scan attaches the picture to it (#10092).
                                 # The fitted prompt: the retry extends it and is not refitted.
                                 _nudge_base = _sf_fit_request()[0]["messages"]
-                                if _sf_renders_image or _video_clip is not None:
+                                if _sf_renders_image or _video_clips:
                                     from core.inference.chat_template_helpers import (
                                         messages_with_attached_image as _nudge_attach,
                                     )
                                     _nudge_base = _nudge_attach(
                                         _nudge_base,
                                         image = _sf_renders_image,
-                                        video = _video_clip is not None,
+                                        video = len(_video_clips),
                                     )
                                 retry_messages = [
                                     *_nudge_base,
