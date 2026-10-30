@@ -7586,6 +7586,52 @@ sys.exit(0 if installed is not None and required is not None and installed >= re
     $script:SkipPythonDeps = $SkipPythonDeps
 }
 
+# AMD ROCm: triton-windows paired with torch. The stack resolves unsloth's unpinned triton-windows. 3.9 removed the
+# block pointers that torch 2.11 / 2.12's flex_decoding template builds: the first decode fails to compile and flex
+# attention then runs unfused for the rest of the process (gpt-oss 4k prefill 0.1 -> 6.7 GB on gfx1151). 3.6 has no
+# HIP headers; 3.8 is the verified build. Used by the fast-path escape and the post-stack repair.
+function Get-TritonWindowsRocmSpec {
+    param([string]$TorchVersion)
+    if ($TorchVersion -match '^2\.(\d+)\.' -and @(11, 12) -contains [int]$Matches[1]) { return "triton-windows>=3.8,<3.9" }
+    return $null
+}
+
+function Get-RocmTritonPairing {
+    # No double quotes: Invoke-BoundedPythonProbe wraps $Code in them. The name lookup skips the ~riton_windows-*
+    # backup an interrupted pip replacement leaves, which still declares Name: triton-windows.
+    $code = "import importlib.metadata as m; " +
+        "print('TORCH=' + m.version('torch')); " +
+        "print('TRITONWIN=' + next((d.version for d in m.distributions(name='triton-windows')), ''))"
+    $probe = Invoke-BoundedPythonProbe -PythonExe "python" -Code $code
+    $torch = if ($probe.Ok -and $probe.Output -match '(?m)^TORCH=(\S+)\s*$') { $Matches[1] } else { "" }
+    $triton = if ($probe.Ok -and $probe.Output -match '(?m)^TRITONWIN=(\S+)\s*$') { $Matches[1] } else { "" }
+    $spec = Get-TritonWindowsRocmSpec -TorchVersion $torch
+    return @{ Torch = $torch; Triton = $triton; Spec = $spec; Stale = [bool]($spec -and ($triton -notmatch '^3\.8(\.|$)')) }
+}
+
+function Test-RocmTorchInstalled {
+    # One rule for the fast-path escape and the post-stack repair, so every pass the escape forces is repaired.
+    param([string]$Torch, [string]$InstalledTorchTag)
+    if ($Torch -match '\+rocm') { return $true }
+    return [bool](($InstalledTorchTag -match '^(rocm|gfx)') -and ($Torch -notmatch '\+(cu\d*|xpu|cpu)'))
+}
+
+function Test-RocmTritonPairingNeedsPass {
+    # A stale pair, or one whose repair failed with a warning last run, needs the dependency pass. Only for a ROCm
+    # torch, which the pass repairs, or it would re-fire every run.
+    param([string]$InstalledTorchTag)
+    $pair = Get-RocmTritonPairing
+    $isRocm = Test-RocmTorchInstalled -Torch $pair.Torch -InstalledTorchTag $InstalledTorchTag
+    if (-not ($isRocm -and $pair.Stale)) { return $false }
+    if ($script:OfflineFastPath -or (Test-UvOfflineRequested)) {
+        substep "triton-windows does not pair with torch $($pair.Torch) but UV_OFFLINE is set -- left for the next online update" "Yellow"
+        return $false
+    }
+    substep "triton-windows does not pair with torch $($pair.Torch) -- forcing dependency pass to repair..." "Cyan"
+    return $true
+}
+# End of the AMD ROCm triton-windows pairing helpers.
+
 $_PkgName = if ($env:STUDIO_PACKAGE_NAME) { $env:STUDIO_PACKAGE_NAME } else { "unsloth" }
 $SkipPythonDeps = $false
 
@@ -7657,6 +7703,11 @@ sys.exit(2 if conflict else (0 if version else 1))
                     }
                 } catch {}
             }
+        }
+        # A verified install skips the post-stack pairing. Outside the gfx checks: a pinned ROCm index or a hybrid host
+        # can hold a ROCm torch with no detected gfx. Only a ROCm torch is probed.
+        if ($SkipPythonDeps -and -not $NoTorchMode -and ($installedTorchTag -match '^(rocm|gfx)') -and (Test-RocmTritonPairingNeedsPass -InstalledTorchTag $installedTorchTag)) {
+            $SkipPythonDeps = $false
         }
     }
 }
@@ -8421,6 +8472,31 @@ substep "running ordered dependency installation..."
 python "$PSScriptRoot\install_python_stack.py"
 $stackExit = $LASTEXITCODE
 $script:SetupVenvChanged = $true
+
+# AMD ROCm: pair triton-windows with torch (Get-RocmTritonPairing, defined before the fast path). A custom pinned index
+# installs ROCm torch verbatim without setting $ROCmIndexUrl; the escape forces the pass there too, so repair it here.
+if ($stackExit -eq 0 -and -not $NoTorchMode -and ($ROCmIndexUrl -or ($installedTorchTag -match '^(rocm|gfx)'))) {
+    $_rocmPair = Get-RocmTritonPairing
+    $_rocmTorch = $ROCmIndexUrl -or (Test-RocmTorchInstalled -Torch $_rocmPair.Torch -InstalledTorchTag $installedTorchTag)
+    if ($_rocmTorch -and $_rocmPair.Stale) {
+        $_rocmTritonFrom = if ($_rocmPair.Triton) { "triton-windows $($_rocmPair.Triton)" } else { "no triton-windows" }
+        substep "pairing Triton for Windows with torch $($_rocmPair.Torch) ($_rocmTritonFrom -> $($_rocmPair.Spec))..." "Cyan"
+        # An inherited UV_OVERRIDE would replace the pin and uv would still report success.
+        $_rocmSavedOverride = $env:UV_OVERRIDE
+        try {
+            Remove-Item Env:UV_OVERRIDE -ErrorAction SilentlyContinue
+            $_rocmTritonOut = Fast-Install $_rocmPair.Spec | Out-String
+            $_rocmTritonExit = $LASTEXITCODE
+        } finally {
+            if ($null -ne $_rocmSavedOverride) { $env:UV_OVERRIDE = $_rocmSavedOverride }
+        }
+        if ($_rocmTritonExit -ne 0) {
+            # The fast-path escape retries this on the next setup run.
+            substep "[WARN] could not install $($_rocmPair.Spec); flex attention decode may run unfused" "Yellow"
+            Write-StudioLine (Redact-InstallOutput $_rocmTritonOut) -ForegroundColor Yellow
+        }
+    }
+}
 
 # ── Intel XPU: bitsandbytes must carry XPU kernels ──
 # Only bitsandbytes' XPU library exports the 4-bit kernels; floor 0.50.0 (<=0.49.2 NaNs on AMD).
