@@ -437,6 +437,21 @@ def _has_active_lora_bias(proj):
     return any(adapter in lora_B and lora_B[adapter].bias is not None for adapter in adapters)
 
 
+def _has_lora_dropout_module(proj):
+    dropout = getattr(proj, "lora_dropout", None)
+    if not dropout:
+        return False
+    adapters = getattr(proj, "active_adapters", None)
+    if adapters is None:
+        adapters = getattr(proj, "active_adapter", ())
+    if isinstance(adapters, str):
+        adapters = (adapters,)
+    return any(
+        adapter in dropout and type(dropout[adapter]) is not torch.nn.Identity
+        for adapter in adapters
+    )
+
+
 def has_mxfp4_base(*projs):
     """A packed MXFP4 base that cannot hand its bytes to the fused LoRA kernels (they would then hold a 16-bit
     weight until backward): use PEFT. Bases with ``mxfp4_quant_state`` pass ``weight_packed`` + that state instead."""
@@ -1767,7 +1782,10 @@ def fast_linear_forward(
     W, W_quant, lora_A, lora_B, lora_S, bias = get_lora_parameters_bias(proj)
     bsz, q_len, in_dim = X.shape
     if q_len != 1:
-        return matmul_lora(X, W, W_quant, lora_A, lora_B, lora_S)
+        # A configured lora_dropout keeps the base-then-LoRA order, as the fused training kernels do.
+        return matmul_lora(
+            X, W, W_quant, lora_A, lora_B, lora_S, fused = not _has_lora_dropout_module(proj)
+        )
 
     if W_quant is None:
         out = torch_matmul(X, W.t(), out = out)
@@ -1845,8 +1863,17 @@ def fast_linear_forward(
     return out
 
 
+def _lora_first_addmm(X, Wt, XA, Bt, alpha):
+    # alpha * XA @ Bt into a fresh buffer (beta 0 never reads it), then the base GEMM accumulates onto it.
+    out = torch.empty((X.shape[0], Wt.shape[1]), dtype = X.dtype, device = X.device)
+    out.addmm_(XA, Bt, alpha = alpha, beta = 0)
+    out.addmm_(X, Wt)
+    return out
+
+
 # Traced, x.addmm_ copies x first; this op stays in place. No derivative: grad off only.
 _HAS_ADDMM_OP = hasattr(torch.library, "custom_op")
+_HAS_LORA_FIRST_OP = False
 if _HAS_ADDMM_OP:
 
     @torch.library.custom_op("unsloth::addmm_", mutates_args = ["out"])
@@ -1854,6 +1881,26 @@ if _HAS_ADDMM_OP:
         out: torch.Tensor, A: torch.Tensor, B: torch.Tensor, alpha: float, beta: float
     ) -> None:
         out.addmm_(A, B, alpha = alpha, beta = beta)
+
+    # Traced fused LoRA order as one opaque op: the rank-r term goes into a fresh buffer and the base GEMM
+    # accumulates onto it in place. As two functional addmms, Inductor first copies the rank-r term into a
+    # new output for the base GEMM to read. Returns a new tensor, so a saved output aliases nothing.
+    try:
+
+        @torch.library.custom_op("unsloth::lora_first_addmm", mutates_args = ())
+        def _lora_first_addmm_op(
+            X: torch.Tensor, Wt: torch.Tensor, XA: torch.Tensor, Bt: torch.Tensor, alpha: float
+        ) -> torch.Tensor:
+            return _lora_first_addmm(X, Wt, XA, Bt, alpha)
+
+        @_lora_first_addmm_op.register_fake
+        def _(X, Wt, XA, Bt, alpha):
+            return X.new_empty((X.shape[0], Wt.shape[1]))
+
+        _HAS_LORA_FIRST_OP = True
+    except Exception:
+        # Already registered (module re-executed) or an older torch.library: the functional path below.
+        _HAS_LORA_FIRST_OP = hasattr(getattr(torch.ops, "unsloth", None), "lora_first_addmm")
 
 
 def addmm_(
@@ -1874,6 +1921,48 @@ def addmm_(
     return out.addmm_(A, B, alpha = alpha, beta = beta)
 
 
+# The rank-r product is written first and the base GEMM accumulates onto it (cuBLAS reads it in the
+# epilogue of a compute-bound GEMM), instead of a separate read-modify-write pass over the whole output.
+# UNSLOTH_LORA_FUSED_PASSES=0 restores the base-then-LoRA order everywhere.
+LORA_FUSED_PASSES = os.environ.get("UNSLOTH_LORA_FUSED_PASSES", "1") != "0"
+
+
+def _lora_fused_ok(W, W_quant, dtype):
+    # One rule for every forward and backward call site. fp16 keeps the old order: a rank-r term or a
+    # summed LoRA dX rounded on its own can overflow before the base term cancels it. FP8, INT4 (either
+    # orientation) and packed weights have their own GEMMs. The base GEMM accumulates in place, which
+    # autocast does not cast, so the weight must dequantize to `dtype` (fast_dequantize returns a 4-bit
+    # state's own dtype, not the one asked for).
+    if not LORA_FUSED_PASSES or dtype not in (torch.bfloat16, torch.float32):
+        return False
+    if isinstance(W, Float8Tensor) or W.dtype == torch.float8_e4m3fn:
+        return False
+    # A sparse base cannot be the dense operand of the in-place accumulate (eager: a traced backward
+    # bans reading `layout`).
+    if not _is_compiling() and W.layout != torch.strided:
+        return False
+    if type(W_quant) is Int4QuantState or _is_packed_state(W_quant):
+        return False
+    if W_quant is None:
+        return W.dtype == dtype
+    return _quant_state_dtype(W_quant) == dtype
+
+
+def _shares_storage(out, *tensors):
+    # True when `out` may alias an operand. Traced (Dynamo, make_fx fake tensors) storage cannot be
+    # inspected, so a caller's buffer is then treated as shared and keeps the base-then-LoRA order.
+    if _is_compiling():
+        return True
+    try:
+        ptr = out.untyped_storage().data_ptr()
+        return any(
+            t is not None and isinstance(t, torch_Tensor) and t.untyped_storage().data_ptr() == ptr
+            for t in tensors
+        )
+    except RuntimeError:
+        return True
+
+
 def matmul_lora(
     X,
     W,
@@ -1883,7 +1972,12 @@ def matmul_lora(
     s,
     out = None,
     use_global_buffer = True,
+    XA = None,
+    fused = True,
 ):
+    # XA: X @ A.t() already computed by the caller (shared across projections reading the same X).
+    # fused = False: the caller's module needs the base-then-LoRA order (dropout, lora_bias, a weight
+    # converted before this call); _lora_fused_ok decides the rest.
     dtype = X.dtype
 
     if X.dim() == 3:
@@ -1908,7 +2002,45 @@ def matmul_lora(
         out = _int4_matmul(X, W, W_quant, out = out)
     elif _is_packed_state(W_quant):
         out = W_quant.matmul(X, W, out = out)
+    elif (
+        A is not None
+        and fused
+        and _lora_fused_ok(W, W_quant, dtype)
+        # A caller's buffer is written before the base GEMM, so it must already be the output and must
+        # not share storage with an operand the base GEMM still reads.
+        and (
+            out is None
+            or (
+                out.shape == (X.shape[0], B.shape[0])
+                and out.dtype == dtype
+                and not _shares_storage(out, W, X, A, B, XA)
+            )
+        )
+    ):
+        if XA is None:
+            XA = torch_matmul(X, A.t().to(dtype))
+        B = B.t().to(dtype)
+        if out is not None:
+            # Eager only: a traced caller buffer cannot be checked for aliasing (_shares_storage).
+            addmm_(out, XA, B, alpha = s, beta = 0)
+            W = fast_dequantize(W, W_quant, use_global_buffer = use_global_buffer, dtype = dtype)
+            out.addmm_(X, W.t())
+        else:
+            W = fast_dequantize(W, W_quant, use_global_buffer = use_global_buffer, dtype = dtype)
+            if not _is_compiling():
+                out = _lora_first_addmm(X, W.t(), XA, B, s)
+            elif _HAS_LORA_FIRST_OP and type(s) in (int, float):
+                out = torch.ops.unsloth.lora_first_addmm(X, W.t(), XA, B, s)
+            else:
+                # Traced without the op: functional, since an in-place accumulate onto a buffer the region
+                # saves for backward breaks the block compile (the saved tensor aliases a mutated intermediate).
+                out = torch.addmm(XA.new_zeros(1), XA, B, beta = 0, alpha = s)
+                out = torch.addmm(out, X, W.t())
+        A = None
     else:
+        if XA is not None and out is not None and _shares_storage(out, XA):
+            # The base GEMM below overwrites a caller's XA that shares `out`: recompute it afterwards.
+            XA = None
         W = fast_dequantize(W, W_quant, use_global_buffer = use_global_buffer, dtype = dtype)
         out = torch_matmul(X, W.t(), out = out)
     if W_quant is not None:
@@ -1916,7 +2048,8 @@ def matmul_lora(
 
     if A is not None:
         A, B = A.t(), B.t()
-        XA = torch_matmul(X, A.to(dtype))
+        if XA is None:
+            XA = torch_matmul(X, A.to(dtype))
         addmm_(out, XA, B.to(dtype), alpha = s)
 
     return out.view(batch, seq_len, -1) if reshape else out
