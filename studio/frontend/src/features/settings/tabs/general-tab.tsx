@@ -96,6 +96,7 @@ import {
 } from "@/features/hub";
 import { DownloadTransportRow } from "../components/download-transport-row";
 import { HubSettingsSection } from "../components/hub-settings-section";
+import { MlWarmupSection } from "../components/ml-warmup-section";
 import { NotificationFrequencySelect } from "../components/notification-frequency-select";
 import { SettingsRow } from "../components/settings-row";
 import { SettingsSection } from "../components/settings-section";
@@ -808,6 +809,8 @@ export function GeneralTab() {
         </SettingsRow>
       </SettingsSection>
 
+
+      <MlWarmupSection />
 
       <SettingsSection title={t("settings.general.helperLlm.sectionTitle")}>
         <SettingsRow
