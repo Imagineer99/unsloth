@@ -180,3 +180,43 @@ test("a pending refresh from a replaced backend cannot block or overwrite its su
   assert.equal(usePlatformStore.getState().isChatOnly(), false);
   assert.equal(usePlatformStore.getState().deviceType, "mac");
 });
+
+test("cached picker demand settles a backend restarted with warmup disabled", async () => {
+  reset();
+  let detected = true;
+  const requests: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    requests.push(url);
+    if (url.includes("detect_hardware=true")) detected = true;
+    return Response.json(detected ? MLX : DEFERRED);
+  }) as typeof fetch;
+  const system = systemApi(async (url) => {
+    requests.push(url);
+    detected = true;
+    return Response.json({ device_backend: "mlx", gpu: { available: true, devices: [] } });
+  });
+  await system.fetchSystemInfo();
+  await settle();
+  assert.equal(usePlatformStore.getState().capabilitiesUnknown(), false);
+
+  forgetMeasuredVerdict();
+  detected = false;
+  await fetchDeviceType({ force: true });
+  assert.equal(usePlatformStore.getState().detectionDeferred, true);
+  const idleRequests = [...requests];
+  await settle();
+  assert.deepEqual(requests, idleRequests, "idle restart must not start discovery");
+
+  await Promise.all([system.fetchSystemInfo(), system.fetchSystemInfo()]);
+  await settle();
+  assert.equal(usePlatformStore.getState().capabilitiesUnknown(), false,
+    "reopening a cached picker must measure the new backend: " + requests.join(", "));
+  assert.equal(usePlatformStore.getState().detectionDeferred, false);
+  assert.equal(usePlatformStore.getState().isChatOnly(), false);
+  assert.equal(requests.filter((url) => url.includes("detect_hardware=true")).length, 1,
+    "concurrent cached demands share one hardware refresh");
+  const settledRequests = [...requests];
+  await system.fetchSystemInfo();
+  await settle();
+  assert.deepEqual(requests, settledRequests, "a settled cache hit needs no new health read");
+});
