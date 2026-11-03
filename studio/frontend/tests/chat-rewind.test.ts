@@ -81,18 +81,21 @@ test("user_message_id is omitted without a user message", () => {
   assert.deepEqual(userMessageIdRequestField(""), {});
 });
 
-test("the completion payload carries user_message_id on the local and external tool paths", () => {
+test("completion payloads carry turn identity and temporary usage independently of tools", () => {
   const adapter = readSrc("features/chat/api/chat-adapter.ts");
   assert.match(
     adapter,
-    /const userMessageIdField = userMessageIdRequestField\(\s*resolvedThreadId && isThreadIncognito\(resolvedThreadId\)\s*\? undefined\s*: generationUserMessage\?\.id,?\s*\);/,
+    /const userMessageIdField = userMessageIdRequestField\(\s*temporaryChat \? undefined : generationUserMessage\?\.id,?\s*\);/,
   );
   // Local body (also the durable run's requestPayload): beside thread_id.
   assert.match(
     adapter,
-    /\.\.\.\(resolvedThreadId \? \{ thread_id: resolvedThreadId \} : \{\}\),\s*\.\.\.userMessageIdField,\s*\.\.\.\(useAdapter === undefined/,
+    /\.\.\.\(resolvedThreadId \? \{ thread_id: resolvedThreadId \} : \{\}\),\s*\.\.\.userMessageIdField,\s*\.\.\.\(temporaryChat \? \{ temporary_chat: true \} : \{\}\),\s*\.\.\.\(useAdapter === undefined/,
   );
-  // External provider with Studio-run tools: beside session_id.
+  assert.match(
+    adapter,
+    /model: externalSelection\.modelId,\s*messages: outboundMessages,\s*\.\.\.\(temporaryChat \? \{ temporary_chat: true \} : \{\}\),/,
+  );
   assert.match(
     adapter,
     /\? \{ session_id: sandboxSessionId \}\s*: \{\}\),\s*\.\.\.userMessageIdField,/,
