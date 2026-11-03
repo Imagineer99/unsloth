@@ -1,0 +1,42 @@
+name: staging-16471 cancelled security coverage
+on:
+  push:
+    branches: ['pr-16471-convergence-security-coverage-ci']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  security-regression-suites:
+    name: security suites (torch-dependent)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+    - name: Harden runner (egress block)
+      uses: step-security/harden-runner@dc2769abcc0fcfbadfc1df54081c1608579ef6b2
+      with:
+        egress-policy: block
+        disable-sudo: true
+        allowed-endpoints: 'api.github.com:443 github.com:443 codeload.github.com:443
+          objects.githubusercontent.com:443 pypi.org:443 files.pythonhosted.org:443
+          download.pytorch.org:443 download-r2.pytorch.org:443
+
+          '
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: '3.12'
+    - name: Install CPU torch + transformers
+      run: "python -m pip install --quiet --upgrade pip\npython -m pip install --quiet\
+        \ \\\n  --index-url https://download.pytorch.org/whl/cpu \\\n  --extra-index-url\
+        \ https://pypi.org/simple \\\n  torch\n# unsloth-zoo: `unsloth/__init__.py`\
+        \ raises without it. triton: imported at module scope\n# and not supplied\
+        \ by the CPU torch wheel.\npython -m pip install --quiet transformers peft\
+        \ pytest unsloth-zoo triton\n"
+    - name: Run the torch-dependent security suites
+      env:
+        UNSLOTH_ALLOW_CPU: '1'
+      run: "python -m pytest -q \\\n  tests/security/test_custom_dtype_no_eval.py\
+        \ \\\n  tests/security/test_custom_dtype_wire_format.py \\\n  tests/security/test_mapper_probe_no_exec.py\
+        \ \\\n  tests/security/test_inherited_custom_dtype_is_neutralized.py\n"
