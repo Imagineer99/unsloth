@@ -1,0 +1,34 @@
+{
+  "base": "24d65c19ddaf0da82c4cc48b9bb67ec69f48b97a",
+  "scenes": {
+    "browser": {
+      "branch": "fix/glass-browser-surfaces",
+      "title": "Fix glass surfaces in the built-in browser",
+      "base": "24d65c19ddaf0da82c4cc48b9bb67ec69f48b97a",
+      "head": "862f051926991b51455152205b340fa02719cfb1",
+      "files": [
+        "studio/frontend/src/index.css",
+        "studio/frontend/src/features/browser/browser-panel.tsx"
+      ]
+    },
+    "titlebar": {
+      "branch": "fix/wallpaper-titlebar-paint",
+      "title": "Fix duplicated wallpaper titlebar tint and modal dimming",
+      "base": "24d65c19ddaf0da82c4cc48b9bb67ec69f48b97a",
+      "head": "93e1dba296f126626993e26ec76a7e18c0582f1d",
+      "files": [
+        "studio/frontend/src/index.css"
+      ]
+    },
+    "sidebar": {
+      "branch": "fix/glass-sidebar-footer-fade",
+      "title": "Hide the sidebar footer fade only in glass themes",
+      "base": "24d65c19ddaf0da82c4cc48b9bb67ec69f48b97a",
+      "head": "967716923bbfa0e7b523e2f1eb0c27938d5a1655",
+      "files": [
+        "studio/frontend/src/index.css",
+        "studio/frontend/src/components/app-sidebar.tsx"
+      ]
+    }
+  }
+}

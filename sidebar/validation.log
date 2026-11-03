@@ -1,0 +1,29 @@
+npm warn Unknown project config "min-release-age". This will stop working in the next major version of npm.
+
+> unsloth-theme@0.0.0 typecheck
+> node scripts/typecheck.mjs --tests
+
+typecheck: tsc (TypeScript 7.0.2)
+✔ a sidebar that collapses to zero never enters icon-rail mode (3.939674ms)
+✔ no styling keys off the zero-width collapse value (3.659746ms)
+✔ the icon rail styling still exists for the web build (1.754303ms)
+✔ a collapsed sidebar renders no resize edge, so its border has no hover or tooltip (4.481215ms)
+✔ sidebar sibling utilities keep declarations and specificity through compilation and viewport gating (62.171675ms)
+✔ every sidebar sibling selector names its target after final CSS generation (20.669089ms)
+✔ the bottom fade re-measures off the list's size, not its row inputs (5.949123ms)
+✔ the web keeps room for the collapse button beside search; desktop does not need it (5.378192ms)
+✔ clamps to the absolute range on a roomy window (0.208291ms)
+✔ caps at 40% of a narrow window (0.115457ms)
+✔ the floor still wins when 40% falls below it (0.117727ms)
+✔ re-evaluates the cap per call, so a resize can re-clamp (0.156584ms)
+✔ a scaled browser caps against the window in layout px (0.40045ms)
+✔ persisted panel widths are cleared by the preference reset (2.782417ms)
+✔ pinning the desktop sidebar never adds or removes a child of the sidebar wrapper (0.862474ms)
+ℹ tests 15
+ℹ suites 0
+ℹ pass 15
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 525.877012

@@ -1,0 +1,17 @@
+{
+  "browser": {
+    "states": 24,
+    "standardThemeMaxPixelDifference": 0
+  },
+  "titlebar": {
+    "states": 96,
+    "beforeBandMax": 46,
+    "afterBandMax": 0,
+    "beforeSidebarSeamMax": 54.008333333333326,
+    "afterSidebarSeamMax": 0.4416666666666629
+  },
+  "sidebar": {
+    "states": 40,
+    "standardThemeMaxPixelDifference": 0
+  }
+}

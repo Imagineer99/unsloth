@@ -1,0 +1,1959 @@
+{
+  "scene": "wallpaper-titlebar-paint",
+  "expect": "The pinned and peeking sidebar has one continuous tint through the titlebar; viewport modal dimming is applied once, with native window controls undimmed.",
+  "base": "24d65c19ddaf0da82c4cc48b9bb67ec69f48b97a",
+  "head": "93e1dba296f126626993e26ec76a7e18c0582f1d",
+  "environment": {
+    "browser": "156.0.8078.80",
+    "platform": "win32",
+    "viewport": {
+      "width": 1000,
+      "height": 600
+    },
+    "deviceScaleFactor": 1
+  },
+  "sides": {
+    "before": {
+      "sha": "24d65c19ddaf0da82c4cc48b9bb67ec69f48b97a",
+      "build": "base",
+      "source": "Unsloth worktree at the recorded commit",
+      "fixtureSha256": "a6549cd71a3a28461baa3cbc3cf114b8c1d78ea1c624c27d39c2e6c110f7d870",
+      "sceneLimitations": "Headless component harness, synthetic rows, native calls stubbed; footer JSX and syncFade extracted verbatim from the pinned AppSidebar source. Modal viewport backdrop matches the app attributes and opacity; no backend or native WebView content is exercised.",
+      "port": 54994,
+      "buildRoot": "build-base"
+    },
+    "after": {
+      "sha": "93e1dba296f126626993e26ec76a7e18c0582f1d",
+      "build": "titlebar",
+      "source": "Unsloth worktree at the recorded commit",
+      "fixtureSha256": "a6549cd71a3a28461baa3cbc3cf114b8c1d78ea1c624c27d39c2e6c110f7d870",
+      "sceneLimitations": "Headless component harness, synthetic rows, native calls stubbed; footer JSX and syncFade extracted verbatim from the pinned AppSidebar source. Modal viewport backdrop matches the app attributes and opacity; no backend or native WebView content is exercised.",
+      "port": 54996,
+      "buildRoot": "build-titlebar"
+    }
+  },
+  "cases": [
+    {
+      "side": "before",
+      "file": "before-dark-frosted-pinned-none.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.6)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-pinned-normal.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.6)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-pinned-strong.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.6)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-pinned-dense.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.6)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-collapsed-none.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-collapsed-normal.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-collapsed-strong.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-collapsed-dense.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-peeking-none.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-peeking-normal.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-peeking-strong.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-frosted-peeking-dense.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-pinned-none.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.4)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-pinned-normal.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.4)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-pinned-strong.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.4)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-pinned-dense.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "color(srgb 0.152941 0.152941 0.152941 / 0.4)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-collapsed-none.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-collapsed-normal.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-collapsed-strong.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-collapsed-dense.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-peeking-none.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-peeking-normal.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-peeking-strong.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-dark-liquid-3d-peeking-dense.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-pinned-none.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-pinned-normal.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-pinned-strong.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-pinned-dense.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-collapsed-none.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-collapsed-normal.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-collapsed-strong.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-collapsed-dense.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-peeking-none.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-peeking-normal.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-peeking-strong.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-frosted-peeking-dense.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-pinned-none.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-pinned-normal.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-pinned-strong.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-pinned-dense.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "color(srgb 0.943529 0.944 0.944706 / 0.64)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-collapsed-none.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-collapsed-normal.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-collapsed-strong.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-collapsed-dense.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-peeking-none.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-peeking-normal.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.3)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-peeking-strong.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.4)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "before",
+      "file": "before-light-liquid-3d-peeking-dense.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0.7)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-pinned-none.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-pinned-normal.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-pinned-strong.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-pinned-dense.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-collapsed-none.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-collapsed-normal.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-collapsed-strong.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-collapsed-dense.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-peeking-none.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-peeking-normal.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-peeking-strong.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-frosted-peeking-dense.png",
+      "dark": true,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-pinned-none.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-pinned-normal.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-pinned-strong.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-pinned-dense.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-collapsed-none.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-collapsed-normal.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-collapsed-strong.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-collapsed-dense.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-peeking-none.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-peeking-normal.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-peeking-strong.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-dark-liquid-3d-peeking-dense.png",
+      "dark": true,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-pinned-none.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-pinned-normal.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-pinned-strong.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-pinned-dense.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-collapsed-none.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-collapsed-normal.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-collapsed-strong.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-collapsed-dense.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-peeking-none.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-peeking-normal.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-peeking-strong.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-frosted-peeking-dense.png",
+      "dark": false,
+      "material": "frosted",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-pinned-none.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-pinned-normal.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-pinned-strong.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-pinned-dense.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "pinned",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-collapsed-none.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-collapsed-normal.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-collapsed-strong.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-collapsed-dense.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "collapsed",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-peeking-none.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": null,
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "1",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-peeking-normal.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "normal",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.7",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-peeking-strong.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "strong",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.6",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    },
+    {
+      "side": "after",
+      "file": "after-light-liquid-3d-peeking-dense.png",
+      "dark": false,
+      "material": "liquid-3d",
+      "mode": "peeking",
+      "tone": "dense",
+      "navBackground": "rgba(0, 0, 0, 0)",
+      "navBlur": "none",
+      "navOpacity": "0.3",
+      "titlebarOverlay": "rgba(0, 0, 0, 0)",
+      "sidebarTop": 0,
+      "controlsOpacity": "1",
+      "navClickable": true
+    }
+  ],
+  "pixelMeasurements": [
+    {
+      "file": "before-dark-frosted-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 9.428333333333335
+    },
+    {
+      "file": "before-dark-frosted-pinned-normal.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 11.120000000000001
+    },
+    {
+      "file": "before-dark-frosted-pinned-strong.png",
+      "modalBandMaxChannelDifference": 14,
+      "sidebarSeamMeanChannelDifference": 10.701666666666664
+    },
+    {
+      "file": "before-dark-frosted-pinned-dense.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 6.998333333333333
+    },
+    {
+      "file": "before-dark-frosted-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "before-dark-frosted-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 12.0
+    },
+    {
+      "file": "before-dark-frosted-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 14,
+      "sidebarSeamMeanChannelDifference": 14.0
+    },
+    {
+      "file": "before-dark-frosted-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 12.0
+    },
+    {
+      "file": "before-dark-frosted-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.4416666666666629
+    },
+    {
+      "file": "before-dark-frosted-peeking-normal.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 11.35666666666667
+    },
+    {
+      "file": "before-dark-frosted-peeking-strong.png",
+      "modalBandMaxChannelDifference": 14,
+      "sidebarSeamMeanChannelDifference": 13.033333333333331
+    },
+    {
+      "file": "before-dark-frosted-peeking-dense.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 11.303333333333335
+    },
+    {
+      "file": "before-dark-liquid-3d-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 7.0
+    },
+    {
+      "file": "before-dark-liquid-3d-pinned-normal.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 10.0
+    },
+    {
+      "file": "before-dark-liquid-3d-pinned-strong.png",
+      "modalBandMaxChannelDifference": 14,
+      "sidebarSeamMeanChannelDifference": 10.0
+    },
+    {
+      "file": "before-dark-liquid-3d-pinned-dense.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 8.0
+    },
+    {
+      "file": "before-dark-liquid-3d-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "before-dark-liquid-3d-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 12.0
+    },
+    {
+      "file": "before-dark-liquid-3d-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 14,
+      "sidebarSeamMeanChannelDifference": 14.0
+    },
+    {
+      "file": "before-dark-liquid-3d-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 12.0
+    },
+    {
+      "file": "before-dark-liquid-3d-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "before-dark-liquid-3d-peeking-normal.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 11.0
+    },
+    {
+      "file": "before-dark-liquid-3d-peeking-strong.png",
+      "modalBandMaxChannelDifference": 14,
+      "sidebarSeamMeanChannelDifference": 13.0
+    },
+    {
+      "file": "before-dark-liquid-3d-peeking-dense.png",
+      "modalBandMaxChannelDifference": 12,
+      "sidebarSeamMeanChannelDifference": 11.0
+    },
+    {
+      "file": "before-light-frosted-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 18.82166666666666
+    },
+    {
+      "file": "before-light-frosted-pinned-normal.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 11.011666666666656
+    },
+    {
+      "file": "before-light-frosted-pinned-strong.png",
+      "modalBandMaxChannelDifference": 46,
+      "sidebarSeamMeanChannelDifference": 14.996666666666655
+    },
+    {
+      "file": "before-light-frosted-pinned-dense.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 14.325000000000003
+    },
+    {
+      "file": "before-light-frosted-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "before-light-frosted-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 41.0
+    },
+    {
+      "file": "before-light-frosted-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 46,
+      "sidebarSeamMeanChannelDifference": 46.0
+    },
+    {
+      "file": "before-light-frosted-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 41.0
+    },
+    {
+      "file": "before-light-frosted-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.17666666666667652
+    },
+    {
+      "file": "before-light-frosted-peeking-normal.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 47.993333333333325
+    },
+    {
+      "file": "before-light-frosted-peeking-strong.png",
+      "modalBandMaxChannelDifference": 46,
+      "sidebarSeamMeanChannelDifference": 54.008333333333326
+    },
+    {
+      "file": "before-light-frosted-peeking-dense.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 47.31999999999999
+    },
+    {
+      "file": "before-light-liquid-3d-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 20.23333333333332
+    },
+    {
+      "file": "before-light-liquid-3d-pinned-normal.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 10.76666666666668
+    },
+    {
+      "file": "before-light-liquid-3d-pinned-strong.png",
+      "modalBandMaxChannelDifference": 46,
+      "sidebarSeamMeanChannelDifference": 14.76666666666668
+    },
+    {
+      "file": "before-light-liquid-3d-pinned-dense.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 14.0
+    },
+    {
+      "file": "before-light-liquid-3d-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "before-light-liquid-3d-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 41.0
+    },
+    {
+      "file": "before-light-liquid-3d-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 46,
+      "sidebarSeamMeanChannelDifference": 46.0
+    },
+    {
+      "file": "before-light-liquid-3d-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 41.0
+    },
+    {
+      "file": "before-light-liquid-3d-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "before-light-liquid-3d-peeking-normal.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 47.76666666666668
+    },
+    {
+      "file": "before-light-liquid-3d-peeking-strong.png",
+      "modalBandMaxChannelDifference": 46,
+      "sidebarSeamMeanChannelDifference": 53.76666666666668
+    },
+    {
+      "file": "before-light-liquid-3d-peeking-dense.png",
+      "modalBandMaxChannelDifference": 41,
+      "sidebarSeamMeanChannelDifference": 47.0
+    },
+    {
+      "file": "after-dark-frosted-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.020000000000003126
+    },
+    {
+      "file": "after-dark-frosted-pinned-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.013333333333335418
+    },
+    {
+      "file": "after-dark-frosted-pinned-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.030000000000001137
+    },
+    {
+      "file": "after-dark-frosted-pinned-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.009999999999999787
+    },
+    {
+      "file": "after-dark-frosted-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-frosted-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-frosted-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-frosted-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-frosted-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.4416666666666629
+    },
+    {
+      "file": "after-dark-frosted-peeking-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.3000000000000007
+    },
+    {
+      "file": "after-dark-frosted-peeking-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.2916666666666643
+    },
+    {
+      "file": "after-dark-frosted-peeking-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.13333333333333286
+    },
+    {
+      "file": "after-dark-liquid-3d-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-pinned-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-pinned-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-pinned-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-peeking-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-peeking-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-dark-liquid-3d-peeking-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-frosted-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.01833333333331666
+    },
+    {
+      "file": "after-light-frosted-pinned-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.008333333333325754
+    },
+    {
+      "file": "after-light-frosted-pinned-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.023333333333340533
+    },
+    {
+      "file": "after-light-frosted-pinned-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.021666666666661172
+    },
+    {
+      "file": "after-light-frosted-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-frosted-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-frosted-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-frosted-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-frosted-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.17666666666667652
+    },
+    {
+      "file": "after-light-frosted-peeking-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.045000000000015916
+    },
+    {
+      "file": "after-light-frosted-peeking-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.045000000000015916
+    },
+    {
+      "file": "after-light-frosted-peeking-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.13166666666667481
+    },
+    {
+      "file": "after-light-liquid-3d-pinned-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "after-light-liquid-3d-pinned-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "after-light-liquid-3d-pinned-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "after-light-liquid-3d-pinned-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-liquid-3d-collapsed-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-liquid-3d-collapsed-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-liquid-3d-collapsed-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-liquid-3d-collapsed-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    },
+    {
+      "file": "after-light-liquid-3d-peeking-none.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "after-light-liquid-3d-peeking-normal.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "after-light-liquid-3d-peeking-strong.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.23333333333332007
+    },
+    {
+      "file": "after-light-liquid-3d-peeking-dense.png",
+      "modalBandMaxChannelDifference": 0,
+      "sidebarSeamMeanChannelDifference": 0.0
+    }
+  ]
+}

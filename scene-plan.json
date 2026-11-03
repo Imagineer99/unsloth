@@ -1,0 +1,14 @@
+{
+  "browser": {
+    "scene": "browser-glass-chrome",
+    "expect": "Glass browser tabs and toolbar adopt the wallpaper surface; the Windows titlebar strip is clear. Standard theme chrome and document canvases remain opaque."
+  },
+  "titlebar": {
+    "scene": "wallpaper-titlebar-paint",
+    "expect": "The pinned and peeking sidebar has one continuous tint through the titlebar; viewport modal dimming is applied once, with native window controls undimmed."
+  },
+  "sidebar": {
+    "scene": "glass-sidebar-footer",
+    "expect": "The footer fade is hidden only for glass themes. Standard themes retain the fade and switching back restores it."
+  }
+}

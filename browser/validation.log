@@ -1,0 +1,20 @@
+npm warn Unknown project config "min-release-age". This will stop working in the next major version of npm.
+
+> unsloth-theme@0.0.0 typecheck
+> node scripts/typecheck.mjs --tests
+
+typecheck: tsc (TypeScript 7.0.2)
+✔ the thread scrolls below the custom titlebar, so its scrollbar is never painted over (3.208865ms)
+✔ titlebar decoration stays below modal backdrops and window controls (1.316665ms)
+✔ below-titlebar decoration is not trapped in the titlebar stacking context (0.303337ms)
+✔ the pinned sidebar edge is drawn with borders, not a box over the chat (0.188761ms)
+✔ dialogs that set their own top still centre below the window chrome (26.409517ms)
+✔ the titlebar dims for viewport backdrops without a :has() on the document root (1.835038ms)
+ℹ tests 6
+ℹ suites 0
+ℹ pass 6
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 153.506005

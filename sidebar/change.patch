@@ -1,0 +1,27 @@
+diff --git a/studio/frontend/src/components/app-sidebar.tsx b/studio/frontend/src/components/app-sidebar.tsx
+index 1748372e5d..4d6270bcaf 100644
+--- a/studio/frontend/src/components/app-sidebar.tsx
++++ b/studio/frontend/src/components/app-sidebar.tsx
+@@ -6633,6 +6633,7 @@ export function AppSidebar() {
+             travel in this band and a full-width gradient washed it out. */}
+         <div
+           ref={attachFade}
++          data-slot="sidebar-footer-fade"
+           aria-hidden="true"
+           className={cn(
+             // from-[8px] holds the fade opaque across the hard clip, matching the list's pb-2.
+diff --git a/studio/frontend/src/index.css b/studio/frontend/src/index.css
+index 107ea82b9a..1f062d4284 100644
+--- a/studio/frontend/src/index.css
++++ b/studio/frontend/src/index.css
+@@ -6146,6 +6146,10 @@ html[data-glass] {
+   --glass-panel-fill: color-mix(in srgb, var(--panel-surface), var(--foreground) max(var(--glass-shade, 0%), var(--glass-pane-tone)));
+   --glass-composer-fill: color-mix(in srgb, var(--background), var(--foreground) max(var(--glass-shade, 0%), var(--glass-pane-tone)));
+ }
++/* Glass keeps the footer boundary clear; solid themes retain their scroll fade. */
++html[data-glass] [data-slot="sidebar-footer-fade"] {
++  display: none;
++}
+ html[data-glass][data-chat-wallpaper-workspace-ready] [data-slot="sidebar-inner"],
+ html[data-glass="macos"] [data-slot="sidebar-inner"] {
+   background-color: color-mix(in srgb, var(--glass-sidebar-fill) min(96%, calc(max(var(--glass-tint), var(--glass-pane-floor)) * var(--glass-opacity, 1))), transparent);

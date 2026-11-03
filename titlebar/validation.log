@@ -1,0 +1,23 @@
+npm warn Unknown project config "min-release-age". This will stop working in the next major version of npm.
+
+> unsloth-theme@0.0.0 typecheck
+> node scripts/typecheck.mjs --tests
+
+typecheck: tsc (TypeScript 7.0.2)
+✔ a sidebar that collapses to zero never enters icon-rail mode (3.931194ms)
+✔ no styling keys off the zero-width collapse value (4.591162ms)
+✔ the icon rail styling still exists for the web build (2.502196ms)
+✔ the thread scrolls below the custom titlebar, so its scrollbar is never painted over (3.39054ms)
+✔ titlebar decoration stays below modal backdrops and window controls (0.909503ms)
+✔ below-titlebar decoration is not trapped in the titlebar stacking context (0.296098ms)
+✔ the pinned sidebar edge is drawn with borders, not a box over the chat (0.167791ms)
+✔ dialogs that set their own top still centre below the window chrome (24.262307ms)
+✔ the titlebar dims for viewport backdrops without a :has() on the document root (1.691971ms)
+ℹ tests 9
+ℹ suites 0
+ℹ pass 9
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 164.367503
