@@ -1,3 +1,0 @@
-/* "Unsloth Dark": JupyterLab Dark plus the Monokai palette in variables.css. */
-@import url('@jupyterlab/theme-dark-extension/style/theme.css');
-@import url('./variables.css');
