@@ -42,7 +42,7 @@ jobs:
 
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
         with:
-          python-version: "3.12.11"
+          python-version: "3.13.17"
 
       - name: "Validate pinned CLI revisions with native terminals"
         shell: pwsh
