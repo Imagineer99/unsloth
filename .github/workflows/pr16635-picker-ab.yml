@@ -1,6 +1,6 @@
 # Disposable repro workflow. Delete after validation.
 
-name: "PR 16635 picker review-fix A-B"
+name: "PR 16635 picker review-fix Mac A-B"
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest]
+        os: [macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
