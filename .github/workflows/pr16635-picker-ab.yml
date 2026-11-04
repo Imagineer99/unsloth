@@ -1,6 +1,6 @@
 # Disposable repro workflow. Delete after validation.
 
-name: "PR 16635 picker account-scope Mac A-B"
+name: "PR 16635 picker access-policy A-B"
 
 on:
   push:
@@ -12,11 +12,11 @@ permissions:
 
 jobs:
   repro:
-    name: "Account scope A/B (${{ matrix.os }})"
+    name: "Access policy A/B (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-26-intel]
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
@@ -28,7 +28,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: yejonz/unsloth
-          ref: 1275e587b559900b9b9902752face7df6300c505
+          ref: 630179686e4e3de8c1d3aee9acd99f1b34a62037
           path: before
           persist-credentials: false
 
@@ -36,7 +36,7 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: yejonz/unsloth
-          ref: 630179686e4e3de8c1d3aee9acd99f1b34a62037
+          ref: 6939421353cc868ff0a3334dcf6e1330173a2c03
           path: after
           persist-credentials: false
 
@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: "3.13.17"
 
-      - name: "Prove account-scoped inventory with negative controls"
+      - name: "Prove cache-policy filtering with negative controls"
         shell: pwsh
         run: |
-          python scripts/pr16635_account_validation.py bootstrap --before before --after after
+          python scripts/pr16635_policy_validation.py bootstrap --before before --after after
