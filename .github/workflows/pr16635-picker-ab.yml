@@ -1,0 +1,50 @@
+# Disposable repro workflow. Delete after validation.
+
+name: "PR 16635 CLI picker A-B"
+
+on:
+  push:
+    branches:
+      - "fix/pr16635-picker-ab-20261104"
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    name: "CLI A/B (${{ matrix.os }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Checkout BEFORE
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: unslothai/unsloth
+          ref: b5c1396baae1d603130788a0cdfb392b972c8651
+          path: before
+          persist-credentials: false
+
+      - name: Checkout AFTER
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          repository: unslothai/unsloth
+          ref: f22d2cfb153516bc3e2c69ffaa6519341f32e7ca
+          path: after
+          persist-credentials: false
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: "3.12.11"
+
+      - name: "Validate pinned CLI revisions with native terminals"
+        shell: pwsh
+        run: |
+          python scripts/pr16635_validation.py bootstrap --before before --after after
