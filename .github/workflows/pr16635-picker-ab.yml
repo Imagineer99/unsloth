@@ -1,6 +1,6 @@
 # Disposable repro workflow. Delete after validation.
 
-name: "PR 16635 picker account-scope A-B"
+name: "PR 16635 picker account-scope Mac A-B"
 
 on:
   push:
@@ -16,7 +16,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-15]
+        os: [macos-26-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
