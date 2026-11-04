@@ -61,6 +61,9 @@ def assert_source(module, source):
 
 
 def case_child(args):
+    import faulthandler
+    faulthandler.dump_traceback_later(12, exit=True)
+    print("CHILD_STAGE importing-cli", flush=True)
     import typer
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import unsloth_cli.commands.start as start
@@ -68,6 +71,7 @@ def case_child(args):
 
     source = Path(args.source).resolve()
     assert_source(start, source)
+    print("CHILD_STAGE imported-cli", flush=True)
     model_path = Path(args.result).parent / "models with spaces" / "tiny-模型-ü.gguf"
     model_path.parent.mkdir(parents=True, exist_ok=True)
     model_path.write_bytes(b"GGUF-placeholder-not-executed")
@@ -110,6 +114,7 @@ def case_child(args):
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
+    print("CHILD_STAGE local-api-ready", flush=True)
     base = f"http://127.0.0.1:{server.server_port}"
     absent = args.scenario in ("auto", "no_serve", "no_launch")
     start.find_studio_server = lambda: None if absent else base
@@ -135,6 +140,7 @@ def case_child(args):
 
     code = 0
     try:
+        print("CHILD_STAGE resolving-model", flush=True)
         if args.scenario == "chat":
             from rich.console import Console
             import unsloth_cli.commands.chat as chat
@@ -159,6 +165,7 @@ def case_child(args):
         traceback.print_exc()
     finally:
         server.shutdown()
+        faulthandler.cancel_dump_traceback_later()
         state.update({"exit": code, "source": str(source), "target": target})
         Path(args.result).write_text(json.dumps(state, indent=2), encoding="utf-8")
         print("CASE_COMPLETE", flush=True)
@@ -245,8 +252,13 @@ def terminal(command, cwd, env, answer):
                     sent = True
                 if "CASE_COMPLETE" in plain:
                     break
+                if child.poll() is not None:
+                    break
             else:
-                raise AssertionError(f"PTY timeout:\n{output}")
+                status = subprocess.run(["ps", "-o", "pid,ppid,state,wchan,command", "-p",
+                                         str(child.pid)], capture_output=True, text=True,
+                                        timeout=3)
+                raise AssertionError(f"PTY timeout:\n{output}\n{status.stdout}\n{status.stderr}")
             child.wait(timeout=3)
         finally:
             if child.poll() is None:
