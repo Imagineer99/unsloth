@@ -6278,11 +6278,10 @@ html[data-glass^="liquid"][data-chat-wallpaper-workspace-ready] [data-slot="side
 html.dark[data-glass^="liquid"][data-chat-wallpaper-workspace-ready] [data-slot="sidebar-inner"] {
   box-shadow: inset -1px 0 0 rgb(255 255 255 / .08);
 }
-/* The sidebar and caption share a single glass surface with a gently rounded inside corner. */
 html[data-glass][data-chat-wallpaper-workspace-ready]:not([data-glass-plain]) [data-slot="sidebar-container"][data-windows-glass-frame]::before {
   content: "";
   position: absolute;
-  /* Keep the corner above the scrolled conversation canvas. */
+  /* Above the scrolled conversation canvas. */
   z-index: 1;
   inset: 0 auto 0 0;
   width: 100vw;
