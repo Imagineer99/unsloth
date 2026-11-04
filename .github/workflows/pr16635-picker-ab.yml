@@ -1,6 +1,6 @@
 # Disposable repro workflow. Delete after validation.
 
-name: "PR 16635 picker review-fix Mac A-B"
+name: "PR 16635 picker quantization A-B"
 
 on:
   push:
@@ -12,11 +12,11 @@ permissions:
 
 jobs:
   repro:
-    name: "CLI A/B (${{ matrix.os }})"
+    name: "Quantization A/B (${{ matrix.os }})"
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-15-intel]
+        os: [ubuntu-latest, windows-latest, macos-15-intel]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 12
     steps:
@@ -27,16 +27,16 @@ jobs:
       - name: Checkout BEFORE
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: unslothai/unsloth
-          ref: f22d2cfb153516bc3e2c69ffaa6519341f32e7ca
+          repository: yejonz/unsloth
+          ref: 1354c9db47ef77f0630969f8d3291918e6a6c574
           path: before
           persist-credentials: false
 
       - name: Checkout AFTER
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: Imagineer99/unsloth
-          ref: 1354c9db47ef77f0630969f8d3291918e6a6c574
+          repository: yejonz/unsloth
+          ref: 1275e587b559900b9b9902752face7df6300c505
           path: after
           persist-credentials: false
 
@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: "3.13.17"
 
-      - name: "Prove review fixes with native terminals and negative controls"
+      - name: "Prove explicit quantization behavior with negative controls"
         shell: pwsh
         run: |
-          python scripts/pr16635_validation.py bootstrap --before before --after after
+          python scripts/pr16635_variant_validation.py bootstrap --before before --after after
