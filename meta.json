@@ -1,0 +1,44 @@
+{
+  "base": "047030f4ca4aaf66b2a5e36c8a613d8d9c795270",
+  "head": "fa6e4d826c60af174c5c29d605155aea78649428",
+  "expect": "Inner page wallpaper loses stripe contrast while the caption and sidebar retain the shared chat frame; collapse expands the blur below the caption.",
+  "environment": "Windows 11 build 26200; native Tauri / WebView2 156.0.4314.58; 1240 x 712 CSS px; 2x; synthetic wallpaper and API fixture",
+  "facts": {
+    "images": {
+      "green_channel_stddev_page_patch": [
+        7.32,
+        0.68
+      ],
+      "after_matches_chat": {
+        "sidebar": true,
+        "caption": true
+      }
+    },
+    "video": {
+      "green_channel_stddev_page_patch": [
+        7.32,
+        0.68
+      ],
+      "after_matches_chat": {
+        "sidebar": true,
+        "caption": true
+      }
+    },
+    "train": {
+      "green_channel_stddev_page_patch": [
+        7.32,
+        0.68
+      ],
+      "after_matches_chat": {
+        "sidebar": true,
+        "caption": true
+      }
+    },
+    "collapsed": {
+      "green_channel_stddev_page_patch": [
+        7.32,
+        0.68
+      ]
+    }
+  }
+}
