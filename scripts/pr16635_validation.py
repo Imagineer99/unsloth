@@ -65,6 +65,7 @@ def case_child(args):
     faulthandler.dump_traceback_later(12, exit=True)
     print("CHILD_STAGE importing-cli", flush=True)
     import typer
+    import socketserver
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
     import unsloth_cli.commands.start as start
     from unsloth_cli import _model_catalog as catalog
@@ -112,7 +113,15 @@ def case_child(args):
             self.end_headers()
             self.wfile.write(data)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    class LoopbackServer(ThreadingHTTPServer):
+        def server_bind(self):
+            # HTTPServer normally reverse-resolves its address here. The hosted
+            # macOS runner can block there; this fixture only serves loopback.
+            socketserver.TCPServer.server_bind(self)
+            self.server_name = "localhost"
+            self.server_port = self.server_address[1]
+
+    server = LoopbackServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print("CHILD_STAGE local-api-ready", flush=True)
     base = f"http://127.0.0.1:{server.server_port}"
