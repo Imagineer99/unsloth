@@ -8,19 +8,22 @@ are printed to Actions logs. Each child gets a distinct home and model cache.
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 import os
 from pathlib import Path
 import re
 import select
+import shutil
 import subprocess
 import sys
 import threading
 import time
 import traceback
+import xml.etree.ElementTree as ET
 
-BASE = "b5c1396baae1d603130788a0cdfb392b972c8651"
-HEAD = "f22d2cfb153516bc3e2c69ffaa6519341f32e7ca"
+BASE = "f22d2cfb153516bc3e2c69ffaa6519341f32e7ca"
+HEAD = "1354c9db47ef77f0630969f8d3291918e6a6c574"
 SCRIPT = Path(__file__).resolve()
 ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
@@ -159,7 +162,7 @@ def case_child(args):
         else:
             kwargs = {"serve": args.scenario != "no_serve",
                       "launch": args.scenario != "no_launch"}
-            if args.scenario == "gguf" and args.side == "after":
+            if args.scenario == "gguf":
                 kwargs["gguf_only"] = True
             result = start._connect(None, target if args.scenario == "explicit" else None,
                                     **kwargs)
@@ -296,23 +299,18 @@ def scenario(source, side, name, root, *, piped=False, answer="2\n"):
     assert data["stdin_tty"] is (not piped), (data, output)
     assert data["stdout_tty"] is (not piped), (data, output)
     changes = name in ("idle", "auto", "gguf") and not piped
-    succeeds = name in ("explicit", "loaded", "chat") or (side == "after" and changes)
+    succeeds = name in ("explicit", "loaded", "chat") or changes
     assert data["exit"] == (0 if succeeds else 1), (data, output)
     if changes:
-        if side == "before":
-            expected = "No running Unsloth server" if name == "auto" else "No model is loaded in Unsloth"
-            assert expected in output, output
-            assert data["inventory_calls"] == 0, data
-        else:
-            assert "Load [" in output and data["inventory_calls"] == 1, (data, output)
+        assert "Load [" in output and data["inventory_calls"] == 1, (data, output)
     elif name != "chat":
         assert "Load [" not in output and data["inventory_calls"] == 0, (data, output)
     expected_loads = [{"model_path": data["target"]}] if (name == "explicit" or
-                     (side == "after" and changes and name != "auto")) else []
-    expected_starts = [data["target"]] if side == "after" and changes and name == "auto" else []
+                     (changes and name != "auto")) else []
+    expected_starts = [data["target"]] if changes and name == "auto" else []
     assert data["loads"] == expected_loads, (data, output)
     assert data["starts"] == expected_starts, (data, output)
-    if name == "gguf" and side == "after":
+    if name == "gguf":
         assert "OtherModel" not in output and "Load [1-1" in output, output
     if name == "owner":
         assert "belongs to another account" in output, output
@@ -326,8 +324,61 @@ def scenario(source, side, name, root, *, piped=False, answer="2\n"):
         print(output, flush=True)
 
 
+def review_regressions(source, side, root, probe):
+    env = isolated_env(source, root / side / "review-tests")
+    env["PR16635_EXPECT_SOURCE"] = str(source)
+    report = root / side / "review-regressions.xml"
+    command = [sys.executable, "-m", "pytest", "-c", str(source / "pyproject.toml"),
+               str(probe), "-q", "--basetemp", str(root / side / "review-test-data"),
+               "--junitxml", str(report)]
+    result = subprocess.run(command, cwd=source, env=env, capture_output=True, text=True,
+                            encoding="utf-8", errors="replace", timeout=90)
+    assert report.exists(), result.stdout + result.stderr
+    cases = list(ET.parse(report).iter("testcase"))
+    failed = [case for case in cases if case.find("failure") is not None]
+    errors = [case for case in cases if case.find("error") is not None]
+    skipped = [case for case in cases if case.find("skipped") is not None]
+    assert len(cases) == 15 and not errors and not skipped, result.stdout + result.stderr
+    if side == "before":
+        expected = {
+            "test_local_selection_wins_over_connection_with_same_model_id": 3,
+            "test_non_gguf_directory_suffix_cannot_pass_gguf_filter": 2,
+            "test_gguf_autostart_enter_skips_non_gguf_training_directory": 2,
+            "test_non_gguf_path_spellings_do_not_become_repository_fallbacks": 4,
+            "test_local_selection_survives_server_appearing_during_prompt": 1,
+        }
+        counts = Counter(case.get("name").split("[")[0] for case in failed)
+        assert result.returncode == 1 and counts == expected, result.stdout + result.stderr
+        for case in failed:
+            name = case.get("name")
+            detail = case.find("failure").text or ""
+            if name.startswith("test_local_selection_wins"):
+                assert "Connection" in detail or "external::" in detail, detail
+            elif name.startswith("test_local_selection_survives"):
+                assert "external::" in detail, detail
+            elif name.startswith("test_gguf_autostart"):
+                assert "my-run" in detail and "actual-Q4_K_M.gguf" in detail, detail
+            else:
+                assert "assert True is False" in detail, detail
+            print(f"EXPECTED FAILURE {name}", flush=True)
+        print("NEGATIVE PASS: 12 expected correctness failures; 3 controls pass; "
+              "no setup errors or skips.", flush=True)
+    else:
+        assert result.returncode == 0 and not failed, result.stdout + result.stderr
+        print("POSITIVE PASS: all 15 review regression probes pass.", flush=True)
+
+
 def validate(args):
     root = Path(args.temp).resolve()
+    fixed = Path(args.after).resolve()
+    assert run(["git", "rev-parse", "HEAD"], cwd=fixed).strip() == HEAD
+    probe = root / "review-probes" / "test_picker_review_regressions.py"
+    probe.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(fixed / "unsloth_cli/tests/test_start_model_picker_regressions.py", probe)
+    with probe.open("a", encoding="utf-8") as stream:
+        stream.write("\nfrom pathlib import Path as _Path\nimport os as _os\n"
+                     "assert _Path(start.__file__).resolve().is_relative_to("
+                     "_Path(_os.environ['PR16635_EXPECT_SOURCE']))\n")
     for side, revision in (("before", BASE), ("after", HEAD)):
         source = Path(getattr(args, side)).resolve()
         actual = run(["git", "rev-parse", "HEAD"], cwd=source).strip()
@@ -338,6 +389,7 @@ def validate(args):
                      cwd=source, env=env, timeout=35)
         assert "INVENTORY_IMPORT_PASS" in output, output
         print(f"PASS {side} bounded-inventory-import", flush=True)
+        review_regressions(source, side, root, probe)
         for name in ("idle", "auto", "gguf", "explicit", "loaded", "owner", "remote",
                      "no_serve", "no_launch", "chat"):
             scenario(source, side, name, root, answer="1\n" if name == "gguf" else "2\n")
@@ -354,8 +406,8 @@ def validate(args):
                           str(source / "unsloth_cli/tests/test_start_model_picker.py"), "-q",
                           "--basetemp", str(root / side / "picker-data")], cwd=source, env=env)
             print(output, flush=True)
-    print("A/B PASS: original missing-model failure reproduced; selected-model load/start "
-          "succeeds only after the PR; existing guard cases preserved.", flush=True)
+    print("A/B PASS: both review findings reproduce before the fixes and pass after them; "
+          "native terminal behavior and existing guards are preserved.", flush=True)
     return 0
 
 

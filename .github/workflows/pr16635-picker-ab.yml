@@ -1,6 +1,6 @@
 # Disposable repro workflow. Delete after validation.
 
-name: "PR 16635 CLI picker A-B"
+name: "PR 16635 picker review-fix A-B"
 
 on:
   push:
@@ -28,15 +28,15 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: unslothai/unsloth
-          ref: b5c1396baae1d603130788a0cdfb392b972c8651
+          ref: f22d2cfb153516bc3e2c69ffaa6519341f32e7ca
           path: before
           persist-credentials: false
 
       - name: Checkout AFTER
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
-          repository: unslothai/unsloth
-          ref: f22d2cfb153516bc3e2c69ffaa6519341f32e7ca
+          repository: Imagineer99/unsloth
+          ref: 1354c9db47ef77f0630969f8d3291918e6a6c574
           path: after
           persist-credentials: false
 
@@ -44,7 +44,7 @@ jobs:
         with:
           python-version: "3.13.17"
 
-      - name: "Validate pinned CLI revisions with native terminals"
+      - name: "Prove review fixes with native terminals and negative controls"
         shell: pwsh
         run: |
           python scripts/pr16635_validation.py bootstrap --before before --after after
