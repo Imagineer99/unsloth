@@ -50,7 +50,7 @@ import { isMlxId } from "@/features/model-picker/components/model-selector/recom
 import { loadManagedLlamaFlags } from "@/features/model-picker/api/llama-flags";
 import { fetchLoadExtraArgs } from "@/features/model-picker/api/model-overrides";
 import { sanitizeStoredExtraArgs } from "@/features/model-picker/model-config/llama-extra-args";
-import { usePlatformStore } from "@/config/env";
+import { fetchDeviceType, usePlatformStore } from "@/config/env";
 import { resolveSpeculativeType } from "@/lib/speculative-modes";
 
 import { getSkillsSnapshot, settleSkillsForText } from "./skills-api";
@@ -3373,6 +3373,30 @@ async function adoptInFlightServerLoad(
     : "server-idle";
 }
 
+// Busy-host detection outlasts readHealth's one 5 s wait; past this bound autoload stays fail-open.
+const AUTO_LOAD_VERDICT_WAIT_MS = 60_000;
+const AUTO_LOAD_VERDICT_POLL_MS = 500;
+
+async function awaitMeasuredVerdict(signal?: AbortSignal): Promise<void> {
+  try {
+    await fetchDeviceType({ detectHardware: true });
+  } catch {
+    return;
+  }
+  const deadline = Date.now() + AUTO_LOAD_VERDICT_WAIT_MS;
+  while (Date.now() < deadline) {
+    signal?.throwIfAborted();
+    const platform = usePlatformStore.getState();
+    if (!platform.capabilitiesUnknown() || platform.detectionDeferred) return;
+    await new Promise((resolve) => setTimeout(resolve, AUTO_LOAD_VERDICT_POLL_MS));
+    try {
+      await fetchDeviceType({ force: true });
+    } catch {
+      return;
+    }
+  }
+}
+
 async function autoLoadSmallestModel(options?: AutoLoadOptions): Promise<{
   loaded: boolean;
   blockedByTrustRemoteCode: boolean;
@@ -4006,6 +4030,20 @@ async function autoLoadSmallestModel(options?: AutoLoadOptions): Promise<{
     const cachedInventoryFailed =
       ggufSettled.status === "rejected" || modelsSettled.status === "rejected";
     if (inventoryIncomplete) hadNonTrustFailure = true;
+
+    // A deferred verdict admits non-GGUF caches a chat-only host refuses; GGUF-only caches skip the probe.
+    if (
+      usePlatformStore.getState().detectionDeferred &&
+      (allModelRepos.some(isChattableCachedRepo) ||
+        localRows.some(
+          (row) =>
+            !isGgufLocalRow(row) &&
+            isAutoLoadableLocalRow(row, cachedInventoryFailed),
+        ))
+    ) {
+      await awaitMeasuredVerdict(options?.abortSignal);
+      options?.abortSignal?.throwIfAborted();
+    }
 
     // Include on-disk models the picker indexes, not just the managed cache.
     const sources = orderAutoLoadSources(
