@@ -656,9 +656,16 @@ def _vibe_install_hint() -> str:
     return _VIBE_WINDOWS_INSTALL_HINT if os.name == "nt" else _VIBE_POSIX_INSTALL_HINT
 
 
-def _npm_install_hint(package: str, *, ignore_scripts: bool = False) -> str:
+def _npm_install_hint(
+    package: str,
+    *,
+    ignore_scripts: bool = False,
+    prefix: Optional[Path] = None,
+) -> str:
     parts = ["npm", "install", "-g"]
-    if os.name != "nt":
+    if prefix is not None:
+        parts.extend(("--prefix", str(prefix)))
+    elif os.name != "nt":
         # No home (bare container UID): fall back to npm's own prefix instead of failing.
         try:
             parts.extend(("--prefix", str(Path.home() / ".local")))
@@ -3284,6 +3291,7 @@ def _merge_codex_config(
 # Keep custom-model behavior aligned with Codex's own unknown-model fallback. This Apache-2.0 prompt is copied from openai/codex rust-v0.144.0 models-manager/prompt.md.
 _CODEX_FALLBACK_PROMPT = Path(__file__).parent.parent / "codex_fallback_prompt.md"
 _CODEX_MODEL_CATALOG_MIN_VERSION = (0, 110, 0)
+_CODEX_PROFILE_FILE_MIN_VERSION = (0, 134, 0)
 _CODEX_PATCH_LINE_ENDINGS_MIN_VERSION = (0, 148, 0)
 # Older Codex sends no reasoning for a model without reasoning summaries, and older Pi has no samplingParams.
 _CODEX_REASONING_REQUEST_MIN_VERSION = (0, 145, 0)
@@ -3305,6 +3313,18 @@ def _codex_executable_version(executable: str) -> Optional[tuple[int, int, int]]
         return None
     match = re.search(r"(\d+)\.(\d+)\.(\d+)", output)
     return tuple(int(part) for part in match.groups()) if match else None
+
+
+def _codex_update_hint(executable: str) -> str:
+    # Update the copy that resolves: a new one in ~/.local/bin sits behind an older one earlier on PATH.
+    directory = Path(executable).parent
+    prefix = directory if os.name == "nt" else directory.parent
+    package = prefix / ("node_modules" if os.name == "nt" else "lib/node_modules") / "@openai/codex"
+    if package.is_dir():
+        return _npm_install_hint("@openai/codex@latest", prefix = prefix)
+    if any(part in ("Cellar", "Caskroom") for part in Path(os.path.realpath(executable)).parts):
+        return "brew upgrade codex"
+    return _npm_install_hint("@openai/codex@latest")
 
 
 def _codex_supports_model_catalog() -> bool:
@@ -7540,7 +7560,14 @@ def codex(
     install_hint = _npm_install_hint("@openai/codex")
     # Before the install prompt: _install_agent runs a remote installer, and this can refuse outright, so asking first fetches a tool the run cannot use.
     _preflight_agent_gguf(_CODEX_GGUF_AGENT, model, serve = serve, launch = launch)
-    _require_agent_for_launch("codex", install_hint, launch and not app)
+    executable = _require_agent_for_launch("codex", install_hint, launch and not app)
+    version = executable and _codex_executable_version(executable)
+    if version and version < _CODEX_PROFILE_FILE_MIN_VERSION:
+        _fail(
+            f"Codex {'.'.join(map(str, _CODEX_PROFILE_FILE_MIN_VERSION))} or newer is needed, "
+            f"but {executable} is {'.'.join(map(str, version))}. Update it with "
+            f"`{_codex_update_hint(executable)}`."
+        )
     codex_effort = _codex_reasoning_effort(reasoning, reasoning_effort)
     if codex_effort and not _agent_version_at_least("codex", _CODEX_REASONING_REQUEST_MIN_VERSION):
         codex_effort = None
