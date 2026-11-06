@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from auth.authentication import get_current_subject
-from core.inference import skills
+from core.inference import skills, tools
 from routes.skills import router
 
 
@@ -242,6 +242,45 @@ def test_read_resource_is_contained_utf8_and_paginated(isolated_skills):
     skills.set_skill_enabled("reader", False, home = home)
     with pytest.raises(skills.SkillError, match = "disabled"):
         skills.read_skill_resource("reader", home = home)
+
+
+@pytest.mark.parametrize(
+    "resource", ["data.jsonl", f"{tools._ATTACHMENTS_DIR}/85563b7dcbb0/data.jsonl"]
+)
+def test_missing_resource_says_attachments_are_not_skill_resources(isolated_skills, resource):
+    home, _ = isolated_skills
+    _write_skill(home, "agents", "reader")
+
+    with pytest.raises(skills.SkillError, match = "Chat attachments are not skill resources"):
+        skills.read_skill_resource("reader", resource, home = home)
+
+
+def test_missing_resource_lists_the_skill_files(isolated_skills):
+    home, _ = isolated_skills
+    root = _write_skill(home, "agents", "lint")
+    (root / "scripts").mkdir()
+    (root / "scripts" / "lint.py").write_text("print(1)", encoding = "utf-8")
+    (root / ".cache").mkdir()
+    (root / ".cache" / "x.json").write_text("{}", encoding = "utf-8")
+    (root / ".hidden").write_text("", encoding = "utf-8")
+
+    with pytest.raises(skills.SkillError) as error:
+        skills.read_skill_resource("lint", "dataset-lint.py", home = home)
+
+    assert str(error.value).endswith("Files in this skill: SKILL.md, scripts/lint.py.")
+
+
+def test_missing_resource_listing_is_capped(isolated_skills):
+    home, _ = isolated_skills
+    root = _write_skill(home, "agents", "many")
+    for index in range(30):
+        (root / f"f{index:02d}.txt").write_text("", encoding = "utf-8")
+
+    with pytest.raises(skills.SkillError) as error:
+        skills.read_skill_resource("many", "missing.txt", home = home)
+
+    listed = str(error.value).split("Files in this skill: ", 1)[1].removesuffix(".").split(", ")
+    assert len(listed) == 21 and listed[-1] == "..."
 
 
 @pytest.mark.skipif(
