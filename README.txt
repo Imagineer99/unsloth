@@ -21,3 +21,5 @@ Ubuntu A/B completed successfully in job 129407337121:
 https://github.com/Imagineer99/unsloth/actions/runs/42690119073/job/129407337121
 This workflow revision retries only the queued macOS helper on macOS 26.
 The original full workflow remains at 5d4a115df9929e039f2bb49a1067b8f17a4410b9.
+macOS uses Python 3.12.10: setup-python has no macOS ARM64 build for
+3.12.11. This changes only the macOS helper environment setup.
