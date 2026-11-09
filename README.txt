@@ -16,3 +16,8 @@ evidence, not full macOS pipeline or MLX support.
 The workflow uses contents:read, no persisted checkout credentials, no repository
 secrets, and no artifact uploads or GitHub comments. Results go to job logs and
 job summaries. No PR or fork-main update is needed. Do not merge this branch.
+
+Ubuntu A/B completed successfully in job 129407337121:
+https://github.com/Imagineer99/unsloth/actions/runs/42690119073/job/129407337121
+This workflow revision retries only the queued macOS helper on macOS 26.
+The original full workflow remains at 5d4a115df9929e039f2bb49a1067b8f17a4410b9.
