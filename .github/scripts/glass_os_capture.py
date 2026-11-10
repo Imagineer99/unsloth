@@ -61,6 +61,16 @@ def seed(theme, material):
     }
     return f'for (const [k,v] of Object.entries({json.dumps(values)})) localStorage.setItem(k,v);'
 
+def seed_account_theme(base_url, init, theme):
+    # Each mode has a fresh browser context but shares this job's disposable account.
+    # Set the actual account preference too, so hydration cannot restore the prior mode.
+    payload = json.JSONDecoder().raw_decode(init.split('const seed = ', 1)[1])[0]
+    request = urllib.request.Request(base_url + '/api/settings/personalization',
+        data=json.dumps({'appearance':{'theme':theme,'palette':'standard'}}).encode(),
+        headers={'Content-Type':'application/json','Authorization':'Bearer '+payload['unsloth_auth_token']},method='PUT')
+    with urllib.request.urlopen(request, timeout=30) as response:
+        assert json.load(response)['appearance']['theme'] == theme
+
 def crop_shots(path, facts, out, name):
     from PIL import Image
     with Image.open(path) as im:
@@ -97,6 +107,7 @@ async def capture_playwright(base_url, init, browser_name, out, side):
         options = {'channel': 'msedge'} if platform.system() == 'Windows' else {}
         browser = await factory.launch(headless=True, **options)
         for theme, material in MODES:
+            seed_account_theme(base_url, init, theme)
             context = await browser.new_context(viewport={'width': VIEWPORT[0], 'height': VIEWPORT[1]}, device_scale_factor=1,
                                                 color_scheme=theme, locale='en-GB', timezone_id='Europe/London', bypass_csp=True)
             await context.add_init_script(init + '\n' + seed(theme, material) + '\n' + CLOCK)
@@ -150,6 +161,7 @@ def capture_gtk(base_url, init, out, side):
     os.environ['WEBKIT_DISABLE_COMPOSITING_MODE'] = '1'
     results = []
     for theme, material in MODES:
+        seed_account_theme(base_url, init, theme)
         # Native WebKitGTK has no WebDriver preload-script API. A loopback proxy inserts
         # only the same auth/preference/test-clock bootstrap used by Playwright, before
         # the real application's scripts. It does not change the DOM, CSS, or app bundle.
