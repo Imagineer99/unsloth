@@ -6680,6 +6680,230 @@ _BARE_TRUNCATING_REDIRECT_RE = re.compile(r"(?:^|[;&|\n(]|&&|\|\|)\s*(?::|true)?
 _HERESTRING_TO_INTERPRETER_RE = re.compile(
     r"\b(?:sh|bash|zsh|dash|ksh|fish|ash|python[0-9.]*|node|ruby|perl|php)\b[^\n]*<<<"
 )
+_HEREDOC_INTERPRETER_RE = re.compile(
+    r"(?i:python[0-9.]*|pypy[0-9.]*|node|nodejs|bun|deno|ruby|perl|php)"
+)
+_HEREDOC_COMMAND_BREAKS = frozenset({";", "&", "&&", "|", "||", "|&", "(", ")", ";;"})
+_SHELL_LINE_OPERATORS = (
+    "<<-",
+    "<<<",
+    "&&",
+    "||",
+    ";;",
+    "|&",
+    ">>",
+    "<<",
+    ">&",
+    "<&",
+    "<>",
+    ">|",
+    ";",
+    "&",
+    "|",
+    "(",
+    ")",
+    "<",
+    ">",
+)
+_HEREDOC_INTERPRETER_MENTION_RE = re.compile(
+    r"(?<![\w.-])(?i:python[0-9.]*|pypy[0-9.]*|node|nodejs|bun|deno|ruby|perl|php)(?![\w-])"
+)
+_COMPOUND_CLOSERS = frozenset({"}", "done", "fi", "esac"})
+_HEREDOC_SHELL_RE = re.compile(r"(?:ba|z|da|k|a|fi)?sh")
+_PYTHON_FLAG_LETTERS = frozenset("bBdEhIOPqsSuvVR?")
+
+
+def _shell_line_tokens(line: str) -> "list | None":
+    """Bash's word split of one line as (kind, text, quoted), kind word / op / fd; adjacent quoted
+    parts concatenate. None on an unterminated quote or arithmetic expansion."""
+    tokens, word, quoted, active = [], [], False, False
+    i, n = 0, len(line)
+
+    def flush(kind = "word"):
+        nonlocal word, quoted, active
+        if active:
+            tokens.append((kind, "".join(word), quoted))
+        word, quoted, active = [], False, False
+
+    while i < n:
+        ch = line[i]
+        if ch in " \t":
+            flush()
+            i += 1
+        elif ch == "#" and not active:
+            break
+        elif ch == "\\":
+            word.append(line[i + 1 : i + 2])
+            quoted = active = True
+            i += 2
+        elif ch in "'\"":
+            j = i + 1
+            while j < n and line[j] != ch:
+                j += 2 if ch == '"' and line[j] == "\\" else 1
+            if j >= n:
+                return None
+            word.append(line[i + 1 : j])
+            quoted = active = True
+            i = j + 1
+        elif line.startswith("$((", i) or (line.startswith("((", i) and not active):
+            j = line.find("))", i)
+            if j < 0:
+                return None
+            word.append(line[i : j + 2])
+            active = True
+            i = j + 2
+        else:
+            op = next((o for o in _SHELL_LINE_OPERATORS if line.startswith(o, i)), None)
+            if op is None:
+                word.append(ch)
+                active = True
+                i += 1
+                continue
+            text = "".join(word)
+            flush("fd" if op[0] in "<>" and text.isdigit() and not quoted else "word")
+            tokens.append(("op", op, False))
+            i += len(op)
+    flush()
+    return tokens
+
+
+def _python_reads_stdin_program(words: list) -> "bool | None":
+    """CPython's option grammar: True when stdin is executed (program `-`, or -i), False when it is
+    only data (-c, -m, a script operand), None when the words cannot be resolved."""
+    interactive = False
+    words = iter(words)
+    for word in words:
+        if any(ch in word for ch in "$`*?[{~"):
+            return None
+        if word in ("-", "/dev/stdin"):
+            return True
+        if word == "--check-hash-based-pycs":
+            next(words, None)
+        elif word.startswith("--"):
+            if not word.startswith("--check-hash-based-pycs="):
+                return None
+        elif word.startswith("-"):
+            for i, ch in enumerate(word[1:], 1):
+                if ch in "cm":
+                    return interactive
+                if ch in "WX":
+                    if i == len(word) - 1:
+                        next(words, None)
+                    break
+                if ch == "i":
+                    interactive = True
+                elif ch not in _PYTHON_FLAG_LETTERS:
+                    return None
+        else:
+            return interactive
+    return True
+
+
+def _heredoc_feeds_risky_program(command: str, depth: int) -> bool:
+    """Heredocs taken in shell order, each owned by its simple command: Python executing stdin gets
+    the body screened. Other interpreters, a second stdin redirection, expansions in an unquoted
+    body, or any owner or terminator this cannot resolve while an interpreter is named fail closed."""
+    mentioned = bool(_HEREDOC_INTERPRETER_MENTION_RE.search(command))
+    lines = command.split("\n")
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        while i < len(lines) and (len(line) - len(line.rstrip("\\"))) % 2:
+            if "#" in line and mentioned:
+                return True
+            line = line[:-1] + lines[i]
+            i += 1
+        if "<<" not in line:
+            continue
+        tokens = _shell_line_tokens(line)
+        if tokens is None:
+            if mentioned:
+                return True
+            continue
+        commands, current = [], []
+        for token in tokens:
+            if token[0] == "op" and token[1] in _HEREDOC_COMMAND_BREAKS:
+                commands.append(current)
+                current = []
+            else:
+                current.append(token)
+        commands.append(current)
+        pending = []
+        for words in commands:
+            names, stdin_redirects, expect = [], 0, None
+            for kind, text, quoted in words:
+                if kind == "op":
+                    stdin_redirects += text[0] == "<"
+                    expect = "heredoc" if text in ("<<", "<<-") else "target"
+                    if expect == "heredoc":
+                        pending.append([None, text == "<<-", False, None])
+                elif expect:
+                    if expect == "heredoc" and kind == "word":
+                        pending[-1][0], pending[-1][2] = text, quoted
+                    expect = None
+                elif kind == "word":
+                    names.append(text)
+            for heredoc in pending:
+                if heredoc[3] is None:
+                    heredoc[3] = (names, stdin_redirects)
+        for delimiter, dash, quoted, (names, stdin_redirects) in pending:
+            body, terminated = [], False
+            while i < len(lines):
+                text = lines[i].lstrip("\t") if dash else lines[i]
+                i += 1
+                if text == delimiter:
+                    terminated = True
+                    break
+                body.append(text)
+            if not terminated and _HEREDOC_INTERPRETER_MENTION_RE.search("\n".join(body)):
+                return True
+            command_word = next((w for w in names if not re.match(r"\w+=", w)), "")
+            if mentioned and (
+                not command_word
+                or command_word in _COMPOUND_CLOSERS
+                or any(ch in command_word for ch in "$`")
+            ):
+                return True
+            at = next(
+                (
+                    n
+                    for n, w in enumerate(names)
+                    if _HEREDOC_INTERPRETER_RE.fullmatch(os.path.basename(w))
+                ),
+                None,
+            )
+            if _HEREDOC_SHELL_RE.fullmatch(os.path.basename(command_word)):
+                if (
+                    depth >= 3
+                    or _HEREDOC_INTERPRETER_MENTION_RE.search(" ".join(names))
+                    or _terminal_is_high_risk("\n".join(body), depth + 1)
+                ):
+                    return True
+                continue
+            if at is None:
+                if _HEREDOC_INTERPRETER_MENTION_RE.search(" ".join(names)):
+                    return True
+                continue
+            if stdin_redirects > 1 or any("PYTHONINSPECT" in w for w in names[:at]):
+                return True
+            if not os.path.basename(names[at]).lower().startswith(("python", "pypy")) or depth >= 3:
+                return True
+            if any(_HEREDOC_INTERPRETER_RE.fullmatch(os.path.basename(w)) for w in names[at + 1 :]):
+                return True
+            reads = _python_reads_stdin_program(names[at + 1 :])
+            if reads is None:
+                return True
+            if not reads:
+                continue
+            program = "\n".join(body)
+            if not quoted and re.search(r"[$`]|\\[\\$`\n]", program + "\n"):
+                return True
+            if _inline_python_is_high_risk(program):
+                return True
+    return False
+
+
 # Generated script content is unscreenable; diff <(...) only reads and stays out.
 _PROC_SUBST_EXEC_RE = re.compile(
     r"\b(?:sh|bash|zsh|dash|ksh|fish|ash|source|eval|python[0-9.]*|node|nodejs|bun|ruby|perl|php)\b"
@@ -7409,6 +7633,8 @@ def _terminal_is_high_risk(command: str, _depth: int = 0) -> bool:
         return True
     _herestring = _HERESTRING_TO_INTERPRETER_RE.search(command)
     if _herestring:
+        return True
+    if "<<" in command and _heredoc_feeds_risky_program(command, _depth):
         return True
     # shlex reads newlines as whitespace; ANSI-C quoting hides names.
     decoded = _decode_ansi_c(command, keep_one_word = True)

@@ -4,6 +4,7 @@
 """Permission modes in the tool loop: only high-risk calls pause in auto; full never pauses."""
 
 import os
+import time
 import uuid
 
 import pytest
@@ -1104,6 +1105,77 @@ def test_terminal_classifier(command, unsafe):
 )
 def test_terminal_high_risk_classifier(command, high_risk):
     assert is_high_risk_tool_call("terminal", {"command": command}) is high_risk
+
+
+@pytest.mark.parametrize(
+    ("command", "high_risk"),
+    [
+        ("python3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("python3 - <<'PY'\nimport os; os.system('rm -rf build')\nPY", True),
+        ("python <<EOF\nimport os\nos.remove('data.db')\nEOF", True),
+        ("python3 -u - <<-PY\n\timport shutil; shutil.rmtree('build')\n\tPY", True),
+        ("node <<'EOF'\nrequire('fs').rmSync('build', {recursive: true})\nEOF", True),
+        ("ruby <<'EOF'\nrequire 'fileutils'; FileUtils.rm_rf('build')\nEOF", True),
+        ("python3 - <<'END.PY'\nimport shutil; shutil.rmtree('build')\nEND.PY", True),
+        ("python3 - <<\\PY\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("python3 -X utf8 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("Python3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("pypy3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("deno run - <<'EOF'\nDeno.removeSync('build', {recursive: true})\nEOF", True),
+        ("python3 -x - <<'PY'\nprint(1)\nPY", True),
+        ("node app.js <<'EOF'\nhello\nEOF", True),
+        ("python3 '-' <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("node -r fs <<'JS'\nrequire('fs').rmSync('build', {recursive: true})\nJS", True),
+        ("python3 - > out.txt <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ('OP=remove\npython3 - <<PY\nimport os; getattr(os, "$OP")("victim")\nPY', True),
+        (
+            "cat <<'PY'; python3 - <<'PY'\nprint(1)\nPY\nimport shutil; shutil.rmtree('build')\nPY",
+            True,
+        ),
+        ("echo 'python3 - <<PY'", False),
+        ("python3 - <<'PY'\nprint('$HOME')\nPY", False),
+        ("cat <<'A' > x.txt; python3 - <<'B'\nhello\nA\nprint(2)\nB", False),
+        ("git commit -F - <<'EOF'\nFix the python3 loader\nEOF", False),
+        ("python3 -i -c 'print(1)' <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("<<'PY' python3 -\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("cat <<'A'B; python3 - <<'PY'\nx\nAB\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("python3 -X 0 -W ignore - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("python3 - <<'PY' 2>&1 | tee log\nprint(1)\nPY", False),
+        ("echo $((1<<2))", False),
+        ("python3 \\\n - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("{ python3 -; } <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("PYTHON=python3\n$PYTHON - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("cat <<$'AB'\nx\nAB\npython3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("bash -c 'python3 -' <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("while read l; do echo \"$l\"; done <<'EOF'\na\nEOF", False),
+        ("cat <<'EOF' > config.yaml\nkey: value\nEOF", False),
+        ("# note \\\npython3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("env -u python python3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("python3 - <<'PY'\nprint(1)\nPY\f=1\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("env PYTHONUNBUFFERED=1 python3 - <<'PY'\nprint(1)\nPY", False),
+        ("python3 - <<PY\nprint(1) #\\\nPY\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("bash <<'SH'\npython3 - <<'PY'\nimport shutil; shutil.rmtree('build')\nPY\nSH", True),
+        ("bash <<'SH'\npython3 - <<'PY'\nprint(1)\nPY\nSH", False),
+        ("python3 - build <<'PY'\nimport shutil; shutil.rmtree('build')\nPY", True),
+        ("python3 - <<'A' <<'B'\nprint(1)\nA\nimport shutil; shutil.rmtree('build')\nB", True),
+        ("python3 - <<'A' < job.py\nprint(1)\nA", True),
+        ("python3 - a b <<'PY'\nimport sys; print(sys.argv)\nPY", False),
+        ("python3 -c 'import sys; print(sys.stdin.read())' <<'EOF'\nhello\nEOF", False),
+        ("python3 - <<'PY'\nprint(1 + 1)\nPY", False),
+        ("python3 - <<'PY'\nprint('done')\nPY\necho ok", False),
+        ("python3 - <<-PY\n\tprint(1 + 1)\n\tPY", False),
+        ("python3 script.py <<'EOF'\nshutil.rmtree\nEOF", False),
+        ("cat <<'EOF' > notes.txt\nimport shutil; shutil.rmtree('build')\nEOF", False),
+    ],
+)
+def test_code_fed_to_an_interpreter_through_a_heredoc_is_screened(command, high_risk):
+    assert is_high_risk_tool_call("terminal", {"command": command}) is high_risk
+
+
+def test_heredoc_option_scan_is_linear():
+    started = time.perf_counter()
+    is_high_risk_tool_call("terminal", {"command": "python3" + " -Xa" * 40 + " x"})
+    assert time.perf_counter() - started < 1.0
 
 
 @pytest.mark.parametrize(
