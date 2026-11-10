@@ -21,7 +21,7 @@ jobs:
     env:
       UNSLOTH_STUDIO_HOME: ${{ github.workspace }}/.studio-live/home
       STUDIO_ARTIFACT_DIR: ${{ github.workspace }}/.studio-live/artifacts
-      STUDIO_BROWSER: ${{ runner.os == 'Windows' && 'chromium' || 'webkit' }}
+      STUDIO_BROWSER: ${{ matrix.os == 'windows-latest' && 'chromium' || 'webkit' }}
       EVIDENCE_SIDE: ${{ matrix.side }}
       UNSLOTH_DISABLE_UPDATE_CHECK: '1'
       PYTHONIOENCODING: utf-8
