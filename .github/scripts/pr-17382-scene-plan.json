@@ -1,0 +1,28 @@
+{
+  "pr": 17382,
+  "before": "b71ee2a1d633aa8032dcf6e0edd0dbacb00333cc",
+  "after": "b176f396bfe23654e8bd2beda7b3c76622f3565d",
+  "branch": "fix/pr-17382-os-evidence",
+  "scene": "real-chat-greeting-header-and-settings",
+  "expect": "Dark glass greeting scrim and glass chat header fade disappear. Settings no longer receives liquid decorations; existing transparency and blur remain. Solid and clear-glass Settings are controls.",
+  "renderers": {
+    "Windows": "Edge on Windows (not full Tauri/WebView2 shell)",
+    "macOS": "Playwright WebKit on macOS (not native Safari/WKWebView shell)",
+    "Linux": "Native WebKitGTK MiniBrowser with CPU compositing (not full Tauri shell)"
+  },
+  "jobs": 6,
+  "timeoutMinutesPerJob": 45,
+  "viewport": [
+    1440,
+    1000
+  ],
+  "states": [
+    "dark liquid-3d",
+    "light liquid-3d",
+    "dark liquid",
+    "dark transparent",
+    "dark solid"
+  ],
+  "privacy": "Fresh isolated installations; no private chats, models, or account secrets. Only PNGs and non-sensitive JSON uploaded.",
+  "publishing": "Awaiting user approval to push the disposable CI branch and collect Actions artifacts. No PR comments or media publication planned."
+}

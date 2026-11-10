@@ -1,0 +1,86 @@
+name: PR 17382 glass before-after evidence
+on:
+  push:
+    branches: [fix/pr-17382-os-evidence]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  capture:
+    name: "${{ matrix.os }} / ${{ matrix.side }}"
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-24.04]
+        side: [before, after]
+    defaults:
+      run:
+        working-directory: app
+    env:
+      UNSLOTH_STUDIO_HOME: ${{ github.workspace }}/.studio-live/home
+      STUDIO_ARTIFACT_DIR: ${{ github.workspace }}/.studio-live/artifacts
+      STUDIO_BROWSER: ${{ runner.os == 'Windows' && 'chromium' || 'webkit' }}
+      EVIDENCE_SIDE: ${{ matrix.side }}
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
+      PYTHONIOENCODING: utf-8
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: harness
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: app
+          ref: ${{ matrix.side == 'before' && 'b71ee2a1d633aa8032dcf6e0edd0dbacb00333cc' || 'b176f396bfe23654e8bd2beda7b3c76622f3565d' }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Install capture dependencies
+        shell: bash
+        run: |
+          python -m pip install 'playwright==1.56.0' 'httpx>=0.27,<1' 'pillow>=10,<13' 'selenium>=4.28,<5'
+          if [ "$RUNNER_OS" = 'macOS' ]; then python -m playwright install webkit; fi
+          if [ "$RUNNER_OS" = 'Windows' ]; then python -m playwright install chromium; fi
+      - name: Install native Linux WebKitGTK capture dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y webkit2gtk-driver xvfb xauth
+      - name: Install isolated Unsloth from the exact source (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:UNSLOTH_STUDIO_HOME | Out-Null
+          & ./install.ps1 --local --no-torch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install isolated Unsloth from the exact source (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p "$UNSLOTH_STUDIO_HOME"
+          bash ./install.sh --local --no-torch
+      - name: Capture and validate the actual UI
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = 'Linux' ]; then
+            xvfb-run -a -s '-screen 0 1600x1200x24' python ../harness/.github/scripts/pr-17382-os-evidence-probe.py
+          else
+            python ../harness/.github/scripts/pr-17382-os-evidence-probe.py
+          fi
+      - name: Save PNGs and non-sensitive evidence facts
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: glass-${{ matrix.os }}-${{ matrix.side }}
+          path: |
+            .studio-live/artifacts/*.png
+            .studio-live/artifacts/*.json
+          if-no-files-found: warn
+          retention-days: 3
