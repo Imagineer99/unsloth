@@ -100,12 +100,19 @@ async def capture_playwright(base_url, init, browser_name, out, side):
             context = await browser.new_context(viewport={'width': VIEWPORT[0], 'height': VIEWPORT[1]}, device_scale_factor=1,
                                                 color_scheme=theme, locale='en-GB', timezone_id='Europe/London', bypass_csp=True)
             await context.add_init_script(init + '\n' + seed(theme, material) + '\n' + CLOCK)
+            async def bootstrap_document(route):
+                response = await route.fetch()
+                headers = {k:v for k,v in response.headers.items() if k.lower() not in ('content-security-policy','content-security-policy-report-only')}
+                await route.fulfill(response=response, headers=headers)
+            await context.route(base_url + '/chat', bootstrap_document)
             page = await context.new_page()
             errors = []
             page.on('pageerror', lambda e: errors.append(str(e)))
             try:
                 await page.goto(base_url + '/chat', wait_until='domcontentloaded')
-                await page.wait_for_function(READY, timeout=90000)
+                await page.locator('.unsloth-welcome-greeting').wait_for(state='visible', timeout=90000)
+                await page.locator('.unsloth-composer-surface').wait_for(state='visible', timeout=90000)
+                await page.evaluate('document.fonts.ready')
                 if material != 'solid':
                     await page.wait_for_selector('.chat-wallpaper[data-ready]', state='attached')
                 await page.wait_for_timeout(1000)
