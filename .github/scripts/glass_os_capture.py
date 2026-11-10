@@ -98,7 +98,7 @@ async def capture_playwright(base_url, init, browser_name, out, side):
         browser = await factory.launch(headless=True, **options)
         for theme, material in MODES:
             context = await browser.new_context(viewport={'width': VIEWPORT[0], 'height': VIEWPORT[1]}, device_scale_factor=1,
-                                                color_scheme=theme, locale='en-GB', timezone_id='Europe/London')
+                                                color_scheme=theme, locale='en-GB', timezone_id='Europe/London', bypass_csp=True)
             await context.add_init_script(init + '\n' + seed(theme, material) + '\n' + CLOCK)
             page = await context.new_page()
             errors = []
@@ -126,6 +126,10 @@ async def capture_playwright(base_url, init, browser_name, out, side):
                 facts.update({'theme': theme, 'material': material, 'engine': browser.version, 'pageErrors': errors})
                 assert not errors, errors
                 results.append(facts)
+            except Exception as error:
+                await page.screenshot(path=str(out / f'{theme}-{material}-failure.png'))
+                (out / f'{theme}-{material}-failure.json').write_text(json.dumps({'error':str(error),'url':page.url,'pageErrors':errors,'bodyText':await page.locator('body').inner_text()},indent=2))
+                raise
             finally:
                 await context.close()
         await browser.close()
@@ -160,7 +164,7 @@ def capture_gtk(base_url, init, out, side):
                     payload=payload.replace(b'<head>',('<head><script>'+bootstrap+'</script>').encode(),1)
                 self.send_response(response.status)
                 for k,v in response.headers.items():
-                    if k.lower() not in ('content-length','content-encoding','transfer-encoding','connection'):
+                    if k.lower() not in ('content-length','content-encoding','transfer-encoding','connection','content-security-policy','content-security-policy-report-only'):
                         self.send_header(k,v)
                 self.send_header('Content-Length',str(len(payload)))
                 self.end_headers()
@@ -199,6 +203,10 @@ def capture_gtk(base_url, init, out, side):
             driver.find_element(By.CSS_SELECTOR,'[data-settings-dialog]').screenshot(str(out / f'{name}-settings.png'))
             facts.update({'theme':theme,'material':material,'capabilities':driver.capabilities})
             results.append(facts)
+        except Exception as error:
+            driver.save_screenshot(str(out / f'{theme}-{material}-failure.png'))
+            (out / f'{theme}-{material}-failure.json').write_text(json.dumps({'error':str(error),'url':driver.current_url,'bodyText':driver.find_element(By.TAG_NAME,'body').text},indent=2))
+            raise
         finally:
             driver.quit()
             proxy.shutdown()
@@ -212,6 +220,7 @@ async def capture_scenes(base_url, init, browser_name, out):
     metadata = {'side':side,'sourceSha':source,'sourceCssSha256':hashlib.sha256(css_path.read_bytes()).hexdigest(),
                 'os':platform.platform(),'baseUrl':base_url,'home':os.environ['UNSLOTH_STUDIO_HOME'],
                 'captureScope':'Real Unsloth Web UI on host OS; not full Tauri shell',
+                'testBootstrap':'CSP disabled in test browser/proxy for deterministic preference bootstrap and driver inspection; no app CSS changes',
                 'renderer': {'Windows':'Microsoft Edge','Darwin':'Playwright WebKit (not Safari/WKWebView)',
                              'Linux':'Native WebKitGTK MiniBrowser, CPU compositing'}[platform.system()]}
     (out/'identity.json').write_text(json.dumps(metadata,indent=2))
