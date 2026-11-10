@@ -42,6 +42,7 @@ FACTS = r'''() => {
     settingsBlur:style('[data-settings-dialog]','::before'),
     composer:style('.unsloth-composer-surface'),
     fontsReady:document.fonts.status,
+    greetingImages:[...document.querySelectorAll('.unsloth-welcome-greeting img')].map(i=>({src:i.getAttribute('src'),complete:i.complete,naturalWidth:i.naturalWidth})),
     stylesheets:[...document.querySelectorAll('link[rel="stylesheet"]')].map(e=>e.href)};
 }'''
 READY = "document.querySelector('.unsloth-welcome-greeting') && document.querySelector('.unsloth-composer-surface') && document.fonts.status === 'loaded'"
@@ -124,9 +125,11 @@ async def capture_playwright(base_url, init, browser_name, out, side):
                 await page.locator('.unsloth-welcome-greeting').wait_for(state='visible', timeout=90000)
                 await page.locator('.unsloth-composer-surface').wait_for(state='visible', timeout=90000)
                 await page.evaluate('document.fonts.ready')
+                await page.evaluate("Promise.all([...document.querySelectorAll('.unsloth-welcome-greeting img')].map(i=>i.decode()))")
                 if material != 'solid':
                     await page.wait_for_selector('.chat-wallpaper[data-ready]', state='attached')
                 await page.wait_for_timeout(1000)
+                await page.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
                 name = f'{theme}-{material}'
                 facts = await page.evaluate(FACTS)
                 verify(facts, theme, material, side)
