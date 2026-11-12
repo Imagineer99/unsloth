@@ -924,7 +924,7 @@ class _MarkdownRenderer(HTMLParser):
         self._link_heading_parts: list[str] = []
         self._emit_as_heading: bool = False
         self._replaying: bool = False
-        # Credited only at </a>: an <a> left open adopts body prose, which is not furniture.
+        # Credited only at </a> or a nested <a>: an <a> left open adopts body prose, which is not furniture.
         self._link_header_chars: int = 0
 
         self._list_stack: list[str] = []  # "ul" or "ol"
@@ -1765,6 +1765,11 @@ class _MarkdownRenderer(HTMLParser):
 
         if tag == "form":
             self._form_pointer = True
+        # a nested <a> implicitly closes the open one, even when hidden, like its </a> arriving here
+        if tag == "a" and self._in_link:
+            if self._header_stack:
+                self._header_stack[-1].link_chars += self._link_header_chars
+            self._finish_link()
         if not self._enter_tag(tag, attr_dict, hidden, aria_heading):
             return
 
