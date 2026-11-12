@@ -778,7 +778,7 @@ qwen25_template = \
     {%- if messages[0][\'role\'] == \'system\' %}
         {{- messages[0][\'content\'] }}
     {%- else %}
-        {{- \'You are Qwen, created by Alibaba Cloud. You are a helpful assistant.\' }}
+        {{- \'{system_message}\' }}
     {%- endif %}
     {{- "\\n\\n# Tools\\n\\nYou may call one or more functions to assist with the user query.\\n\\nYou are provided with function signatures within <tools></tools> XML tags:\\n<tools>" }}
     {%- for tool in tools %}
@@ -2895,6 +2895,8 @@ def get_chat_template(
             "{%- endif %}" + \
             chat_template
 
+    # Only templates that bake the message in pass it on; applied after create_ollama_modelfile picks the template.
+    ollama_system_message = system_message if "{system_message}" in chat_template else None
     chat_template, system_message = _change_system_message(chat_template, type_chat_template, system_message)
 
     tokenizer.chat_template = chat_template
@@ -2918,6 +2920,7 @@ def get_chat_template(
     if _processor is not None:
         # GGUF export unwraps the processor before it builds the Ollama Modelfile.
         tokenizer._ollama_modelfile = ollama_modelfile
+        tokenizer._ollama_system_message = ollama_system_message
         _processor.tokenizer = tokenizer
         _processor.chat_template = chat_template
         for _token in ("bos_token", "eos_token", "pad_token",):
@@ -2931,6 +2934,7 @@ def get_chat_template(
         tokenizer = patch_saving_functions(tokenizer, vision = _processor is not None)
 
     tokenizer._ollama_modelfile = ollama_modelfile
+    tokenizer._ollama_system_message = ollama_system_message
     tokenizer._system_message   = system_message
     tokenizer._unsloth_chat_template_name = (
         (template_name, chat_template) if template_name is not None else None
@@ -3646,11 +3650,14 @@ extra_eos_tokens = None,
 
     tokenizer.chat_template = jinja_template
     tokenizer._ollama_modelfile = modelfile
+    # This Modelfile already holds default_system_message; drop one left by an earlier get_chat_template.
+    tokenizer._ollama_system_message = None
     tokenizer._unsloth_input_part  = input_part
     tokenizer._unsloth_output_part = output_part
     if hasattr(tokenizer, "tokenizer"):
         tokenizer.tokenizer.chat_template = jinja_template
         tokenizer.tokenizer._ollama_modelfile = modelfile
+        tokenizer.tokenizer._ollama_system_message = None
         tokenizer.tokenizer._unsloth_input_part  = input_part
         tokenizer.tokenizer._unsloth_output_part = output_part
 
