@@ -26,6 +26,7 @@ import {
   loadedContextFields,
   type MlxKvQuant,
   type MlxOffload,
+  type NpuPowerMode,
 } from "@/features/model-picker/model-config/per-model-config";
 import {
   cachedPinnableGpuIndexKind,
@@ -2549,6 +2550,10 @@ type ChatRuntimeStore = {
   loadedMlxAnePrefillRequested: boolean;
   mlxFastVerify: boolean;
   loadedMlxFastVerifyRequested: boolean;
+  /** FastFlowLM settings the resident NPU load asked for; the panel edits the per-model config. */
+  npuPowerMode: NpuPowerMode | null;
+  npuPrefillChunkLen: number | null;
+  npuImgPreResize: number | null;
   /** MLX offload knobs as chosen (null = Auto), as the resident load asked for them, the
    *  fraction it applied (null = none), and why a request was not applied. */
   mlxPleOffload: MlxOffload;
@@ -4344,6 +4349,9 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>((set, get) => ({
   loadedMlxAnePrefillRequested: false,
   mlxFastVerify: false,
   loadedMlxFastVerifyRequested: false,
+  npuPowerMode: null,
+  npuPrefillChunkLen: null,
+  npuImgPreResize: null,
   mlxPleOffload: null,
   mlxExpertOffload: null,
   loadedMlxPleOffloadRequested: null,
@@ -5285,6 +5293,9 @@ export const useChatRuntimeStore = create<ChatRuntimeStore>((set, get) => ({
       loadedMlxAnePrefillRequested: false,
       mlxFastVerify: false,
       loadedMlxFastVerifyRequested: false,
+      npuPowerMode: null,
+      npuPrefillChunkLen: null,
+      npuImgPreResize: null,
       mlxPleOffload: null,
       mlxExpertOffload: null,
       loadedMlxPleOffloadRequested: null,
