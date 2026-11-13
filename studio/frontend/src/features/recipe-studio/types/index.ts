@@ -287,6 +287,7 @@ export type ModelConfig = {
   generation?: ModelGeneration;
   // biome-ignore lint/style/useNamingConvention: api schema
   image_size?: string;
+  inference_max_parallel_requests?: string;
   // biome-ignore lint/style/useNamingConvention: api schema
   image_steps?: string;
   // biome-ignore lint/style/useNamingConvention: api schema
@@ -296,6 +297,7 @@ export type ModelConfig = {
 export type ModelGeneration = "text" | "image";
 
 export type ImageConfig = {
+  multi_modal_context?: Record<string, unknown>[];
   id: string;
   kind: "image";
   name: string;

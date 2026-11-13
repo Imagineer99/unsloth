@@ -84,11 +84,12 @@ function buildImageInferenceParameters(
     config.inference_timeout,
     Math.trunc,
   );
+  assignFiniteNumber(inference, "max_parallel_requests", config.inference_max_parallel_requests);
   const imageOptions: Record<string, unknown> = {};
   const size = config.image_size?.trim();
   if (size) {
-    if (!IMAGE_SIZE_PATTERN.test(size)) {
-      errors.push(`Model ${config.name}: image size must look like 1024x1024.`);
+    if (size !== "auto" && !IMAGE_SIZE_PATTERN.test(size)) {
+      errors.push(`Model ${config.name}: image size must be auto or dimensions such as 1024x1024.`);
     }
     imageOptions.size = size;
   }

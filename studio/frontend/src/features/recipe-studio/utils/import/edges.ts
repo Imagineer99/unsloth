@@ -131,6 +131,9 @@ export function buildEdges(
       }
     }
     if (config.kind === "image") {
+      for (const entry of config.multi_modal_context ?? []) {
+        if (typeof entry.column_name === "string") addEdgeByName(entry.column_name, config.name);
+      }
       for (const ref of extractRefs(config.prompt)) {
         addEdgeByName(ref, config.name);
       }

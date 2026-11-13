@@ -93,6 +93,14 @@ export function applyRenameToConfig(
     const base = next as LlmConfig;
     next = { ...base, model_alias: to };
   }
+  if (config.kind === "image" && config.multi_modal_context?.some((entry) => entry.column_name === from)) {
+    next = {
+      ...(next as ImageConfig),
+      multi_modal_context: config.multi_modal_context.map((entry) =>
+        entry.column_name === from ? { ...entry, column_name: to } : entry,
+      ),
+    };
+  }
   if (config.kind === "image" && config.model_alias === from) {
     const base = next as ImageConfig;
     next = { ...base, model_alias: to };
@@ -161,6 +169,12 @@ export function applyRemovalToConfig(
   if (config.kind === "llm" && config.model_alias === ref) {
     const base = next as LlmConfig;
     next = { ...base, model_alias: "" };
+  }
+  if (config.kind === "image" && config.multi_modal_context?.some((entry) => entry.column_name === ref)) {
+    next = {
+      ...(next as ImageConfig),
+      multi_modal_context: config.multi_modal_context.filter((entry) => entry.column_name !== ref),
+    };
   }
   if (config.kind === "image" && config.model_alias === ref) {
     const base = next as ImageConfig;

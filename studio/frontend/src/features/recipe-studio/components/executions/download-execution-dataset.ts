@@ -68,6 +68,32 @@ export async function downloadExecutionDataset(
     throw new Error("This run does not have a dataset to download yet.");
   }
 
+  // Older run records may contain only the displayed JPEG for a generated image.
+  // Their saved recipe identifies these columns without mistaking ordinary JSON fields for images.
+  if (execution.kind === "preview" && execution.recipeSignature) {
+    let columns: unknown;
+    try {
+      columns = JSON.parse(execution.recipeSignature)?.payload?.recipe?.columns;
+    } catch {
+      // Legacy records without a recipe snapshot can still export their saved rows.
+    }
+    const hasImageThumbnail =
+      Array.isArray(columns) &&
+      columns.some(
+        (column) =>
+          column?.column_type === "image" &&
+          execution.dataset.some((row) => {
+            const cell = row[column.name];
+            return typeof cell === "object" && cell !== null && "type" in cell && cell.type === "image";
+          }),
+      );
+    if (hasImageThumbnail) {
+      throw new Error(
+        "This preview only retains thumbnails. Run the recipe again to download the original images.",
+      );
+    }
+  }
+
   await triggerClientJsonlDownload(execution.dataset, filenameStem);
   return hasCompleteLocalDataset(execution) ? "saved" : "partial";
 }

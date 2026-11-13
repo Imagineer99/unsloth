@@ -202,3 +202,25 @@ test("a cell holding several generated images previews the first with its count"
     false,
   );
 });
+
+test("saving a connected image recipe preserves the model ID, inference limits, and image inputs", () => {
+  const document = JSON.parse(PRODUCT_PHOTOS);
+  const provider = document.recipe.model_providers[0];
+  provider.is_local = false;
+  provider.endpoint = "https://example.org/v1";
+  const preset = document.recipe.model_configs[0];
+  preset.model = "local";
+  preset.inference_parameters.max_parallel_requests = 1;
+  preset.inference_parameters.extra_body = { size: "auto", quality: "high" };
+  const context = [{ column_name: "photo", modality: "image", data_type: "base64", image_format: "png" }];
+  document.recipe.columns.push({
+    ...document.recipe.columns[2], name: "edited", prompt: "Recolour the product", multi_modal_context: context,
+  });
+  const saved = rebuild(JSON.stringify(document)).built;
+  const reopened = rebuild(JSON.stringify(saved.payload));
+  assert.deepEqual(saved.errors, []);
+  assert.deepEqual(reopened.built.errors, []);
+  assert.deepEqual(reopened.built.payload.recipe.model_configs[0].inference_parameters, preset.inference_parameters);
+  assert.equal(reopened.built.payload.recipe.model_configs[0].model, "local");
+  assert.deepEqual(reopened.built.payload.recipe.columns.at(-1)?.multi_modal_context, context);
+});

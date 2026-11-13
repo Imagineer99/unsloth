@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import math
+import shutil
 import tempfile
 import zipfile
 from decimal import Decimal
@@ -175,6 +176,19 @@ def write_jsonl_rows(handle, rows: list[dict[str, Any]]) -> None:
         handle.write("\n")
 
 
+# Image previews keep the original cells in the same JSONL format as in-memory downloads.
+PREVIEW_JSONL = "preview.jsonl"
+
+
+def _preview_jsonl(dataset_path: Path, export_format: ExportFormat) -> Path | None:
+    path = dataset_path / PREVIEW_JSONL
+    if path.is_symlink() or not path.is_file():
+        return None
+    if export_format != "jsonl":
+        raise RecipeDatasetExportError("Image previews are available as JSONL.")
+    return path
+
+
 def _write_jsonl_from_parquet(parquet_dir: Path, destination: Path) -> None:
     """Stream sorted parquet shards through the one supported JSONL reader."""
     try:
@@ -229,6 +243,8 @@ def download_filename(*, artifact_path: str, export_format: ExportFormat, stem: 
         dataset_path = _resolve_recipe_artifact_path(artifact_path)
     except RecipeDatasetPublishError as exc:
         raise RecipeDatasetExportError(str(exc)) from exc
+    if _preview_jsonl(dataset_path, export_format) is not None:
+        return f"{stem}.jsonl"
     _parquet_dir(dataset_path)
     if export_format == "parquet":
         return f"{stem}.parquet.zip"
@@ -263,6 +279,17 @@ def build_dataset_download(
         raise RecipeDatasetExportError(str(exc)) from exc
 
     stem = safe_filename_stem(filename_stem)
+    preview = _preview_jsonl(dataset_path, export_format)
+    if preview is not None:
+        tmp = tempfile.NamedTemporaryFile(delete = False, suffix = ".jsonl")
+        path = Path(tmp.name)
+        try:
+            with tmp, preview.open("rb") as source:
+                shutil.copyfileobj(source, tmp)
+        except BaseException:
+            path.unlink(missing_ok = True)
+            raise
+        return path, "application/x-ndjson", f"{stem}.jsonl"
     parquet_dir = _parquet_dir(dataset_path)
 
     if export_format == "parquet":

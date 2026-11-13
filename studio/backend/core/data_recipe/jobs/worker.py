@@ -17,7 +17,8 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from ..jsonable import to_jsonable, to_preview_jsonable_row
+from ..export import PREVIEW_JSONL, write_jsonl_rows
+from ..jsonable import image_column_names, to_jsonable, to_preview_jsonable_row
 from ..local_callable_validators import oxc_validator_session
 from .constants import EVENT_JOB_COMPLETED, EVENT_JOB_ERROR, EVENT_JOB_STARTED
 from ..service import (
@@ -88,6 +89,21 @@ def _build_dataset_name(*, run_name: str | None, job_id: str, artifact_root: Pat
         candidate = f"{base_name}_{suffix}"
         suffix += 1
     return candidate
+
+
+def _persist_image_preview(dataset_dir: Path, dataset: list[dict[str, Any]]) -> str:
+    """Keep original image cells available to the download route after the job is replaced."""
+    dataset_dir.mkdir()
+    pending = dataset_dir / (PREVIEW_JSONL + ".tmp")
+    try:
+        with pending.open("x", encoding = "utf-8") as handle:
+            write_jsonl_rows(handle, dataset)
+        pending.replace(dataset_dir / PREVIEW_JSONL)
+    except BaseException:
+        pending.unlink(missing_ok = True)
+        dataset_dir.rmdir()
+        raise
+    return str(dataset_dir)
 
 
 def run_job_process(*, event_queue, recipe: dict[str, Any], run: dict[str, Any]) -> None:
@@ -174,6 +190,9 @@ def run_job_process(*, event_queue, recipe: dict[str, Any], run: dict[str, Any])
                 if results.dataset is None
                 else to_preview_jsonable_row(results.dataset.to_dict(orient = "records"))
             )
+            artifact_path = None
+            if dataset and any(name in dataset[0] for name in image_column_names(recipe)):
+                artifact_path = _persist_image_preview(_ARTIFACT_ROOT / dataset_name, dataset)
             processor_artifacts = (
                 None
                 if results.processor_artifacts is None
@@ -186,7 +205,7 @@ def run_job_process(*, event_queue, recipe: dict[str, Any], run: dict[str, Any])
                     "analysis": analysis,
                     "dataset": dataset,
                     "processor_artifacts": processor_artifacts,
-                    "artifact_path": None,
+                    "artifact_path": artifact_path,
                     "execution_type": execution_type,
                 }
             )

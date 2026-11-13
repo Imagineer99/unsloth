@@ -472,7 +472,12 @@ def _apply_data_designer_local_image_route_patch() -> None:
     if getattr(ModelFacade, "_unsloth_local_image_route_patch_applied", False):
         return
 
-    original_build = ModelFacade._build_image_generation_request
+    original_build = getattr(ModelFacade, "_build_image_generation_request", None)
+    if original_build is None:
+        raise ValueError(
+            "Local image recipes require Data Designer 0.5.4 or later. "
+            "Update the Unsloth recipe dependencies and run the recipe again."
+        )
 
     @functools.wraps(original_build)
     def _patched_build(self, prompt, multi_modal_context, kwargs):
@@ -881,7 +886,6 @@ def create_data_designer(recipe: dict[str, Any], *, artifact_path: str | None = 
     _apply_data_designer_seed_uri_quote_patch()
     _apply_data_designer_sql_inline_config_patch()
     _apply_data_designer_python_validator_path_patch()
-    _apply_data_designer_local_image_route_patch()
     from data_designer.interface.data_designer import DataDesigner  # pyright: ignore[reportMissingImports]
 
     if artifact_path is None:
@@ -889,6 +893,8 @@ def create_data_designer(recipe: dict[str, Any], *, artifact_path: str | None = 
         artifact_path = str(recipe_datasets_root())
 
     _register_studio_diffusion_aliases(recipe)
+    if _studio_diffusion_aliases:
+        _apply_data_designer_local_image_route_patch()
     recipe = _strip_frontend_model_config_metadata(recipe)
     model_providers = build_model_providers(recipe)
     _validate_recipe_runtime_support(recipe, model_providers)

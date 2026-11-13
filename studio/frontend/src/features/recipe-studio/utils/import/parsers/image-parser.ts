@@ -2,7 +2,7 @@
 // Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
 import type { ImageConfig } from "../../../types";
-import { readString } from "../helpers";
+import { isRecord, readString } from "../helpers";
 
 export function parseImage(
   column: Record<string, unknown>,
@@ -14,6 +14,9 @@ export function parseImage(
     kind: "image",
     name,
     drop: column.drop === true,
+    multi_modal_context: Array.isArray(column.multi_modal_context)
+      ? column.multi_modal_context.filter(isRecord)
+      : undefined,
     prompt: readString(column.prompt) ?? "",
     // biome-ignore lint/style/useNamingConvention: api schema
     model_alias: readString(column.model_alias) ?? "",

@@ -42,14 +42,14 @@ function parseImageModelConfig(
   const { size, steps, guidance, ...extraBody } = isRecord(inference.extra_body)
     ? (inference.extra_body as Record<string, unknown>)
     : {};
-  const modelName = readString(model.model) ?? "";
   return {
     id,
     kind: "model_config",
     name,
-    model: modelName.toLowerCase() === "local" ? "" : modelName,
+    model: readString(model.model) ?? "",
     provider: readString(model.provider) ?? "",
     generation: "image",
+    inference_max_parallel_requests: readNumberString(inference.max_parallel_requests),
     // biome-ignore lint/style/useNamingConvention: api schema
     image_size: readString(size) ?? "",
     // biome-ignore lint/style/useNamingConvention: api schema

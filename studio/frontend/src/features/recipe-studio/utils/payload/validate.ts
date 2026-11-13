@@ -133,7 +133,7 @@ export function validateModelConfigProviders(
     const model = config.model.trim();
     const isLegacyLocalPlaceholder = model.toLowerCase() === "local";
 
-    if (!isLocal && isUsed && isLegacyLocalPlaceholder) {
+    if (!isLocal && isUsed && isLegacyLocalPlaceholder && config.generation !== "image") {
       errors.push(`Model config ${alias}: model is required.`);
       continue;
     }

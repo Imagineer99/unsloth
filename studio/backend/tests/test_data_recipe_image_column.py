@@ -435,3 +435,41 @@ def test_a_preview_shows_thumbnails_but_downloads_the_original_images(monkeypatc
     finally:
         path.unlink()
     assert rows == [{"photo": cell, "subject": "mug"}]
+
+
+def test_image_preview_download_survives_job_replacement(monkeypatch):
+    from fastapi import BackgroundTasks
+    from core.data_recipe.jobs.worker import _persist_image_preview
+    from core.data_recipe.jobs.manager import JobManager
+    from utils.paths import recipe_datasets_root
+
+    images = [_png(size = (1024, 768)), _png(size = (768, 1024))]
+    rows = [{"photo": images, "subject": "mug"}]
+    root = recipe_datasets_root()
+    root.mkdir(parents = True, exist_ok = True)
+    artifact = _persist_image_preview(root / "recipe_photo", rows)
+
+    # A fresh manager also exercises downloads after a backend restart.
+    monkeypatch.setattr(route, "get_job_manager", JobManager)
+    options = dict(job_id = "old", artifact_path = str(artifact), export_format = "jsonl", filename = "photos")
+    assert route.create_job_dataset_download_url(**options)["filename"] == "photos.jsonl"
+    response = route.download_job_dataset(**options, background_tasks = BackgroundTasks())
+    path = Path(response.path)
+    try:
+        assert [json.loads(line) for line in path.read_bytes().splitlines()] == rows
+    finally:
+        path.unlink()
+
+
+def test_old_data_designer_only_requires_an_upgrade_for_local_image_generation(tmp_path, monkeypatch):
+    from core.data_recipe.service import create_data_designer
+    ModelFacade = pytest.importorskip("data_designer.engine.models.facade").ModelFacade
+
+    monkeypatch.delattr(ModelFacade, "_unsloth_local_image_route_patch_applied", raising = False)
+    monkeypatch.delattr(ModelFacade, "_build_image_generation_request")
+    recipe = _recipe("http://127.0.0.1:1/v1")
+    recipe["model_configs"].clear()
+    recipe["columns"] = recipe["columns"][:1]
+    create_data_designer(recipe, artifact_path = str(tmp_path))
+    with pytest.raises(ValueError, match = "Local image recipes require Data Designer 0.5.4"):
+        create_data_designer(_recipe("http://127.0.0.1:1/v1"), artifact_path = str(tmp_path))

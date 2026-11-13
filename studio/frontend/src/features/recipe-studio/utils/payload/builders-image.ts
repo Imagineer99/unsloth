@@ -11,6 +11,7 @@ export function buildImageColumn(config: ImageConfig): Record<string, unknown> {
     name: config.name,
     drop: config.drop ?? false,
     prompt: config.prompt,
+    multi_modal_context: config.multi_modal_context,
     // biome-ignore lint/style/useNamingConvention: api schema
     model_alias: config.model_alias,
   };

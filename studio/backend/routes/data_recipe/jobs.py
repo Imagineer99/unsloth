@@ -480,7 +480,8 @@ def _inject_local_providers(
         )
 
     uses_local_chat = _references_local(_used_llm_model_aliases(recipe))
-    uses_local_image = _references_local(_used_image_model_aliases(recipe))
+    image_aliases = _used_image_model_aliases(recipe)
+    uses_local_image = _references_local(image_aliases)
 
     # Point-in-time checks; /v1 still returns a clear error if a model changes later.
     image_model: str | None = None
@@ -540,7 +541,8 @@ def _inject_local_providers(
             if not isinstance(extra_body, dict):
                 extra_body = {}
             if _is_image_model_config(mc):
-                _point_image_model_config_at_studio(mc, params, extra_body, image_model)
+                if mc.get("alias") in image_aliases:
+                    _point_image_model_config_at_studio(mc, params, extra_body, image_model)
                 continue
             # Disable thinking: <think> doubles tokens and breaks data_designer's json-fence regex.
             tpl_kwargs = extra_body.get("chat_template_kwargs")
