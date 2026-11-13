@@ -1,0 +1,47 @@
+name: PR 17121 slot resume
+on:
+  push:
+    branches: [fix/pr-17121-kv-repro-ci]
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - name: Install probe dependencies and verified fixtures
+        run: |
+          python -m pip install -r .github/scripts/pr17121/requirements.txt
+          mkdir -p "$RUNNER_TEMP/engine"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/engine.tgz" https://github.com/unslothai/llama.cpp/releases/download/b11030-mix-5ff778e/app-b11030-mix-5ff778e-linux-x64-cpu.tar.gz
+          echo "09750b697044218048395f27cadb6b5c5f9b4eee5ad5c808be80b1a1bf9697df  $RUNNER_TEMP/engine.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/engine.tgz" -C "$RUNNER_TEMP/engine"
+          curl --fail --location --retry 3 -o "$RUNNER_TEMP/tiny.gguf" https://huggingface.co/ggml-org/models/resolve/499bc8821c6b12b4e53c5bffcb21ec206f212d81/tinyllamas/stories260K.gguf
+          echo "270cba1bd5109f42d03350f60406024560464db173c0e387d91f0426d3bd256d  $RUNNER_TEMP/tiny.gguf" | sha256sum -c -
+      - name: Compare slot reuse and greedy token against a fresh process
+        env:
+          HF_HUB_OFFLINE: '1'
+          BASE: e5aeca4c0232f76aaadc2497251238f47266d7ea
+          HEAD: 9062b19c52e52a79e9478982c94ad069e72d17dd
+        run: |
+          export LLAMA_SERVER_PATH="$RUNNER_TEMP/engine/llama-server"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/engine"
+          git init -q "$RUNNER_TEMP/source"
+          for side in base head; do
+            ref=$BASE
+            if [[ $side == head ]]; then ref=$HEAD; fi
+            git -C "$RUNNER_TEMP/source" fetch -q --depth 1 https://github.com/unslothai/unsloth.git "$ref"
+            git -C "$RUNNER_TEMP/source" checkout -q --detach "$ref"
+            test "$(git -C "$RUNNER_TEMP/source" rev-parse HEAD)" = "$ref"
+            if [[ $side == head && -f .github/scripts/pr17121/fix.patch ]]; then
+              git -C "$RUNNER_TEMP/source" apply "$GITHUB_WORKSPACE/.github/scripts/pr17121/fix.patch"
+            fi
+            echo "Testing $side $ref"
+            PYTHONPATH="$RUNNER_TEMP/source/studio/backend" UNSLOTH_STUDIO_HOME="$RUNNER_TEMP/state-$side" python .github/scripts/pr17121/probe.py "$side" "$RUNNER_TEMP/tiny.gguf"
+          done
