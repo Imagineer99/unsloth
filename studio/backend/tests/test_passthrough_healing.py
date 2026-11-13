@@ -1740,6 +1740,10 @@ _MINIMAX = (
     "</minimax:tool_call>"
 )
 _SEED = f"<seed:tool_call>\n{_XML_BASH}\n</seed:tool_call>"
+_IFM = (
+    "<ifm|tool_calls>\n<ifm|tool_call>Bash\n<ifm|arg_key>command</ifm|arg_key>\n"
+    "<ifm|arg_value>ls</ifm|arg_value>\n</ifm|tool_call>\n</ifm|tool_calls>"
+)
 _DEEPSEEK = (
     '<｜tool▁calls▁begin｜><｜tool▁call▁begin｜>Bash<｜tool▁sep｜>{"command": "ls"}'
     "<｜tool▁call▁end｜><｜tool▁calls▁end｜>"
@@ -1751,6 +1755,7 @@ _NATIVE = {
     "kimi": ("<|tool_calls_section_begin|>", _KIMI),
     "deepseek": ("<｜tool▁calls▁begin｜>", _DEEPSEEK),
     "seed": ("<seed:tool_call>", _SEED),
+    "ifm": ("<ifm|tool_calls>", _IFM),
 }
 _LS = ("Bash", {"command": "ls"})
 _JSON_LS = '{"command": "ls"}'

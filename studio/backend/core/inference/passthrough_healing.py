@@ -21,6 +21,7 @@ from core.inference.tool_call_parser import (
     _MinimaxValueIndex,
     _parse_deepseek_tool_calls,
     _parse_glm_tool_calls,
+    _parse_ifm_tool_calls,
     _parse_kimi_tool_calls,
     _parse_minimax_tool_calls,
 )
@@ -278,6 +279,15 @@ def _parse_glm_block(
 
 # Most specific marker first.
 _NATIVE_TOOL_FORMATS = (
+    (
+        "<ifm|tool_calls>",
+        NativeToolFormat(
+            "<ifm|tool_calls>",
+            "</ifm|tool_calls>",
+            re.compile(re.escape("<ifm|tool_call>")),
+            _parse_ifm_tool_calls,
+        ),
+    ),
     (
         "<minimax:tool_call>",
         NativeToolFormat(

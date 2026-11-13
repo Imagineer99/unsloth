@@ -1338,6 +1338,9 @@ def _tool_call_markup_spans(text: str) -> list[tuple[int, int]]:
         # Parameter-aware block bounds, so a quoted closer cannot end the span; lazy, as that module imports this one.
         from core.inference.tool_call_parser import _minimax_block_spans
         spans.extend((start, end) for start, end, _closed in _minimax_block_spans(text))
+    if "<ifm|tool_calls>" in text:
+        from core.inference.tool_call_parser import _ifm_block_spans
+        spans.extend((start, end) for start, end, _closed in _ifm_block_spans(text))
     # An unclosed opener is a real incomplete call only outside closed/bracket spans.
     for pat in _TOOL_OPEN_XML_TAIL_PATS:
         for m in pat.finditer(text):

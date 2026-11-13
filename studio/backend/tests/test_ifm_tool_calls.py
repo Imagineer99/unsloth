@@ -156,6 +156,12 @@ def test_reasoning_rehearsal_and_quoted_example_are_data():
     assert _calls(f"<tool_call>{outer}</tool_call>") == [("web_search", {"query": XML_CALL})]
 
 
+def test_think_tags_inside_an_argument_are_data():
+    text = XML_CALL.replace("unsloth", "explain <think>x</think> tags")
+    assert _calls(text) == [("web_search", {"query": "explain <think>x</think> tags"})]
+    assert strip_tool_markup("A " + text, final = True) == "A"
+
+
 def test_strip_buffers_open_block_until_final():
     open_block = "Answer.\n" + XML_CALL[:40]
     assert strip_tool_markup(open_block) == open_block
