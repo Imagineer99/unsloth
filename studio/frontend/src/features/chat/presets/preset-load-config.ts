@@ -12,11 +12,13 @@ import {
   MAX_SEQ_LENGTH_MAX,
   DEFAULT_MAX_SEQ_LENGTH,
   KV_CACHE_DTYPES,
-  MLX_KV_BITS,
+  mlxKvQuantLabel,
+  normalizeMlxKvQuant,
   N_BATCH_MAX,
   N_BATCH_MIN,
   N_PARALLEL_MAX,
   N_PARALLEL_MIN,
+  isReasoningBudgetMessageValid,
   canonicalizeLoadMode,
   isServedByLlamaCpp,
   isServedByMlx,
@@ -38,16 +40,17 @@ import {
 import { usePlatformStore } from "@/config/env";
 import { capturedContextLength } from "./preset-policy";
 
-/** Load/runtime knobs saved in a chat preset (excludes per-model-only blobs). */
 export type PresetLoadConfig = Pick<
   PerModelConfig,
   | "customContextLength"
   | "maxSeqLength"
   | "kvCacheDtype"
-  | "mlxKvBits"
+  | "mlxKvQuant"
   | "speculativeType"
   | "specDraftNMax"
   | "nParallel"
+  | "reasoningBudget"
+  | "reasoningBudgetMessage"
   | "nBatch"
   | "nUbatch"
   | "loadMode"
@@ -68,10 +71,12 @@ export const EMPTY_PRESET_LOAD_CONFIG: PresetLoadConfig = {
   customContextLength: null,
   maxSeqLength: null,
   kvCacheDtype: null,
-  mlxKvBits: null,
+  mlxKvQuant: null,
   speculativeType: null,
   specDraftNMax: null,
   nParallel: null,
+  reasoningBudget: -1,
+  reasoningBudgetMessage: "",
   nBatch: null,
   nUbatch: null,
   loadMode: null,
@@ -85,8 +90,7 @@ export const EMPTY_PRESET_LOAD_CONFIG: PresetLoadConfig = {
 function toComparablePerModelConfig(
   config: PresetLoadConfig,
 ): PerModelConfig {
-  // Compared as a pin, not as whichever field the backend of the moment writes it in:
-  // the same preset replayed elsewhere holds that length in the other field.
+  // Compared as a pin: the same preset elsewhere stores the length in the other field.
   const pin = savedContextPin(config);
   return {
     ...DEFAULT_PER_MODEL_CONFIG,
@@ -98,13 +102,7 @@ function toComparablePerModelConfig(
   };
 }
 
-/** A context as a preset may carry it, or null if it is not a length at all.
- *
- *  One bound for capture and for reading a saved preset back, since clamping only on the
- *  way to storage would send one window on the first replay and another after saving. The
- *  upper bound is what `/load` accepts; the lower is the control's own minimum, because a
- *  pin the control cannot represent is one the user cannot undo.
- */
+/** One bound for capture and read-back so replays agree; min is the control's own minimum. */
 function requestableContextLength(value: unknown): number | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return null;
@@ -145,11 +143,7 @@ export function normalizePresetLoadConfig(
   const normalized: PresetLoadConfig = {
     customContextLength: requestableContextLength(partial.customContextLength),
     maxSeqLength: normalizeMaxSeqLength(partial.maxSeqLength as number | null),
-    mlxKvBits:
-      typeof partial.mlxKvBits === "number" &&
-      MLX_KV_BITS.includes(partial.mlxKvBits)
-        ? partial.mlxKvBits
-        : null,
+    mlxKvQuant: normalizeMlxKvQuant(partial.mlxKvQuant, partial.mlxKvBits),
     kvCacheDtype:
       typeof partial.kvCacheDtype === "string" &&
       VALID_KV_CACHE_DTYPES.has(partial.kvCacheDtype)
@@ -168,6 +162,19 @@ export function normalizePresetLoadConfig(
             Math.min(N_PARALLEL_MAX, Math.round(partial.nParallel)),
           )
         : null,
+    reasoningBudget:
+      typeof partial.reasoningBudget === "number" &&
+      Number.isFinite(partial.reasoningBudget)
+        ? Math.max(
+            -1,
+            Math.min(2_147_483_647, Math.trunc(partial.reasoningBudget)),
+          )
+        : -1,
+    reasoningBudgetMessage:
+      typeof partial.reasoningBudgetMessage === "string" &&
+      isReasoningBudgetMessageValid(partial.reasoningBudgetMessage)
+        ? partial.reasoningBudgetMessage
+        : "",
     nBatch:
       typeof partial.nBatch === "number" && Number.isFinite(partial.nBatch)
         ? Math.max(N_BATCH_MIN, Math.min(N_BATCH_MAX, Math.round(partial.nBatch)))
@@ -176,8 +183,7 @@ export function normalizePresetLoadConfig(
       typeof partial.nUbatch === "number" && Number.isFinite(partial.nUbatch)
         ? Math.max(N_BATCH_MIN, Math.min(N_BATCH_MAX, Math.round(partial.nUbatch)))
         : null,
-    // Through the same normalizers the per-model store uses, so a hand-edited or older preset cannot
-    // smuggle in a mode or dtype the panel cannot show.
+    // Normalized so old or hand-edited presets cannot carry values the panel cannot show.
     loadMode: canonicalizeLoadMode(partial.loadMode),
     specDraftCacheDtype:
       typeof partial.specDraftCacheDtype === "string" &&
@@ -230,7 +236,6 @@ export function capturePresetLoadConfig(): PresetLoadConfig | undefined {
   });
   const platform = usePlatformStore.getState();
   const isMlx = isServedByMlx(isGguf, platform.deviceType, platform.chatOnlyReason);
-  // The same bound a saved preset is read back under; this one replays from memory first.
   const effectiveContextLength = requestableContextLength(
     capturedContextLength({
       isGguf,
@@ -238,14 +243,20 @@ export function capturePresetLoadConfig(): PresetLoadConfig | undefined {
       loadedContextLength: store.loadedContextLength,
     }),
   );
+  // Diffusion GGUFs capture context too; only reasoning flags are suppressed.
+  const capturesReasoning = isGguf && !store.loadedIsDiffusion;
   const captured: PresetLoadConfig = {
     customContextLength: effectiveContextLength ?? null,
     maxSeqLength: isMlx ? null : normalizeMaxSeqLength(snapshot.maxSeqLength),
     kvCacheDtype: snapshot.kvCacheDtype ?? null,
-    mlxKvBits: snapshot.mlxKvBits ?? null,
+    mlxKvQuant: snapshot.mlxKvQuant ?? null,
     speculativeType: normalizeSpeculativeType(snapshot.speculativeType),
     specDraftNMax: snapshot.specDraftNMax ?? null,
     nParallel: snapshot.nParallel ?? null,
+    reasoningBudget: capturesReasoning ? snapshot.reasoningBudget : -1,
+    reasoningBudgetMessage: capturesReasoning
+      ? snapshot.reasoningBudgetMessage
+      : "",
     nBatch: snapshot.nBatch ?? null,
     nUbatch: snapshot.nUbatch ?? null,
     loadMode: snapshot.loadMode ?? null,
@@ -293,37 +304,48 @@ function coalesceDefaultLoadKnobs(
   return result;
 }
 
-export function applyPresetLoadConfig(
-  config?: PresetLoadConfig | null,
-): void {
+export function applyPresetLoadConfig(config?: PresetLoadConfig | null): void {
   if (config == null) {
     return;
   }
   const store = useChatRuntimeStore.getState();
-  applyPerModelConfigToRuntime({
-    ...DEFAULT_PER_MODEL_CONFIG,
-    maxSeqLength: normalizeMaxSeqLength(config.maxSeqLength) ?? DEFAULT_MAX_SEQ_LENGTH,
-    customContextLength: config.customContextLength ?? null,
-    kvCacheDtype: config.kvCacheDtype ?? null,
-    mlxKvBits: config.mlxKvBits ?? null,
-    speculativeType: config.speculativeType ?? null,
-    specDraftNMax: config.specDraftNMax ?? null,
-    nParallel: config.nParallel ?? null,
-    nBatch: config.nBatch ?? null,
-    nUbatch: config.nUbatch ?? null,
-    loadMode: config.loadMode ?? null,
-    specDraftCacheDtype: config.specDraftCacheDtype ?? null,
-    ctxCheckpoints: config.ctxCheckpoints ?? null,
-    cacheRam: config.cacheRam ?? null,
-    tensorParallel: config.tensorParallel ?? false,
-    disableVision: config.disableVision ?? false,
-    chatTemplateOverride: null,
-    gpuMemoryMode: config.gpuMemoryMode,
-    gpuLayers: config.gpuLayers,
-    nCpuMoe: config.nCpuMoe,
-    selectedGpuIds: store.selectedGpuIds,
-    selectedGpuIndexKind: store.selectedGpuIndexKind,
-  });
+  applyPerModelConfigToRuntime(
+    {
+      ...DEFAULT_PER_MODEL_CONFIG,
+      maxSeqLength: normalizeMaxSeqLength(config.maxSeqLength) ?? DEFAULT_MAX_SEQ_LENGTH,
+      customContextLength: config.customContextLength ?? null,
+      kvCacheDtype: config.kvCacheDtype ?? null,
+      mlxKvQuant: config.mlxKvQuant ?? null,
+      speculativeType: config.speculativeType ?? null,
+      specDraftNMax: config.specDraftNMax ?? null,
+      nParallel: config.nParallel ?? null,
+      nBatch: config.nBatch ?? null,
+      nUbatch: config.nUbatch ?? null,
+      loadMode: config.loadMode ?? null,
+      specDraftCacheDtype: config.specDraftCacheDtype ?? null,
+      ctxCheckpoints: config.ctxCheckpoints ?? null,
+      cacheRam: config.cacheRam ?? null,
+      reasoningBudget: config.reasoningBudget ?? -1,
+      reasoningBudgetMessage: config.reasoningBudgetMessage ?? "",
+      tensorParallel: config.tensorParallel ?? false,
+      disableVision: config.disableVision ?? false,
+      chatTemplateOverride: null,
+      // Not carried by presets: enabling it always goes through its confirmation.
+      mlxInt8Prefill: store.mlxInt8Prefill,
+      mlxAnePrefill: store.mlxAnePrefill,
+      mlxFastVerify: store.mlxFastVerify,
+      mlxPleOffload: store.mlxPleOffload,
+      mlxExpertOffload: store.mlxExpertOffload,
+      // Model specific, so a preset keeps the current table.
+      engramPrecision: store.engramPrecision,
+      gpuMemoryMode: config.gpuMemoryMode,
+      gpuLayers: config.gpuLayers,
+      nCpuMoe: config.nCpuMoe,
+      selectedGpuIds: store.selectedGpuIds,
+      selectedGpuIndexKind: store.selectedGpuIndexKind,
+    },
+    { isDiffusion: store.loadedIsDiffusion },
+  );
 }
 
 export function formatPresetLoadConfigSummary(
@@ -339,14 +361,21 @@ export function formatPresetLoadConfigSummary(
   if (config.kvCacheDtype) {
     parts.push(`KV ${config.kvCacheDtype}`);
   }
-  if (config.mlxKvBits) {
-    parts.push(`MLX KV ${config.mlxKvBits}-bit`);
+  if (config.mlxKvQuant) {
+    parts.push(`MLX KV ${mlxKvQuantLabel(config.mlxKvQuant)}`);
   }
   if (config.speculativeType && config.speculativeType !== "auto") {
     parts.push(`Spec ${config.speculativeType}`);
   }
   if (config.nParallel != null) {
     parts.push(`${config.nParallel} slots`);
+  }
+  if (config.reasoningBudget !== -1) {
+    parts.push(`Reasoning ${config.reasoningBudget}`);
+  }
+  // A marker, not the text, or a message-only preset summarises to null.
+  if (config.reasoningBudgetMessage) {
+    parts.push("Budget msg");
   }
   if (config.nBatch != null) {
     parts.push(`Batch ${config.nBatch}`);

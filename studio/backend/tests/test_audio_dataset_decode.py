@@ -13,8 +13,7 @@ from utils.datasets import audio_decode
 
 np = pytest.importorskip("numpy")
 sf = pytest.importorskip("soundfile")
-# The shim needs both: it resamples through librosa, so without it every
-# ensure_audio_decoding() below correctly returns False and the tests fail.
+# The shim resamples through librosa; without it ensure_audio_decoding() returns False.
 pytest.importorskip("librosa")
 datasets = pytest.importorskip("datasets")
 
@@ -38,8 +37,7 @@ def broken_torchcodec(monkeypatch):
 
     monkeypatch.setattr(config, "TORCHCODEC_AVAILABLE", False)
     monkeypatch.setattr(Audio, "decode_example", Audio.decode_example)
-    # encode_example is patched too, so it needs restoring as well: leaving the
-    # shim installed made the next test capture it as _ORIGINAL_ENCODE.
+    # encode_example is patched too; restore it so it is not captured as original.
     monkeypatch.setattr(Audio, "encode_example", Audio.encode_example)
     monkeypatch.setattr(audio_decode, "_installed", False)
     monkeypatch.setattr(audio_decode, "_ORIGINAL_ENCODE", None)
@@ -63,9 +61,171 @@ def test_the_soundfile_decoder_resamples_to_the_cast_rate(broken_torchcodec):
     decoded = ds[0]["audio"]
 
     assert decoded["sampling_rate"] == 24000
-    # 1600 samples at 16 kHz is 0.1 s, so 24 kHz gives 2400 back.
     assert len(decoded["array"]) == pytest.approx(2400, abs = 4)
     assert decoded["path"] == "a.wav"
+
+
+def _m4a_bytes(seconds = 1.0, sampling_rate = 22050):
+    """An AAC file in an MP4 container: what torchcodec decoded and libsndfile cannot."""
+    av = pytest.importorskip("av")
+    t = np.arange(int(seconds * sampling_rate)) / sampling_rate
+    tone = (0.5 * np.sin(2 * np.pi * 440 * t)).astype("float32")
+    buf = io.BytesIO()
+    try:
+        with av.open(buf, "w", format = "mp4") as container:
+            stream = container.add_stream("aac", rate = sampling_rate)
+            stream.layout = "mono"
+            frame = av.AudioFrame.from_ndarray(tone[np.newaxis, :], format = "flt", layout = "mono")
+            frame.sample_rate = sampling_rate
+            for packet in stream.encode(frame):
+                container.mux(packet)
+            for packet in stream.encode(None):
+                container.mux(packet)
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"this PyAV cannot encode AAC: {exc}")
+    return buf.getvalue()
+
+
+def test_an_m4a_row_decodes_through_pyav_when_torchcodec_is_broken(broken_torchcodec):
+    from datasets import Audio, Dataset
+
+    raw = _m4a_bytes()
+    with pytest.raises(Exception):
+        sf.read(io.BytesIO(raw))
+    assert audio_decode.ensure_audio_decoding() is True
+    ds = Dataset.from_dict({"audio": [{"path": "tone.m4a", "bytes": raw}]})
+    ds = ds.cast_column("audio", Audio(sampling_rate = 16000))
+    decoded = ds[0]["audio"]
+
+    assert decoded["sampling_rate"] == 16000
+    array = np.asarray(decoded["array"])
+    assert array.ndim == 1 and array.dtype == np.float32
+    # AAC priming and frame rounding: bound rather than pin.
+    assert 15000 <= len(array) <= 17500
+    assert 0.4 <= float(np.abs(array).max()) <= 0.6
+    assert decoded["path"] == "tone.m4a"
+
+
+def _two_stream_m4a_bytes(rate = 22050, freqs = (440, 880)):
+    """One MP4 holding two AAC tracks, a tone per stream; the second is the one a stream_index must reach."""
+    av = pytest.importorskip("av")
+    t = np.arange(rate) / rate
+    buf = io.BytesIO()
+    try:
+        with av.open(buf, "w", format = "mp4") as container:
+            streams = []
+            for hz in freqs:
+                stream = container.add_stream("aac", rate = rate)
+                stream.layout = "mono"
+                streams.append(stream)
+            for stream, hz in zip(streams, freqs):
+                tone = (0.5 * np.sin(2 * np.pi * hz * t)).astype("float32")
+                frame = av.AudioFrame.from_ndarray(tone[np.newaxis, :], format = "flt", layout = "mono")
+                frame.sample_rate = rate
+                for packet in stream.encode(frame):
+                    container.mux(packet)
+                for packet in stream.encode(None):
+                    container.mux(packet)
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"this PyAV cannot encode AAC: {exc}")
+    return buf.getvalue()
+
+
+def _dominant_hz(array, rate):
+    spectrum = np.abs(np.fft.rfft(np.asarray(array, dtype = "float64")))
+    return float(np.fft.rfftfreq(len(array), 1.0 / rate)[int(np.argmax(spectrum))])
+
+
+def test_the_stream_index_selects_the_track(broken_torchcodec):
+    from datasets import Audio, Dataset
+
+    raw = _two_stream_m4a_bytes()
+    assert audio_decode.ensure_audio_decoding() is True
+    rows = {"audio": [{"path": "two.m4a", "bytes": raw}]}
+    first = Dataset.from_dict(rows).cast_column("audio", Audio())[0]["audio"]
+    second = Dataset.from_dict(rows).cast_column("audio", Audio(stream_index = 1))[0]["audio"]
+    assert abs(_dominant_hz(first["array"], first["sampling_rate"]) - 440) < 20
+    assert abs(_dominant_hz(second["array"], second["sampling_rate"]) - 880) < 20
+    with pytest.raises(Exception, match = "stream"):
+        audio_decode._read_mono(io.BytesIO(raw), stream_index = 5)
+
+
+def test_a_missing_index_picks_the_default_track_not_the_first(broken_torchcodec, tmp_path):
+    # Default disposition beats position, as in av_find_best_stream.
+    import shutil
+    import subprocess
+
+    av = pytest.importorskip("av")
+    if shutil.which("ffmpeg") is None or not hasattr(av.container.streams.StreamContainer, "best"):
+        pytest.skip("needs the ffmpeg CLI to set dispositions and PyAV >= 13 for streams.best")
+    path = tmp_path / "second_is_default.m4a"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1:sample_rate=22050",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=880:duration=1:sample_rate=22050",
+            "-map",
+            "0:a",
+            "-map",
+            "1:a",
+            "-c:a",
+            "aac",
+            "-disposition:a:0",
+            "0",
+            "-disposition:a:1",
+            "default",
+            str(path),
+        ],
+        check = True,
+    )
+    assert audio_decode.ensure_audio_decoding() is True
+    array, rate = audio_decode._read_mono(str(path))
+    assert abs(_dominant_hz(array, rate) - 880) < 20
+    array, rate = audio_decode._read_mono(str(path), stream_index = 0)
+    assert abs(_dominant_hz(array, rate) - 440) < 20
+
+
+def test_a_channel_first_array_round_trips_through_the_encoder(broken_torchcodec):
+    # torchcodec gives (channels, samples); libsndfile wants (frames, channels).
+    from datasets import Audio, Dataset
+
+    assert audio_decode.ensure_audio_decoding() is True
+    stereo = np.stack([np.linspace(-0.5, 0.5, 1600, dtype = "float32")] * 2)
+    assert stereo.shape == (2, 1600)
+    ds = Dataset.from_dict({"audio": [{"array": stereo, "sampling_rate": 16000, "path": "s.wav"}]})
+    decoded = ds.cast_column("audio", Audio(sampling_rate = 16000))[0]["audio"]
+    assert len(decoded["array"]) == 1600 and decoded["sampling_rate"] == 16000
+
+
+def test_an_m4a_path_decodes_through_pyav(broken_torchcodec, tmp_path):
+    from datasets import Audio, Dataset
+
+    path = tmp_path / "tone.m4a"
+    path.write_bytes(_m4a_bytes())
+    audio_decode.ensure_audio_decoding()
+    ds = Dataset.from_dict({"audio": [str(path)]}).cast_column("audio", Audio())
+    decoded = ds[0]["audio"]
+    assert decoded["sampling_rate"] == 22050
+    assert 20000 <= len(np.asarray(decoded["array"])) <= 24000
+
+
+def test_an_undecodable_row_names_both_decoders(broken_torchcodec):
+    from datasets import Audio, Dataset
+
+    audio_decode.ensure_audio_decoding()
+    ds = Dataset.from_dict({"audio": [{"path": "junk.bin", "bytes": b"not audio at all"}]})
+    ds = ds.cast_column("audio", Audio())
+    with pytest.raises(RuntimeError, match = "soundfile .* PyAV"):
+        ds[0]["audio"]
 
 
 def test_a_stereo_source_is_averaged_to_mono(broken_torchcodec):
@@ -101,8 +261,6 @@ def test_a_working_torchcodec_is_left_alone(monkeypatch):
     from datasets import config
     from datasets.features.audio import Audio
 
-    # Stub the decoder the guard probes for, so the assertion holds on hosts
-    # that have no torchcodec installed at all rather than a broken one.
     module = sys.modules.get("datasets.features._torchcodec")
     if module is None:
         module = types.ModuleType("datasets.features._torchcodec")
@@ -150,31 +308,35 @@ def test_the_dataset_format_check_installs_the_decoder():
 
     from hub.services.datasets import formatting
 
-    source = inspect.getsource(formatting.check_format_response)
-    assert "ensure_audio_decoding()" in source
+    # check_format_response reads its rows through load_preview_slice (#13850), so the decoder
+    # has to be installed there, ahead of every tier that can decode an audio row.
+    check = inspect.getsource(formatting.check_format_response)
+    assert "load_preview_slice(" in check, "check-format no longer reads through load_preview_slice"
+    loader = inspect.getsource(formatting.load_preview_slice)
+    body = loader[loader.index('"""', loader.index('"""') + 3) + 3 :]
+    install = body.find("ensure_audio_decoding()")
+    assert install != -1, "load_preview_slice no longer installs the audio decoder"
+    first_read = min(
+        i for i in (body.find("resolve_dataset_path("), body.find("load_dataset(")) if i != -1
+    )
+    assert install < first_read, "the decoder must be installed before the first row is read"
 
 
 def test_the_audio_trainer_paths_install_the_decoder():
-    # Read the source rather than import it: this asserts a wiring contract, and
-    # importing the trainer drags in the whole torch/unsloth stack for it.
+    # Read source: importing the trainer drags in the torch/unsloth stack.
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "core" / "training" / "trainer.py").read_text(
         encoding = "utf-8"
     )
     assert "ensure_audio_decoding()" in source
-    # Guarded so a text-only run never pays for the probe.
     assert "if self._audio_type or self.is_audio_vlm:" in source
 
 
 def test_a_concurrent_first_install_captures_the_original_encode_once(
     monkeypatch, broken_torchcodec
 ):
-    """Two first-time callers must not both capture Audio.encode_example.
-
-    The loser captured the already-installed shim as _ORIGINAL_ENCODE, so its fallback
-    branch recursed into itself until RecursionError.
-    """
+    """Concurrent first installs must capture the original encode once, or the shim recurses into itself."""
     import threading
 
     from datasets.features.audio import Audio
@@ -207,11 +369,7 @@ def test_a_concurrent_first_install_captures_the_original_encode_once(
 
 
 def test_a_multi_repo_mapping_picks_the_token_of_the_source_repo():
-    """Interleaved or concatenated streaming splits carry one token per source repo.
-
-    Handing an arbitrary one to xopen sends a private repo's credential to a different
-    repo's host, so the repo id has to come from the URL being opened.
-    """
+    """Takes the token of the URL's own repo, since another repo's credential must not reach this host."""
     from datasets import config
 
     tokens = {"org/first": "token-first", "org/second": "token-second"}
@@ -234,8 +392,6 @@ def test_a_chained_url_is_keyed_on_the_repo_it_actually_fetches():
 def test_an_unknown_host_gets_no_token_when_the_mapping_is_ambiguous():
     tokens = {"org/first": "token-first", "org/second": "token-second"}
     assert audio_decode._token_for_url("https://example.com/clip.wav", tokens) is None
-    # The single-repo mapping every caller in this codebase passes still works, which is
-    # what the previous next(iter(...)) did for all of them.
     assert audio_decode._token_for_url("https://example.com/clip.wav", {"org/x": "t"}) == "t"
     assert audio_decode._token_for_url("https://example.com/clip.wav", {}) is None
     assert audio_decode._token_for_url("https://example.com/clip.wav", None) is None

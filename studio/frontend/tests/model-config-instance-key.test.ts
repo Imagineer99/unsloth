@@ -10,7 +10,6 @@ import type { PerModelConfig } from "../src/features/model-picker/model-config/p
 const MODEL = "unsloth/Qwen3-8B-GGUF";
 const VARIANT = "Q4_K_M";
 
-// What the model is actually running with, as useActiveModelConfig reports it.
 const LIVE: PerModelConfig = {
   customContextLength: 16384,
   maxSeqLength: null,
@@ -18,6 +17,8 @@ const LIVE: PerModelConfig = {
   speculativeType: "ngram",
   specDraftNMax: 6,
   nParallel: 4,
+  reasoningBudget: 2048,
+  reasoningBudgetMessage: "Budget exhausted",
   nBatch: 4096,
   nUbatch: 1024,
   tensorParallel: true,
@@ -29,7 +30,6 @@ const LIVE: PerModelConfig = {
   selectedGpuIds: [0, 1],
 };
 
-// What ModelConfigPage would fall back to before the live config lands.
 const SAVED: PerModelConfig = {
   customContextLength: null,
   maxSeqLength: null,
@@ -37,6 +37,8 @@ const SAVED: PerModelConfig = {
   speculativeType: "auto",
   specDraftNMax: null,
   nParallel: null,
+  reasoningBudget: -1,
+  reasoningBudgetMessage: "",
   nBatch: null,
   nUbatch: null,
   tensorParallel: false,
@@ -48,10 +50,7 @@ const SAVED: PerModelConfig = {
   selectedGpuIds: null,
 };
 
-/**
- * ModelConfigPage reads `loadedConfig` in a useState initializer, so it seeds once per
- * MOUNTED instance, and React keeps that instance while the key is unchanged.
- */
+/** ModelConfigPage seeds from loadedConfig once per mounted instance. */
 function renderEditor(
   previous: { key: string; editing: PerModelConfig } | null,
   key: string,
@@ -64,7 +63,6 @@ function renderEditor(
 }
 
 test("the settings editor re-seeds when the live config arrives after mount", () => {
-  // Opened before status answered: loadedConfig is null first and live on the next render.
   let editor = renderEditor(
     null,
     modelConfigInstanceKey(MODEL, VARIANT, null),
@@ -77,8 +75,6 @@ test("the settings editor re-seeds when the live config arrives after mount", ()
     modelConfigInstanceKey(MODEL, VARIANT, LIVE),
     LIVE,
   );
-  // Without the live config in the key the editor would still hold SAVED, and Apply
-  // would reload the model over what it is running with.
   assert.deepEqual(editor.editing, LIVE);
 });
 
@@ -103,10 +99,12 @@ test("every mirrored setting moves the instance key", () => {
     { ...LIVE, customContextLength: 8192 },
     { ...LIVE, maxSeqLength: 4096 },
     { ...LIVE, kvCacheDtype: "f16" },
-    { ...LIVE, mlxKvBits: 4 },
+    { ...LIVE, mlxKvQuant: "4" },
     { ...LIVE, speculativeType: "off" },
     { ...LIVE, specDraftNMax: 4 },
     { ...LIVE, nParallel: 1 },
+    { ...LIVE, reasoningBudget: 0 },
+    { ...LIVE, reasoningBudgetMessage: "Done thinking" },
     { ...LIVE, tensorParallel: false },
     { ...LIVE, chatTemplateOverride: "{{ bos_token }}" },
     { ...LIVE, gpuMemoryMode: "auto" },
@@ -117,9 +115,13 @@ test("every mirrored setting moves the instance key", () => {
   for (const changed of changes) {
     assert.notEqual(modelConfigInstanceKey(MODEL, VARIANT, changed), base);
   }
-  // The GPU pick is a set, not an order.
-  assert.equal(
+  // GPU order is device order, so a reorder must change the key.
+  assert.notEqual(
     modelConfigInstanceKey(MODEL, VARIANT, { ...LIVE, selectedGpuIds: [1, 0] }),
+    base,
+  );
+  assert.equal(
+    modelConfigInstanceKey(MODEL, VARIANT, { ...LIVE, selectedGpuIds: [...LIVE.selectedGpuIds!] }),
     base,
   );
 });
@@ -128,9 +130,23 @@ test("the model and its quant still key the editor", () => {
   const base = modelConfigInstanceKey(MODEL, VARIANT, LIVE);
   assert.notEqual(modelConfigInstanceKey("unsloth/Other-GGUF", VARIANT, LIVE), base);
   assert.notEqual(modelConfigInstanceKey(MODEL, "Q8_0", LIVE), base);
-  // A loose .gguf carries no quant; null and undefined are the same absence.
   assert.equal(
     modelConfigInstanceKey(MODEL, null, LIVE),
     modelConfigInstanceKey(MODEL, undefined, LIVE),
+  );
+});
+
+test("the arguments the model is running with key the editor", () => {
+  const running = { ...LIVE, llamaExtraArgs: ["--numa", "distribute"] };
+  const base = modelConfigInstanceKey(MODEL, VARIANT, running);
+  assert.notEqual(
+    modelConfigInstanceKey(MODEL, VARIANT, { ...LIVE, llamaExtraArgs: ["--numa", "isolate"] }),
+    base,
+  );
+  assert.notEqual(modelConfigInstanceKey(MODEL, VARIANT, { ...LIVE, llamaExtraArgs: [] }), base);
+  assert.notEqual(modelConfigInstanceKey(MODEL, VARIANT, LIVE), base);
+  assert.equal(
+    modelConfigInstanceKey(MODEL, VARIANT, { ...LIVE, llamaExtraArgs: [...running.llamaExtraArgs] }),
+    base,
   );
 });

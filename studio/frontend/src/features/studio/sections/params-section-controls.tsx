@@ -21,7 +21,6 @@ export function ParamsRow({
   children: ReactNode;
 }): ReactElement {
   return (
-    // Match the tallest control so slider and select rows share one rhythm.
     <div className="flex min-h-9 items-center justify-between">
       <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         {label}
@@ -84,7 +83,8 @@ export function ParamsSliderRow({
           min={min}
           max={max}
           step={step}
-          className="w-12 text-right font-mono text-xs font-medium bg-muted/50 border border-border rounded-lg px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-inner-spin-button]:appearance-none"
+          // w-12 fits 11px mono, not the 16px coarse-pointer focus-zoom floor.
+          className="w-12 pointer-coarse:w-16 text-right font-mono text-xs font-medium bg-muted/50 border border-border rounded-full px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-ring [&::-webkit-inner-spin-button]:appearance-none"
         />
       </div>
     </ParamsRow>

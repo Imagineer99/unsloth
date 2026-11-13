@@ -1,14 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright 2026-present the Unsloth AI Inc. team. All rights reserved. See /studio/LICENSE.AGPL-3.0
 
-"""setup.sh must not replace a working GPU llama.cpp prebuilt with a CPU source build (#9255).
-
-A prebuilt update that fails (network, a GitHub limit, a bad release) restores the existing
-install and then source-builds. Without nvcc that build is CPU-only, and the swap replaced
-the restored CUDA prebuilt for good while the installer reported "built". Part one drives
-the keep decision, sliced out of setup.sh, against real markers. Part two pins the wiring:
-the decision runs before the compile and again at the swap, and the footer names the outcome.
-"""
+"""setup.sh must not replace a working GPU llama.cpp prebuilt with a CPU-only source build."""
 
 from __future__ import annotations
 
@@ -31,6 +24,7 @@ requires_bash = pytest.mark.skipif(BASH is None, reason = "a working bash is req
 
 _FUNCTIONS = (
     "_has_local_llama_server() {",
+    "_installed_prebuilt_ref_matches() {",
     "_installed_prebuilt_backend() {",
     "_gpu_prebuilt_to_keep_over_cpu_build() {",
 )
@@ -90,6 +84,8 @@ def _decide(tmp_path, install_dir, **env):
         "PATH": f"{stub_bin}{os.pathsep}{os.environ.get('PATH', '')}",
         "_LLAMA_FORCE_COMPILE": "0",
         "_LLAMA_PR": "",
+        # The pin comparison imports install_llama_prebuilt.py from beside setup.sh.
+        "SCRIPT_DIR": str(SETUP_SH.parent),
         "_setup_nvidia_physical": "false",
         "_setup_amd_detected": "false",
     }
@@ -104,9 +100,6 @@ def _decide(tmp_path, install_dir, **env):
     )
     assert result.returncode == 0, result.stderr
     return result.stdout
-
-
-# ── part one: the keep decision ──
 
 
 @requires_bash
@@ -137,7 +130,6 @@ class TestTheKeepDecision:
         assert _decide(tmp_path, install_dir, _setup_nvidia_physical = "true") == "KEEP cuda"
 
     def test_a_cuda_prebuilt_is_replaced_once_the_gpu_is_gone(self, tmp_path):
-        # The GPU the marker names left the machine: a CPU build is the honest install now.
         install_dir = _install(tmp_path, {"backend": "cuda"})
         assert _decide(tmp_path, install_dir) == "REPLACE"
         assert _decide(tmp_path, install_dir, _setup_amd_detected = "true") == "REPLACE"
@@ -151,6 +143,64 @@ class TestTheKeepDecision:
             == "REPLACE"
         )
         assert _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "latest", **nvidia) == "KEEP cuda"
+
+    def test_a_version_pin_the_old_install_already_satisfies_keeps_it(self, tmp_path):
+        install_dir = _install(
+            tmp_path, {"backend": "cuda", "tag": "b8508", "release_tag": "b8508-mix"}
+        )
+        nvidia = {"_setup_nvidia_physical": "true"}
+        assert _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "b8508", **nvidia) == "KEEP cuda"
+        assert _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "b8509", **nvidia) == "REPLACE"
+        # The installer's own matching: a short commit pin names the recorded full commit.
+        install_dir = _install(
+            tmp_path,
+            {
+                "backend": "cuda",
+                "tag": "0123456789abcdef0123456789abcdef01234567",
+                "release_tag": "b8508-mix",
+            },
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "0123456789ab", **nvidia)
+            == "KEEP cuda"
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "fedcba987654", **nvidia) == "REPLACE"
+        )
+        install_dir = _install(
+            tmp_path,
+            {
+                "backend": "cuda",
+                "tag": "b8508",
+                "release_tag": "b8508-mix",
+                "requested_source_ref": "0123456789abcdef0123456789abcdef01234567",
+                "resolved_source_ref": "0123456789abcdef0123456789abcdef01234567",
+                "source_commit": "0123456789abcdef0123456789abcdef01234567",
+            },
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "0123456789ab", **nvidia)
+            == "KEEP cuda"
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_TAG = "fedcba987654", **nvidia) == "REPLACE"
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_RELEASE_TAG = "b8508-mix", **nvidia)
+            == "KEEP cuda"
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_RELEASE_TAG = "b8509-mix", **nvidia)
+            == "REPLACE"
+        )
+        # A published release tag is a name: a hex-looking prefix of the recorded one is not it.
+        install_dir = _install(
+            tmp_path, {"backend": "cuda", "release_tag": "0123456789abcdef0123456789abcdef01234567"}
+        )
+        assert (
+            _decide(tmp_path, install_dir, UNSLOTH_LLAMA_RELEASE_TAG = "0123456789ab", **nvidia)
+            == "REPLACE"
+        )
 
     def test_a_cpu_prebuilt_is_not_worth_keeping(self, tmp_path):
         install_dir = _install(tmp_path, {"backend": "cpu"})
@@ -180,7 +230,6 @@ class TestTheKeepDecision:
         ids = ["llama_backend", "hip-spelling", "asset-cuda", "asset-rocm", "auto-request"],
     )
     def test_a_legacy_marker_names_its_backend_elsewhere(self, tmp_path, marker, backend):
-        # Shapes from before #8520 (tests/studio/install/test_keep_install_backcompat_9979.py).
         install_dir = _install(tmp_path, marker)
         both = {"_setup_nvidia_physical": "true", "_setup_amd_detected": "true"}
         assert _decide(tmp_path, install_dir, **both) == f"KEEP {backend}"
@@ -194,7 +243,6 @@ class TestTheKeepDecision:
         assert _decide(tmp_path, install_dir, _setup_nvidia_physical = "true") == "REPLACE"
 
     def test_a_prebuilt_that_no_longer_runs_is_replaced(self, tmp_path):
-        # A quarantined library leaves the marker and the executable behind.
         install_dir = _install(tmp_path, {"backend": "cuda"})
         assert (
             _decide(
@@ -212,9 +260,6 @@ class TestTheKeepDecision:
         nvidia = {"_setup_nvidia_physical": "true"}
         assert _decide(tmp_path, install_dir, _LLAMA_FORCE_COMPILE = "1", **nvidia) == "REPLACE"
         assert _decide(tmp_path, install_dir, _LLAMA_PR = "12345", **nvidia) == "REPLACE"
-
-
-# ── part two: the wiring ──
 
 
 def _between(start_marker, end_marker):
@@ -271,12 +316,10 @@ def test_the_decision_runs_before_the_compile():
         in window
     )
     assert "BUILD_OK=false" in window
-    # The configure must honour that verdict: it sat in the same BUILD_OK block.
     assert '[ "$BUILD_OK" = true ] && ! run_quiet_no_exit "cmake llama.cpp"' in SETUP_TEXT
 
 
 def test_the_decision_runs_again_at_the_swap():
-    # A CUDA build that fell back to CPU on the way only shows at the swap.
     window = _between("caught here, after the fact", "# Swap only after build succeeds")
     assert '[ -z "$GPU_BACKEND" ] && [ "$_TRY_METAL_CPU_FALLBACK" != true ]' in window
     assert '_gpu_prebuilt_to_keep_over_cpu_build "$LLAMA_CPP_DIR"' in window
@@ -287,8 +330,7 @@ def test_the_kept_tree_is_checked_offline_the_way_the_updater_checks_it():
     keep = _between("_gpu_prebuilt_to_keep_over_cpu_build() {", "\n}\n")
     assert '_installed_prebuilt_runs "$install_dir" || return 1' in keep
     runs = _between("_installed_prebuilt_runs() {", "\n}\n")
-    # Not --validate-install: that downloads its probe model, and the update just failed
-    # for want of a download.
+    # Not --validate-install: it downloads a probe model.
     assert '--check-installed "$1"' in runs and "--validate-install" not in runs
 
 
@@ -332,7 +374,6 @@ class TestTheKeptBundleMustStillCoverTheCard:
         marker = {"backend": "cuda", "supported_sms": ["7.5", "8.6", "8.9"]}
         assert ilp._kept_install_covers_host(marker, _linux_host(ilp, compute_caps = ["8.9"]))
         assert not ilp._kept_install_covers_host(marker, _linux_host(ilp, compute_caps = ["12.0"]))
-        # Two cards: every one must be covered.
         assert not ilp._kept_install_covers_host(
             marker, _linux_host(ilp, compute_caps = ["8.9", "12.0"])
         )
@@ -457,3 +498,49 @@ def test_every_footer_names_the_outcome():
 def test_the_flags_are_initialised_for_set_u():
     assert '_LLAMA_KEPT_GPU_PREBUILT=""' in SETUP_TEXT
     assert "_LLAMA_CPU_ONLY_ON_GPU_HOST=false" in SETUP_TEXT
+
+
+def test_the_source_build_reads_capabilities_from_the_driver_library_too():
+    """setup.sh's CUDA source build turned CUDA off without nvidia-smi (#5854); the probe
+    module beside it lists the same capabilities."""
+    start = SETUP_TEXT.index(
+        'CUDA_ARCHS="$(_resolve_cuda_archs "$_raw_caps" "${UNSLOTH_LLAMA_CUDA_ARCHS:-}")"'
+    )
+    end = SETUP_TEXT.index('if [ -n "$CUDA_ARCHS" ]; then', start)
+    between = SETUP_TEXT[start:end]
+    # After the first resolution, so an nvidia-smi answering N/A falls back as an absent one does.
+    assert "_probe_compute_caps" in between and '[ -z "$CUDA_ARCHS" ]' in between
+    assert "UNSLOTH_NVIDIA_LIBRARY_PROBE" in between
+
+
+@requires_bash
+@pytest.mark.parametrize(
+    "listing, expected",
+    [
+        ("GPU 0: A (compute 8.9)\nGPU 1: B (compute 12.0)\n", "8.9\n12.0\n"),
+        # One GPU without a readable capability voids the list, as the Python side does.
+        ("GPU 0: A (compute 8.9)\nGPU 1: B (compute )\n", ""),
+        ("", ""),
+    ],
+)
+def test_the_probe_capabilities_are_all_or_nothing(tmp_path, listing, expected):
+    start = SETUP_TEXT.index("_probe_compute_caps() {")
+    body = SETUP_TEXT[start : SETUP_TEXT.index("\n}\n", start) + 3]
+    (tmp_path / "python3").write_text(f"#!/bin/sh\nprintf '%b' {listing!r}\n", encoding = "utf-8")
+    (tmp_path / "python3").chmod(0o755)
+    (tmp_path / "nvidia_probe.py").write_text("", encoding = "utf-8")
+    script = '_setup_run_smi() { "$@"; }\n' + body + "\n_probe_compute_caps\n"
+    result = subprocess.run(
+        [BASH, "-c", script],
+        env = {
+            **os.environ,
+            "PATH": f"{tmp_path}{os.pathsep}{os.environ.get('PATH', '')}",
+            "SCRIPT_DIR": str(tmp_path),
+        },
+        stdout = subprocess.PIPE,
+        stderr = subprocess.PIPE,
+        text = True,
+        timeout = 60,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == expected

@@ -75,3 +75,114 @@ def provider_model_capabilities(
         return []
     mapped = (openrouter_model_capabilities(m) for m in models if isinstance(m, dict))
     return [entry for entry in mapped if entry is not None]
+
+
+MODELS_DEV_URL = "https://models.dev/api.json"
+
+MODELS_DEV_PROVIDER_MAP = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "openrouter": "openrouter",
+    "google": "gemini",
+    "mistral": "mistral",
+    "deepseek": "deepseek",
+    "moonshotai": "kimi",
+    "cohere": "cohere",
+    "huggingface": "huggingface",
+    "alibaba": "qwen",
+    "zai": "zai",
+    "opencode": "opencode",
+    "opencode-go": "opencode_go",
+    "ollama-cloud": "ollama",
+    "lmstudio": "lmstudio",
+}
+
+
+def _trim_models_dev_model(model: dict[str, Any]) -> dict[str, Any]:
+    entry: dict[str, Any] = {}
+    if model.get("reasoning") is True:
+        entry["reasoning"] = True
+    options = model.get("reasoning_options")
+    options = options if isinstance(options, list) else []
+    for option in options:
+        if not isinstance(option, dict):
+            continue
+        if option.get("type") == "effort":
+            efforts = _sorted_efforts(option.get("values"))
+            if efforts:
+                entry["efforts"] = efforts
+        elif option.get("type") == "toggle":
+            entry["toggle"] = True
+    modalities = model.get("modalities")
+    inputs = modalities.get("input") if isinstance(modalities, dict) else None
+    if isinstance(inputs, list) and inputs:
+        entry["input"] = [m for m in inputs if isinstance(m, str)]
+    # The frontend merges this over its snapshot, so a missing field erases the bundled one.
+    limit = model.get("limit")
+    context = limit.get("context") if isinstance(limit, dict) else None
+    if isinstance(context, int) and not isinstance(context, bool) and context > 0:
+        entry["context"] = context
+    return entry
+
+
+def trim_models_dev_catalog(raw: dict[str, Any]) -> dict[str, dict[str, dict[str, Any]]]:
+    catalog: dict[str, dict[str, dict[str, Any]]] = {}
+    for source, provider_type in MODELS_DEV_PROVIDER_MAP.items():
+        provider = raw.get(source)
+        models = provider.get("models") if isinstance(provider, dict) else None
+        if not isinstance(models, dict):
+            continue
+        bucket = catalog.setdefault(provider_type, {})
+        for model_id, model in models.items():
+            if isinstance(model_id, str) and model_id.strip() and isinstance(model, dict):
+                bucket[model_id.strip().lower()] = _trim_models_dev_model(model)
+    return catalog
+
+
+MODELS_DEV_MODEL_LIST_SOURCES = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "gemini": "google",
+    "deepseek": "deepseek",
+    "zai": "zai",
+    "kimi": "moonshotai",
+    "mistral": "mistral",
+    "minimax": "minimax",
+    "opencode": "opencode",
+    "opencode_go": "opencode-go",
+    "qwen": "alibaba",
+    "huggingface": "huggingface",
+}
+
+
+def _is_chat_model(model: dict[str, Any]) -> bool:
+    modalities = model.get("modalities")
+    modalities = modalities if isinstance(modalities, dict) else {}
+    inputs, outputs = modalities.get("input"), modalities.get("output")
+    return (
+        model.get("status") != "deprecated"
+        and isinstance(inputs, list)
+        and "text" in inputs
+        and isinstance(outputs, list)
+        and "text" in outputs
+    )
+
+
+def models_dev_chat_models(raw: dict[str, Any]) -> dict[str, list[str]]:
+    catalog: dict[str, list[str]] = {}
+    for provider_type, source in MODELS_DEV_MODEL_LIST_SOURCES.items():
+        provider = raw.get(source)
+        models = provider.get("models") if isinstance(provider, dict) else None
+        if not isinstance(models, dict):
+            continue
+        chat = [
+            (str(model.get("release_date") or ""), model_id.strip())
+            for model_id, model in models.items()
+            if isinstance(model_id, str)
+            and model_id.strip()
+            and isinstance(model, dict)
+            and _is_chat_model(model)
+        ]
+        chat.sort(key = lambda entry: entry[0], reverse = True)
+        catalog[provider_type] = [model_id for _, model_id in chat]
+    return catalog

@@ -20,6 +20,7 @@ import {
   readModelConfigDraft,
   replaceModelConfigDraft,
   retainModelConfigDraft,
+  setModelConfigDraftPickedSet,
   setModelConfigDraftRemember,
 } from "../src/features/model-picker/model-config/model-config-draft.ts";
 import type { PerModelConfig } from "../src/features/model-picker/model-config/per-model-config.ts";
@@ -35,6 +36,8 @@ const SEED: PerModelConfig = {
   speculativeType: "auto",
   specDraftNMax: null,
   nParallel: null,
+  reasoningBudget: -1,
+  reasoningBudgetMessage: "",
   nBatch: null,
   nUbatch: null,
   tensorParallel: false,
@@ -68,6 +71,20 @@ test("a new live signature re-seeds the draft from the resident process", () => 
   assert.equal(reseeded?.config.kvCacheDtype, "q4_0");
   assert.equal(reseeded?.config.nParallel, 4);
   assert.equal(reseeded?.appliedLiveSignature, "sig-b");
+});
+
+test("a one-time pick is shared by both editors until the draft is replaced or re-seeded", () => {
+  const key = modelConfigDraftKey(MODEL, "Q6_K");
+  primeModelConfigDraft(key, { config: SEED, remembered: true }, "sig-a");
+  setModelConfigDraftPickedSet(key, "Other");
+  patchModelConfigDraft(key, { nParallel: 2 });
+  assert.equal(readModelConfigDraft(key)?.pickedSet, "Other");
+  replaceModelConfigDraft(key, SEED);
+  assert.equal(readModelConfigDraft(key)?.pickedSet, undefined);
+  setModelConfigDraftPickedSet(key, null);
+  assert.equal(readModelConfigDraft(key)?.pickedSet, null);
+  primeModelConfigDraft(key, { config: SEED, remembered: true }, "sig-b");
+  assert.equal(readModelConfigDraft(key)?.pickedSet, undefined);
 });
 
 test("remember toggle keeps saved baseline until save", () => {
@@ -110,7 +127,6 @@ test("quants of one repo keep their own drafts", () => {
 });
 
 test("a colon in the model id is not read as a quant", () => {
-  // A `${id}:${variant}` join gave "ollama/qwen3:8b" and "ollama/qwen3" at 8b one draft.
   assert.notEqual(
     modelConfigDraftKey("ollama/qwen3:8b", null),
     modelConfigDraftKey("ollama/qwen3", "8b"),
@@ -126,7 +142,6 @@ test("the draft outlives one host but not the last one", () => {
   markExtraArgsHydratedForDraft(key);
   dropdown();
   assert.equal(readModelConfigDraft(key)?.config.nParallel, 6);
-  // Or a value typed and never applied comes back as this model's settings.
   sidebar();
   assert.equal(readModelConfigDraft(key), undefined);
   assert.equal(isExtraArgsHydratedForDraft(key), false);
@@ -152,7 +167,6 @@ test("a release that fires twice does not drop another host's draft", () => {
 test("the Extra Arguments box is shared, and an external replacement supersedes it", () => {
   const key = modelConfigDraftKey("unsloth/Extra-Args-GGUF", VARIANT);
   const release = retainModelConfigDraft(key);
-  // Half-typed: parseExtraArgs still yields tokens, which the other editor would re-quote.
   setExtraArgsEditForDraft(key, {
     text: '--chat-template "a b',
     source: '--chat-template "a b"',
@@ -173,8 +187,6 @@ test("the row's verdict travels with the edit, and a keystroke retires it", () =
     text: '--chat-template "a b',
     source: '--chat-template "a b"',
   });
-  // Only the row reads the raw text; the other editor judges the TOKENS, which format back
-  // balanced, and would offer to load the unfinished line.
   setExtraArgsEditLoadableForDraft(key, false);
   assert.equal(readExtraArgsEditForDraft(key)?.loadable, false);
   assert.equal(readExtraArgsEditForDraft(key)?.text, '--chat-template "a b');
@@ -204,14 +216,12 @@ test("a fresh editor re-reads the stored row, but not over an unsaved edit", () 
   primeModelConfigDraft(key, { config: SEED, remembered: false }, "none");
   markExtraArgsHydratedForDraft(key);
 
-  // The sidebar never unmounts while a model is resident, so without this retirement the tab
-  // never sees a save made by another origin.
+  // The sidebar never unmounts while a model is resident, so retirement is needed.
   const picker = retainModelConfigDraft(key);
   assert.equal(isExtraArgsHydratedForDraft(key), false);
   markExtraArgsHydratedForDraft(key);
   picker();
 
-  // The mark stands: that edit is already in the config a second read compares itself against.
   markModelConfigDraftEdited(key);
   const pickerAgain = retainModelConfigDraft(key);
   assert.equal(isExtraArgsHydratedForDraft(key), true);
@@ -242,7 +252,6 @@ test("an external replacement retires the raw edit, so an A to B to A round trip
   const key = modelConfigDraftKey("unsloth/Aba-GGUF", VARIANT);
   const release = retainModelConfigDraft(key);
   primeModelConfigDraft(key, { config: SEED, remembered: false }, "sig-a");
-  // Noncanonical raw text whose tokens format back to something else, carrying a refusal.
   setExtraArgsEditForDraft(key, {
     text: '--chat-template "a b',
     source: '--chat-template "a b"',
@@ -250,7 +259,6 @@ test("an external replacement retires the raw edit, so an A to B to A round trip
   setExtraArgsEditLoadableForDraft(key, false);
 
   replaceModelConfigDraft(key, SEED, { remember: true, savedRemember: true });
-  // Gone, not stale: a later value formatting to the same tokens would make it current again.
   assert.equal(readExtraArgsEditForDraft(key), undefined);
 
   setExtraArgsEditForDraft(key, { text: "--verbose", source: "--verbose" });

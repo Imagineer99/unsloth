@@ -5,6 +5,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type * as GpuHooks from "../src/hooks/use-gpu-info.ts";
 import type * as SystemHooks from "../src/hooks/use-system.ts";
+import { normalizeDenseQuantSchemes } from "../src/lib/dense-quant-schemes.ts";
+import { normalizeReportedOffloadFitTiers } from "../src/lib/offload-fit-tiers.ts";
 import { loadWithStubs } from "./helpers/module-stubs.ts";
 
 let snapshot: unknown = null;
@@ -20,6 +22,9 @@ const hooks = loadWithStubs<typeof GpuHooks>(
       useMemo: (read: () => unknown) => read(),
     },
     "./use-system": { getCachedSystemInfo: () => snapshot },
+    // Aliased, so passthrough cannot resolve it; use the real implementation, not a stub.
+    "@/lib/dense-quant-schemes": { normalizeDenseQuantSchemes },
+    "@/lib/offload-fit-tiers": { normalizeReportedOffloadFitTiers },
   },
   { relativePassthrough: true },
 );
@@ -53,12 +58,37 @@ test("GPU and RAM probes distinguish zero from missing or invalid readings", () 
   }
 });
 
+test("the dense quant schemes are read off the route, and default to none", () => {
+  const withSchemes = (schemes?: unknown) => {
+    snapshot = {
+      status: "ready",
+      device_backend: "cuda",
+      dense_quant_supported: true,
+      ...(schemes === undefined ? {} : { dense_quant_schemes: schemes }),
+      gpu: {
+        available: true,
+        backend: "cuda",
+        devices: [{ index: 0, index_kind: "physical", memory_total_gb: 24 }],
+      },
+      memory: { total_gb: 32, available_gb: 16 },
+    };
+    return hooks.useGpuInfo();
+  };
+  assert.deepEqual(withSchemes(["fp8"]).denseQuantSchemes, ["fp8"]);
+  assert.deepEqual(withSchemes(["INT8"]).denseQuantSchemes, ["int8"]);
+  const older = withSchemes();
+  assert.equal(older.denseQuantSupported, true);
+  assert.deepEqual(older.denseQuantSchemes, []);
+  assert.deepEqual(withSchemes([]).denseQuantSchemes, []);
+});
+
 test("resident refresh bypasses cached and in-flight pre-load memory", async () => {
   const requests: { url: string; resolve: (response: Response) => void }[] = [];
   const system = loadWithStubs<typeof SystemHooks>(
     new URL("../src/hooks/use-system.ts", import.meta.url),
     {
       react: {},
+      "@/config/env": { refreshDeviceTypeAfterSystemInfo: () => {} },
       "@/features/auth": {
         authFetch: (url: string) =>
           new Promise<Response>((resolve) => {
@@ -89,4 +119,35 @@ test("resident refresh bypasses cached and in-flight pre-load memory", async () 
   assert.equal(requests.length, 3);
   requests[2].resolve(new Response(null, { status: 503 }));
   assert.equal(await again, null);
+});
+
+test("a fast monitor poll does not join a pending fetch on the 10 s GPU cache", async () => {
+  const requests: { url: string; resolve: (response: Response) => void }[] = [];
+  const system = loadWithStubs<typeof SystemHooks>(
+    new URL("../src/hooks/use-system.ts", import.meta.url),
+    {
+      react: {},
+      "@/config/env": { refreshDeviceTypeAfterSystemInfo: () => {} },
+      "@/features/auth": {
+        authFetch: (url: string) =>
+          new Promise<Response>((resolve) => {
+            requests.push({ url, resolve });
+          }),
+      },
+    },
+    { relativePassthrough: true },
+  );
+  const settings = system.fetchSystemInfo({ force: true });
+  const monitor = system.fetchSystemInfo({ force: true, gpuMaxAgeMs: 2000 });
+  assert.equal(requests.length, 1);
+  requests[0].resolve(Response.json({ memory: { available_gb: 20 } }));
+  await settings;
+  await Promise.resolve();
+  assert.equal(requests[1].url, "/api/system?gpu_max_age=2");
+  // A pending fetch at least as fresh is shared.
+  const sharer = system.fetchSystemInfo({ force: true, gpuMaxAgeMs: 5000 });
+  assert.equal(requests.length, 2);
+  requests[1].resolve(Response.json({ memory: { available_gb: 18 } }));
+  assert.equal((await monitor)?.memory.available_gb, 18);
+  assert.equal(await sharer, await monitor);
 });
