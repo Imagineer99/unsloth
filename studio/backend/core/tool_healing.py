@@ -250,6 +250,8 @@ _TOOL_TAG_PREFIXES = (
     "</param",
     "<arg_",
     "</arg_",
+    "<ifm|",
+    "</ifm|",
     "<minimax:",
     "</minimax:",
     "<|",
@@ -257,7 +259,7 @@ _TOOL_TAG_PREFIXES = (
     "[",
 )
 _TOOL_TAG_HINT_RE = re.compile(
-    r"</?(?:tool|function|param|arg_|minimax:)|<[|｜]|\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\]"
+    r"</?(?:tool|function|param|arg_|minimax:|ifm\|)|<[|｜]|\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\]"
 )
 
 

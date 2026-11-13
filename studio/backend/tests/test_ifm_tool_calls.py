@@ -192,6 +192,13 @@ def test_foreign_markup_and_near_json_inside_an_argument():
     assert _calls(single, allow_incomplete = False) == []
 
 
+@pytest.mark.parametrize("tag", ["<ifm|tool_calls>", "</ifm|tool_call>"])
+def test_a_backticked_tag_mention_is_prose(tag):
+    text = f"Use `{tag}` tags. More prose."
+    assert strip_tool_markup(text, final = True) == text
+    assert _calls(text) == []
+
+
 def test_strip_buffers_open_block_until_final():
     open_block = "Answer.\n" + XML_CALL[:40]
     assert strip_tool_markup(open_block) == open_block
