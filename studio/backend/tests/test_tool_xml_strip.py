@@ -31,6 +31,7 @@ from core.inference.tool_call_parser import (
     _strip_function_xml_calls,
     _strip_gemma_wrapperless_calls,
     _strip_glm_calls,
+    _strip_ifm_calls,
     _strip_minimax_calls,
     _strip_mistral_closed_calls,
 )
@@ -47,6 +48,7 @@ _ns = {
     "_strip_gemma_wrapperless_calls": _strip_gemma_wrapperless_calls,
     "_strip_glm_calls": _strip_glm_calls,
     "_strip_minimax_calls": _strip_minimax_calls,
+    "_strip_ifm_calls": _strip_ifm_calls,
     "_strip_function_xml_calls": _strip_function_xml_calls,
 }
 exec(f"_TOOL_XML_RE = _re.compile({_m.group(1)})", _ns)

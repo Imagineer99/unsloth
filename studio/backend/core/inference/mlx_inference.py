@@ -7875,7 +7875,7 @@ class MLXInferenceBackend:
                     f"VLM chat template marked {marked} image(s) for {attached_images} attached."
                 )
 
-        markers = detect_reasoning_channel_markers(chat_target, tools = tools)
+        markers = detect_reasoning_channel_markers(chat_target, tools = tools, prompt = prompt)
         if not self._reads_vision_input():
             # No images means no image tokens to place, so skipping this would drop the tool schema.
             from core.inference.chat_template_helpers import (
@@ -8990,7 +8990,7 @@ class MLXInferenceBackend:
             cap = UNSET_GENERATION_BUDGET,
         )
         logger.info("MLX audio-input generating: prompt_len=%d", len(prompt))
-        markers = detect_reasoning_channel_markers(self._processor)
+        markers = detect_reasoning_channel_markers(self._processor, prompt = prompt)
         normalizer = make_reasoning_normalizer(markers) if markers is not None else None
         # Matched on the sampled deltas, for the reason _generate_text gives.
         sequences = _mlx_stop_sequences(stop)

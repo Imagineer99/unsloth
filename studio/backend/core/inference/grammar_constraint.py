@@ -96,7 +96,7 @@ def build_constraint(
     reasoning_is_extracted: bool = False,
     reply_keeps_special_tokens: bool = False,
 ) -> Optional["GrammarConstraint"]:
-    markers = _reasoning_markers(tokenizer, reasoning_markers, tools)
+    markers = _reasoning_markers(tokenizer, reasoning_markers, tools, prompt)
     spec = constraint_spec_from_response_format(
         response_format,
         tokenizer,
@@ -226,6 +226,7 @@ def _reasoning_markers(
     tokenizer,
     markers = None,
     tools = None,
+    prompt = None,
 ) -> Optional[tuple]:
     if markers:
         return tuple(markers)
@@ -234,7 +235,10 @@ def _reasoning_markers(
     from core.inference.chat_template_helpers import detect_reasoning_channel_markers
 
     try:
-        return detect_reasoning_channel_markers(tokenizer, tools = tools) or _THINK_MARKERS
+        return (
+            detect_reasoning_channel_markers(tokenizer, tools = tools, prompt = prompt)
+            or _THINK_MARKERS
+        )
     except Exception:
         return None
 

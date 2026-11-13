@@ -1110,7 +1110,7 @@
       "_DEEPSEEK_BEGIN_RE": "'<｜(?:tool▁calls▁begin|tool_calls_begin|tool calls begin|tool\\\\\\\\_calls\\\\\\\\_begin|tool▁calls)｜>' flags=32",
       "_DEEPSEEK_GLUE_GAP_STOP_RE": "'[`<>\\\\[\\\\]{}]' flags=32",
       "_DEEPSEEK_R1_CLOSE_RE": "'```[\\\\s\\\\r\\\\n]*<｜tool▁call▁end｜>' flags=32",
-      "_EMBEDDED_MARKER_RE": "'<｜(?:tool▁calls▁begin|tool_calls_begin|tool calls begin|tool\\\\\\\\_calls\\\\\\\\_begin|tool▁calls)｜>|<\\\\|tool_calls_section_begin\\\\|>|<\\\\|tool_call_begin\\\\|>|<minimax:tool_call>' flags=32",
+      "_EMBEDDED_MARKER_RE": "'<｜(?:tool▁calls▁begin|tool_calls_begin|tool calls begin|tool\\\\\\\\_calls\\\\\\\\_begin|tool▁calls)｜>|<\\\\|tool_calls_section_begin\\\\|>|<\\\\|tool_call_begin\\\\|>|<minimax:tool_call>|<ifm\\\\|tool_calls>' flags=32",
       "_FENCE_ONLY_RE": "'[\\\\w.\\\\-]*[ \\\\t]*\\\\n?[ \\\\t]*`{3,}[a-zA-Z0-9_+-]*' flags=32",
       "_FUNC_CLOSE_TAG_RE": "'</function>' flags=32",
       "_GEMMA_BARE_TC_PREFIX_RE": "'(?<!\\\\w)call\\\\s*(?::\\\\s*[\\\\w\\\\.\\\\-]*)?$' flags=32",
@@ -1122,6 +1122,8 @@
       "_GEMMA_TC_RE": "'<\\\\|tool_call>\\\\s*call\\\\s*:\\\\s*([\\\\w\\\\.\\\\-]+)\\\\s*\\\\{' flags=32",
       "_GLM_JSON_NUMERIC_RE": "'-?\\\\d+(?:\\\\.\\\\d+)?(?:[eE][+-]?\\\\d+)?' flags=32",
       "_GLM_TC_OPEN_RE": "'<tool_call>\\\\s*([\\\\w.\\\\-]+)\\\\s*(?=\\\\n|<arg_key>|</tool_call>)' flags=32",
+      "_IFM_ARG_RE": "'\\\\s*<ifm\\\\|arg_key>\\\\s*([^<>]+?)\\\\s*</ifm\\\\|arg_key>\\\\s*(?:<ifm\\\\|arg_type>\\\\s*([^<>]*?)\\\\s*</ifm\\\\|arg_type>\\\\s*)?<ifm\\\\|arg_value>(.*?)</ifm\\\\|arg_value>' flags=48",
+      "_IFM_NAME_RE": "'\\\\s*([\\\\w.\\\\-]+)\\\\s*' flags=32",
       "_KIMI_ID_RE": "'^(?:functions\\\\.)?([\\\\w\\\\.\\\\-]+)(?::(\\\\d+))?$' flags=32",
       "_LEADING_JSON_FENCE_RE": "'^`{3,}[a-zA-Z0-9_+-]*[ \\\\t]*\\\\r?\\\\n' flags=32",
       "_LLAMA3_CALL_CHAIN_RE": "'\\\\s*;\\\\s*([\\\\w\\\\.\\\\-]+)\\\\s*\\\\.\\\\s*call\\\\s*\\\\(' flags=32",
@@ -1216,10 +1218,12 @@
       "re.compile('\\\\[TOOL_CALLS\\\\]\\\\s*\\\\[.*?\\\\](?:\\\\s*</s>)?', re.DOTALL)": 1,
       "re.compile('\\\\s*')": 2,
       "re.compile('\\\\s*([A-Za-z_][\\\\w.\\\\-]*)\\\\s*:')": 1,
+      "re.compile('\\\\s*([\\\\w.\\\\-]+)\\\\s*')": 1,
       "re.compile('\\\\s*([\\\\w\\\\.\\\\-]+)\\\\s*')": 1,
       "re.compile('\\\\s*([\\\\w\\\\.\\\\-]+)\\\\s*\\\\.\\\\s*call\\\\s*\\\\(')": 1,
       "re.compile('\\\\s*;\\\\s*([\\\\w\\\\.\\\\-]+)\\\\s*\\\\.\\\\s*call\\\\s*\\\\(')": 1,
       "re.compile('\\\\s*</(?:parameter|param)>\\\\s*$')": 1,
+      "re.compile('\\\\s*<ifm\\\\|arg_key>\\\\s*([^<>]+?)\\\\s*</ifm\\\\|arg_key>\\\\s*(?:<ifm\\\\|arg_type>\\\\s*([^<>]*?)\\\\s*</ifm\\\\|arg_type>\\\\s*)?<ifm\\\\|arg_value>(.*?)</ifm\\\\|arg_value>', re.DOTALL)": 1,
       "re.compile('\\\\w+')": 1,
       "re.compile('\\ue000+')": 1,
       "re.compile('^(?:functions\\\\.)?([\\\\w\\\\.\\\\-]+)(?::(\\\\d+))?$')": 1,
@@ -1229,7 +1233,7 @@
       "re.compile('true|false|null')": 1,
       "re.compile(_DEEPSEEK_OPEN_RE_SRC + '(?=\\\\s*(?:<｜tool▁call▁begin｜>|function)|\\\\s*$).*$', re.DOTALL)": 1,
       "re.compile(_DEEPSEEK_OPEN_RE_SRC + '.*?<｜tool▁calls▁end｜>', re.DOTALL)": 1,
-      "re.compile(_DEEPSEEK_OPEN_RE_SRC + '|' + re.escape(_KIMI_SECTION_BEGIN) + '|' + re.escape(_KIMI_CALL_BEGIN) + '|' + re.escape(_MINIMAX_BLOCK_OPEN))": 1,
+      "re.compile(_DEEPSEEK_OPEN_RE_SRC + '|' + re.escape(_KIMI_SECTION_BEGIN) + '|' + re.escape(_KIMI_CALL_BEGIN) + '|' + re.escape(_MINIMAX_BLOCK_OPEN) + '|' + re.escape(_IFM_BLOCK_OPEN))": 1,
       "re.compile(_DEEPSEEK_OPEN_RE_SRC)": 1,
       "re.compile(_GEMMA_SLOT + '(\\\\d+)' + _GEMMA_SLOT)": 1
     },
@@ -1471,6 +1475,27 @@
         "kind": "assign"
       },
       "_HELP_OFFER": {
+        "kind": "assign"
+      },
+      "_IFM_ARG_RE": {
+        "kind": "assign"
+      },
+      "_IFM_BLOCK_CLOSE": {
+        "kind": "assign"
+      },
+      "_IFM_BLOCK_OPEN": {
+        "kind": "assign"
+      },
+      "_IFM_CALL_CLOSE": {
+        "kind": "assign"
+      },
+      "_IFM_CALL_OPEN": {
+        "kind": "assign"
+      },
+      "_IFM_JSON_TYPES": {
+        "kind": "assign"
+      },
+      "_IFM_NAME_RE": {
         "kind": "assign"
       },
       "_INFERENCE_WRAPPER_OPENERS": {
@@ -1813,6 +1838,16 @@
         "kind": "def",
         "signature": "text: str"
       },
+      "_ifm_block_spans": {
+        "decorators": [],
+        "kind": "def",
+        "signature": "text: str"
+      },
+      "_ifm_blocks": {
+        "decorators": [],
+        "kind": "def",
+        "signature": "text: str, relaxed: bool=True"
+      },
       "_inference_wrapper_spans": {
         "decorators": [],
         "kind": "def",
@@ -1950,6 +1985,11 @@
         "kind": "def",
         "signature": "content: str, pos: int, *, id_offset: int"
       },
+      "_parse_ifm_tool_calls": {
+        "decorators": [],
+        "kind": "def",
+        "signature": "content: str, *, id_offset: int, allow_incomplete: bool=True"
+      },
       "_parse_kimi_section_body": {
         "decorators": [],
         "kind": "def",
@@ -2051,6 +2091,11 @@
         "signature": "text: str, enabled_tool_names: Optional[set]=None"
       },
       "_strip_glm_calls": {
+        "decorators": [],
+        "kind": "def",
+        "signature": "text: str, *, final: bool"
+      },
+      "_strip_ifm_calls": {
         "decorators": [],
         "kind": "def",
         "signature": "text: str, *, final: bool"
@@ -2286,7 +2331,7 @@
       "_TOOL_OPEN_XML_TAIL_PATS[0]": "'<tool_call>.*$' flags=48",
       "_TOOL_OPEN_XML_TAIL_PATS[1]": "'<\\\\|tool_call>.*$' flags=48",
       "_TOOL_OPEN_XML_TAIL_PATS[2]": "'<function=[\\\\w-]+>.*$' flags=48",
-      "_TOOL_TAG_HINT_RE": "'</?(?:tool|function|param|arg_|minimax:)|<[|｜]|\\\\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\\\\]' flags=32",
+      "_TOOL_TAG_HINT_RE": "'</?(?:tool|function|param|arg_|minimax:|ifm\\\\|)|<[|｜]|\\\\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\\\\]' flags=32",
       "_WRAP_CLOSE_RE": "'\\\\s*</tool_call>' flags=32",
       "_WRAP_OPEN_RE": "'<tool_call>\\\\s*$' flags=32"
     },
@@ -2296,7 +2341,7 @@
       "re.compile('(?<!\\\\[CALL_ID\\\\])\\\\b([\\\\w-]+)\\\\[ARGS\\\\]\\\\s*(?:\\\\{.*)?$', re.DOTALL)": 1,
       "re.compile('(?<!\\\\[CALL_ID\\\\])\\\\b([\\\\w-]+)\\\\[ARGS\\\\]\\\\s*(?=\\\\{)')": 1,
       "re.compile('(?<!`)(``?)[ \\\\t]*(<(?!/?think(?:ing)?>)[^<>`\\\\n]+>[\\\\w.\\\\-]*|\\\\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\\\\][\\\\w.\\\\-]*)[ \\\\t]*\\\\1')": 1,
-      "re.compile('</?(?:tool|function|param|arg_|minimax:)|<[|｜]|\\\\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\\\\]')": 1,
+      "re.compile('</?(?:tool|function|param|arg_|minimax:|ifm\\\\|)|<[|｜]|\\\\[/?(?:TOOL_CALLS|ARGS|CALL_ID)\\\\]')": 1,
       "re.compile('</think>|\\\\[/THINK\\\\]')": 1,
       "re.compile('</tool_call>|<\\\\|end_message\\\\|>')": 1,
       "re.compile('<\\\\|tool_call>.*$', re.DOTALL)": 1,

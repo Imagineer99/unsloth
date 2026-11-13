@@ -6428,7 +6428,7 @@ def _vlm_backend(
         + prompt_tail,
     )
     monkeypatch.setattr(
-        mlx_inference, "detect_reasoning_channel_markers", lambda target, tools = None: markers
+        mlx_inference, "detect_reasoning_channel_markers", lambda target, tools = None, **_k: markers
     )
     backend = mlx_inference.MLXInferenceBackend.__new__(mlx_inference.MLXInferenceBackend)
     backend._tokenizer = SimpleNamespace(chat_template = "t", all_special_tokens = [])

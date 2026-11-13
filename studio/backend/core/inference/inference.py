@@ -2514,7 +2514,9 @@ class InferenceBackend:
                 raw_tokenizer,
                 protocol_source = processor,
                 # The text-only fallback did not use the processor template; pass tools to match the render.
-                reasoning_channel_markers = detect_reasoning_channel_markers(processor, tools = tools)
+                reasoning_channel_markers = detect_reasoning_channel_markers(
+                    processor, tools = tools, prompt = prompt_text
+                )
                 # Any attached image: no markers here would leak native reasoning as visible answer text.
                 if attached
                 else None,
@@ -3047,7 +3049,7 @@ class InferenceBackend:
             reasoning_channel_markers
             if reasoning_channel_markers_resolved
             else reasoning_channel_markers
-            or detect_reasoning_channel_markers(protocol_source or tokenizer)
+            or detect_reasoning_channel_markers(protocol_source or tokenizer, prompt = prompt)
         )
         if markers is not None:
             return ReasoningTextIteratorStreamer(
