@@ -6752,10 +6752,10 @@ def _strip_tool_xml_for_display(
 
     def _strip_segment(seg: str, is_last: bool) -> str:
         # Strips close at each call's real terminator, so a quoted </function> cannot truncate them.
+        seg = _strip_ifm_calls(seg, final = is_last)
         seg = _strip_mistral_closed_calls(seg)
         # llama-server leaves MiniMax blocks in content when tool_choice is "none".
         seg = _strip_minimax_calls(seg, final = is_last)
-        seg = _strip_ifm_calls(seg, final = is_last)
         seg = _strip_bracket_tag_calls(seg, enabled_tool_names = enabled_tool_names)
         if is_last:
             seg = _strip_gemma_wrapperless_calls(seg, enabled_tool_names)

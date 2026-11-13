@@ -178,6 +178,20 @@ def test_ifm_markup_inside_an_argument_is_data(literal):
         assert strip_tool_markup("A " + text + " B", final = True) == "A  B"
 
 
+def test_foreign_markup_and_near_json_inside_an_argument():
+    query = '[TOOL_CALLS]web_search{"query":"x"}'
+    text = (
+        "<ifm|tool_calls>\n<ifm|tool_call>"
+        + json.dumps({"name": "web_search", "arguments": {"query": query}})
+        + "</ifm|tool_call>\n</ifm|tool_calls>"
+    )
+    assert _calls(text) == [("web_search", {"query": query})]
+    assert strip_tool_markup("A " + text + " B", final = True) == "A  B"
+    single = "<ifm|tool_calls>\n<ifm|tool_call>{'name': 'web_search', 'arguments': {'query': '}'}}</ifm|tool_call>\n</ifm|tool_calls>"
+    assert _calls(single) == [("web_search", {"query": "}"})]
+    assert _calls(single, allow_incomplete = False) == []
+
+
 def test_strip_buffers_open_block_until_final():
     open_block = "Answer.\n" + XML_CALL[:40]
     assert strip_tool_markup(open_block) == open_block
