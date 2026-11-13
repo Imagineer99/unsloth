@@ -161,6 +161,8 @@ interface ModelSelectorProps {
   /** Trigger text when nothing is loaded. Defaults to "Select model"; task pages name what they
    *  pick so it reads as separate from the chat model. */
   placeholder?: string;
+  /** Render only the picker panel, inline, for a host popover that drills into it. */
+  embedded?: boolean;
 }
 
 // Drawn inside the text box so the gap truncates away with the text.
@@ -391,7 +393,10 @@ function ModelSelectorContent({
   rowFilter,
   cpuLoad,
   moreModels,
+  embedded = false,
 }: {
+  /** No popover of its own: the caller's popover is the surface. */
+  embedded?: boolean;
   open: boolean;
   models: ModelOption[];
   additionalOnDeviceModels?: ModelOption[];
@@ -621,41 +626,8 @@ function ModelSelectorContent({
     });
   };
 
-  return (
-    <PopoverContent
-      align="start"
-      alignOffset={10}
-      dropdownGlow="picker"
-      // Read by the model list, which sets its right inset against the panel's own.
-      data-external={hasExternal || undefined}
-      aria-label={
-        visibleConfigTarget
-          ? `Run settings for ${visibleConfigTarget.displayName}`
-          : undefined
-      }
-      data-tour={dataTour}
-      onKeyDown={handlePickerEntryKeyDown}
-      className={cn(
-        "unsloth-model-selector-menu menu-soft-surface ring-0 max-w-[calc(100vw-1rem)] min-w-0 gap-0",
-        visibleConfigTarget
-          ? // Clips, never scrolls: as the scroller, the always-on scrollbar squared off its corners.
-            // !px-0: the list view's snapped inline padding would hold the scrollbar 8px off the edge.
-            cn(
-              "max-h-[var(--radix-popover-content-available-height)] overflow-hidden p-0 !px-0",
-              hasExternal
-                ? "w-[min(var(--picker-panel-w-external),calc(100vw-1rem))]"
-                : "w-[min(var(--picker-panel-w),calc(100vw-1rem))]",
-            )
-          : cn(
-              "pt-4 pb-0 pl-4",
-              // Widths track the controls they hold so the row does not wrap.
-              hasExternal
-                ? "w-[min(var(--picker-panel-w-external),calc(100vw-1rem))] pr-4"
-                : "w-[min(var(--picker-panel-w),calc(100vw-1rem))] pr-2",
-            ),
-        className,
-      )}
-    >
+  const panel = (
+    <>
       <TooltipProvider
         delayDuration={0}
         skipDelayDuration={0}
@@ -760,6 +732,63 @@ function ModelSelectorContent({
           </>
         )}
       </TooltipProvider>
+    </>
+  );
+  if (embedded) {
+    return (
+      <div
+        data-external={hasExternal || undefined}
+        onKeyDown={handlePickerEntryKeyDown}
+        className={cn(
+          "flex min-w-0 max-w-[calc(100vw-1rem)] flex-col",
+          visibleConfigTarget
+            ? "max-h-[var(--radix-popover-content-available-height)] w-[min(468px,calc(100vw-1rem))] overflow-hidden"
+            : hasExternal
+              ? "w-[min(var(--picker-panel-w-external),calc(100vw-1rem))] pt-2 pl-4 pr-4"
+              : "w-[min(var(--picker-panel-w),calc(100vw-1rem))] pt-2 pl-4 pr-2",
+          className,
+        )}
+      >
+        {panel}
+      </div>
+    );
+  }
+  return (
+    <PopoverContent
+      align="start"
+      alignOffset={10}
+      dropdownGlow="picker"
+      // Read by the model list, which sets its right inset against the panel's own.
+      data-external={hasExternal || undefined}
+      aria-label={
+        visibleConfigTarget
+          ? `Run settings for ${visibleConfigTarget.displayName}`
+          : undefined
+      }
+      data-tour={dataTour}
+      onKeyDown={handlePickerEntryKeyDown}
+      className={cn(
+        "unsloth-model-selector-menu menu-soft-surface ring-0 max-w-[calc(100vw-1rem)] min-w-0 gap-0",
+        visibleConfigTarget
+          ? // Clips, never scrolls: as the scroller, the always-on scrollbar squared off its corners.
+            // !px-0: the list view's snapped inline padding would hold the scrollbar 8px off the edge.
+            cn(
+              "max-h-[var(--radix-popover-content-available-height)] overflow-hidden p-0 !px-0",
+              hasExternal
+                ? "w-[min(var(--picker-panel-w-external),calc(100vw-1rem))]"
+                : "w-[min(var(--picker-panel-w),calc(100vw-1rem))]",
+            )
+          : cn(
+              "pt-4 pb-0 pl-4",
+              // Widths track the controls they hold so the row does not wrap.
+              hasExternal
+                ? "w-[min(var(--picker-panel-w-external),calc(100vw-1rem))] pr-4"
+                : "w-[min(var(--picker-panel-w),calc(100vw-1rem))] pr-2",
+            ),
+        className,
+      )}
+    >
+      {panel}
     </PopoverContent>
   );
 }
@@ -812,6 +841,7 @@ export function ModelSelector({
   loaded,
   loadedCount,
   loadedNames,
+  embedded = false,
 }: ModelSelectorProps) {
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const open = controlledOpen ?? uncontrolledOpen;
@@ -972,6 +1002,50 @@ export function ModelSelector({
     useSettingsDialogStore.getState().openConnectionSettings(providerId);
   }
 
+  const content = (
+    <ModelSelectorContent
+      embedded={embedded}
+      open={embedded || open}
+      models={models}
+      additionalOnDeviceModels={additionalOnDeviceModels}
+      loadedModelIdOverride={loadedModelIdOverride}
+      loadedGgufVariantOverride={loadedGgufVariantOverride}
+      loraModels={loraModels}
+      externalModels={externalModels}
+      value={selected}
+      loaded={loaded}
+      activeGgufVariant={activeGgufVariant}
+      activeModelConfig={activeModelConfig}
+      activeLoadedContextLength={activeLoadedContextLength}
+      selectedConfig={selectedConfig}
+      selectedGgufVariant={selectedGgufVariant}
+      configRequest={configRequest}
+      onConfigRequestAdopted={onConfigRequestAdopted}
+      onSelect={handleSelect}
+      resolveDownloadFootprint={resolveDownloadFootprint}
+      onEject={onEject ? handleEject : undefined}
+      onEjectAll={onEjectAll ? handleEjectAll : undefined}
+      onFoldersChange={onFoldersChange}
+      onBrowseHub={
+        task && communityModelPolicy === "none" && !hubCapability
+          ? undefined
+          : handleBrowseHub
+      }
+      onConfigureConnection={handleConfigureConnection}
+      onModelsChange={onModelsChange}
+      deleteDisabled={deleteDisabled}
+      className={contentClassName}
+      dataTour={contentDataTour}
+      task={task}
+      catalog={catalog}
+      communityModelPolicy={communityModelPolicy}
+      opaqueKind={opaqueKind}
+      rowFilter={rowFilter}
+      cpuLoad={cpuLoad}
+      moreModels={moreModels}
+    />
+  );
+  if (embedded) return content;
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <ModelSelectorTrigger
@@ -988,46 +1062,7 @@ export function ModelSelector({
         loadedNames={loadedNames}
         placeholder={placeholder}
       />
-      <ModelSelectorContent
-        open={open}
-        models={models}
-        additionalOnDeviceModels={additionalOnDeviceModels}
-        loadedModelIdOverride={loadedModelIdOverride}
-        loadedGgufVariantOverride={loadedGgufVariantOverride}
-        loraModels={loraModels}
-        externalModels={externalModels}
-        value={selected}
-        loaded={loaded}
-        activeGgufVariant={activeGgufVariant}
-        activeModelConfig={activeModelConfig}
-        activeLoadedContextLength={activeLoadedContextLength}
-        selectedConfig={selectedConfig}
-        selectedGgufVariant={selectedGgufVariant}
-        configRequest={configRequest}
-        onConfigRequestAdopted={onConfigRequestAdopted}
-        onSelect={handleSelect}
-        resolveDownloadFootprint={resolveDownloadFootprint}
-        onEject={onEject ? handleEject : undefined}
-        onEjectAll={onEjectAll ? handleEjectAll : undefined}
-        onFoldersChange={onFoldersChange}
-        onBrowseHub={
-          task && communityModelPolicy === "none" && !hubCapability
-            ? undefined
-            : handleBrowseHub
-        }
-        onConfigureConnection={handleConfigureConnection}
-        onModelsChange={onModelsChange}
-        deleteDisabled={deleteDisabled}
-        className={contentClassName}
-        dataTour={contentDataTour}
-        task={task}
-        catalog={catalog}
-        communityModelPolicy={communityModelPolicy}
-        opaqueKind={opaqueKind}
-        rowFilter={rowFilter}
-        cpuLoad={cpuLoad}
-        moreModels={moreModels}
-      />
+      {content}
     </Popover>
   );
 }

@@ -5,6 +5,15 @@ import { hasChatFullAccess, withChatFullAccess } from "../utils/chat-full-access
 
 import { attachedMediaUnavailableReason } from "../lib/attached-media-gate";
 import { readGenerationProgress } from "../lib/generation-progress";
+import { joinWavBase64 } from "../utils/wav-chunks";
+import { getVoiceMode, publishVoiceSpokenAudio } from "../voice/voice-loop-bridge";
+import { wantsSpokenReply } from "../voice/voice-models";
+import {
+  consumePendingFiller,
+  consumePendingReplace,
+  replaceSystemNote,
+  fillerSystemNote,
+} from "@/features/chat/voice/thinking-filler";
 import { externalModelLabel } from "../lib/external-model-label";
 import { mlxRuntimeStateFrom } from "../lib/mlx-runtime-state";
 import { minPSamplingPayload } from "../lib/min-p-policy";
@@ -5524,6 +5533,15 @@ export function createOpenAIStreamAdapter(
       const videoBase64 = findLatestUserVideoBase64(survivingMessages);
 
       addSystemInstruction(outboundMessages, disabledToolGuard);
+      // Voice mode may have spoken a thinking filler for this turn; the model
+      // continues from it instead of contradicting it.
+      const spokenFiller = consumePendingFiller();
+      addSystemInstruction(
+        outboundMessages,
+        spokenFiller ? fillerSystemNote(spokenFiller.phrase) : null,
+      );
+      // The user cut in to change direction: the bubbles before it are withdrawn.
+      addSystemInstruction(outboundMessages, consumePendingReplace() ? replaceSystemNote() : null);
 
       const blockAttachmentRun = (reason: string): never => {
         toast.error(reason);
@@ -6238,6 +6256,7 @@ export function createOpenAIStreamAdapter(
             })) ?? []);
       // A spoken reply's audio, kept apart from the text so the player renders on its own.
       let spokenReplyPart: { type: "text"; text: string } | null = null;
+      const spokenAudioChunks: string[] = [];
       const buildAssistantContent = (rawText: string) => {
         const positionedTools = toolCallParts
           .map((part, index) => {
@@ -6999,7 +7018,13 @@ export function createOpenAIStreamAdapter(
             // Turn-scoped: a stale screenshot here made the backend refuse every later text turn's durable run.
             image_base64: findLatestUserImageBase64(currentTurnMessages),
             audio_base64: turnAudioBase64,
-            ...(activeModel?.speaks && turnAudioBase64
+            ...(wantsSpokenReply({
+              speaks: Boolean(activeModel?.speaks),
+              turnHasAudio: Boolean(turnAudioBase64),
+              voiceModeOn: getVoiceMode() !== "off",
+              selectedVoiceModelId:
+                useChatRuntimeStore.getState().selectedVoiceModelId,
+            })
               ? { modalities: ["text", "audio"] }
               : {}),
             extra_audio_base64:
@@ -8019,9 +8044,13 @@ export function createOpenAIStreamAdapter(
                   | undefined
               )?.audio?.data;
               if (typeof spokenAudio === "string" && spokenAudio) {
+                // The backend streams the speech in chunks: play them as they come in voice
+                // mode, and keep one player of all of them on the reply.
+                spokenAudioChunks.push(spokenAudio);
+                publishVoiceSpokenAudio(resolvedThreadId ?? null, spokenAudio);
                 spokenReplyPart = {
                   type: "text",
-                  text: `<audio-player src="data:audio/wav;base64,${spokenAudio}" />`,
+                  text: `<audio-player src="data:audio/wav;base64,${joinWavBase64(spokenAudioChunks)}" />`,
                 };
                 replayStateChanged = true;
               }
