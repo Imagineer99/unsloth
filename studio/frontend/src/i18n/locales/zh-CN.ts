@@ -5593,6 +5593,7 @@ export const zhCN = {
       inSharedMemory: "{amount} 位于共享内存",
       inVram: "{amount} 位于 VRAM",
       inRam: "{amount} 位于 RAM",
+      metalCpuWeights: "{types} 权重位于 CPU（Metal 无法运行）",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

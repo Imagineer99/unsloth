@@ -5719,6 +5719,7 @@ export const ru = {
       inSharedMemory: "{amount} в общей памяти",
       inVram: "{amount} в VRAM",
       inRam: "{amount} в RAM",
+      metalCpuWeights: "Веса {types} на CPU (Metal не может их выполнять)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

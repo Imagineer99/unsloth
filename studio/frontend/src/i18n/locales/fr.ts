@@ -5775,6 +5775,7 @@ export const fr = {
       inSharedMemory: "{amount} en mémoire partagée",
       inVram: "{amount} en VRAM",
       inRam: "{amount} en RAM",
+      metalCpuWeights: "Poids {types} sur le CPU (Metal ne peut pas les exécuter)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

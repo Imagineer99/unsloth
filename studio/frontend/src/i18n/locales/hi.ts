@@ -5702,6 +5702,7 @@ export const hi = {
       inSharedMemory: "{amount} साझा मेमोरी में",
       inVram: "{amount} VRAM में",
       inRam: "{amount} RAM में",
+      metalCpuWeights: "{types} वेट CPU पर (Metal इन्हें नहीं चला सकता)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

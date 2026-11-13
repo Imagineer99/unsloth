@@ -5790,6 +5790,7 @@ export const he = {
       inSharedMemory: "{amount} בזיכרון משותף",
       inVram: "{amount} ב-VRAM",
       inRam: "{amount} ב-RAM",
+      metalCpuWeights: "משקלי {types} על ה-CPU (Metal לא יכול להריץ אותם)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

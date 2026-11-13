@@ -6096,6 +6096,7 @@ export const tr = {
       inSharedMemory: "{amount} paylaşılan bellekte",
       inVram: "{amount} VRAM'de",
       inRam: "{amount} RAM'de",
+      metalCpuWeights: "{types} ağırlıkları CPU'da (Metal bunları çalıştıramıyor)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

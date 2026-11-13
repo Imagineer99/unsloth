@@ -5760,6 +5760,7 @@ export const it = {
       inSharedMemory: "{amount} in memoria condivisa",
       inVram: "{amount} in VRAM",
       inRam: "{amount} in RAM",
+      metalCpuWeights: "Pesi {types} sulla CPU (Metal non può eseguirli)",
     },
   },
 } as const;

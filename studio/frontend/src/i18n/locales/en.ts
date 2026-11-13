@@ -5742,6 +5742,8 @@ export const en = {
       inSharedMemory: "{amount} in shared memory",
       inVram: "{amount} in VRAM",
       inRam: "{amount} in RAM",
+      // {types} is a list of GGUF weight types such as "NVFP4" or "NVFP4 and TQ1_0".
+      metalCpuWeights: "{types} weights on the CPU (Metal cannot run them)",
     },
   },
 } as const;

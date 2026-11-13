@@ -6158,6 +6158,7 @@ export const nl = {
       inSharedMemory: "{amount} in gedeeld geheugen",
       inVram: "{amount} in VRAM",
       inRam: "{amount} in RAM",
+      metalCpuWeights: "{types}-gewichten op de CPU (Metal kan ze niet uitvoeren)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

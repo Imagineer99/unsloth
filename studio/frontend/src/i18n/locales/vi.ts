@@ -6099,6 +6099,7 @@ export const vi = {
       inSharedMemory: "{amount} trong bộ nhớ dùng chung",
       inVram: "{amount} trong VRAM",
       inRam: "{amount} trong RAM",
+      metalCpuWeights: "Trọng số {types} trên CPU (Metal không chạy được)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

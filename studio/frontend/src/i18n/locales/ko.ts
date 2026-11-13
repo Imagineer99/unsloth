@@ -5682,6 +5682,7 @@ export const ko = {
       inSharedMemory: "공유 메모리에 {amount}",
       inVram: "VRAM에 {amount}",
       inRam: "RAM에 {amount}",
+      metalCpuWeights: "{types} 가중치는 CPU에 있음 (Metal에서 실행할 수 없음)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

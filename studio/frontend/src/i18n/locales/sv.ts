@@ -5935,6 +5935,7 @@ export const sv = {
       inSharedMemory: "{amount} i delat minne",
       inVram: "{amount} i VRAM",
       inRam: "{amount} i RAM",
+      metalCpuWeights: "{types}-vikter på CPU:n (Metal kan inte köra dem)",
     },
   },
 } as const;

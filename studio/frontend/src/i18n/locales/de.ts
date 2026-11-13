@@ -5765,6 +5765,7 @@ export const de = {
       inSharedMemory: "{amount} im gemeinsamen Speicher",
       inVram: "{amount} im VRAM",
       inRam: "{amount} im RAM",
+      metalCpuWeights: "{types}-Gewichte auf der CPU (Metal kann sie nicht ausführen)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;

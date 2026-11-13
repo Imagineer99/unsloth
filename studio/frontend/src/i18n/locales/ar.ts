@@ -5691,6 +5691,7 @@ export const ar = {
       inSharedMemory: "{amount} في الذاكرة المشتركة",
       inVram: "{amount} في VRAM",
       inRam: "{amount} في RAM",
+      metalCpuWeights: "أوزان {types} على CPU (لا يستطيع Metal تشغيلها)",
     },
   },
 } satisfies DeepPartialMessageTree<typeof en>;
