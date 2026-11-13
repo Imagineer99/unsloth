@@ -1,0 +1,34 @@
+name: PR 15706 Windows skill resource A/B
+on:
+  push:
+    branches: [fix/pr-15706-windows-ab]
+permissions:
+  contents: read
+jobs:
+  ntfs:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      ORIGINAL: bdf82aaf279eea2cea394c37193b1ec0b71f8b8c
+      CORRECTED: 7d7b9c71da978eee09a937d35aa600e71d2e4816
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 3
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - name: Prepare pinned revisions and NTFS fixtures
+        shell: pwsh
+        run: |
+          if ((Get-Volume -DriveLetter ([IO.Path]::GetPathRoot([IO.Path]::GetTempPath())[0])).FileSystem -ne 'NTFS') { throw 'Fixtures must reside on NTFS' }
+          git worktree add --detach "$env:RUNNER_TEMP/original" $env:ORIGINAL
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          git worktree add --detach "$env:RUNNER_TEMP/corrected" $env:CORRECTED
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m pip install PyYAML==6.0.3 structlog==25.5.0
+      - name: Reproduce original hidden filenames
+        run: python .github/probes/pr-15706-ntfs.py "$env:RUNNER_TEMP/original" $env:ORIGINAL original
+      - name: Verify filtered filenames on the corrected revision
+        run: python .github/probes/pr-15706-ntfs.py "$env:RUNNER_TEMP/corrected" $env:CORRECTED corrected
