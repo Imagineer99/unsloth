@@ -1925,6 +1925,7 @@ const DownloadedModelDeviceRow = memo(function DownloadedModelDeviceRow({
         <ModelRowMenu
           ariaLabel={`More options for ${c.repo_id}`}
           cachePath={{ repoId: c.repo_id }}
+          info={{ repoId: c.repo_id }}
           items={ejectMenuItemsFor(actions, c.repo_id, ejectable)}
           runSettings={configTarget}
           pin={{
@@ -2151,6 +2152,11 @@ const SoleQuantGgufDeviceRow = memo(function SoleQuantGgufDeviceRow({
           <ModelRowMenu
             ariaLabel={`More options for ${onDeviceRepoLabel(c.repo_id)} ${variant.quant}`}
             cachePath={{ repoId: c.repo_id, variant: variant.quant }}
+            info={{
+              repoId: c.repo_id,
+              variant: variant.quant,
+              hasLocalGguf: isDownloaded,
+            }}
             runSettings={configTarget}
             // The expander reads Hub-only state (updates, companions); a collapsed row never asks.
             items={[
@@ -2305,6 +2311,7 @@ const DownloadedGgufDeviceRow = memo(function DownloadedGgufDeviceRow({
             <ModelRowMenu
               ariaLabel={`More options for ${onDeviceRepoLabel(c.repo_id)}`}
               cachePath={{ repoId: c.repo_id }}
+              info={{ repoId: c.repo_id }}
               del={{
                 title: "Delete cached model?",
                 impact: { repoId: c.repo_id },
@@ -3073,14 +3080,19 @@ function GgufVariantExpander({
     () => h3PickerHasOnlyPrunedBuilds(displayVariants ?? []),
     [displayVariants],
   );
+  const variantOnDisk = (v: GgufVariantDetail): boolean =>
+    v.downloaded === true || v.partial === true;
+  // Undownloaded Hub quants keep a menu for Model info: the licence matters before the download.
+  // checkpointIsLocal, not isLocalPath: a marker-less relative dir would otherwise query the Hub.
   const variantHasMenu = (v: GgufVariantDetail): boolean =>
-    (v.downloaded === true || v.partial === true) &&
-    Boolean(
-      allowPin ||
-        (v.update_available && onUpdateVariant) ||
-        onDeleteVariant ||
-        !isLocalPath,
-    );
+    variantOnDisk(v)
+      ? Boolean(
+          allowPin ||
+            (v.update_available && onUpdateVariant) ||
+            onDeleteVariant ||
+            !isLocalPath,
+        )
+      : !checkpointIsLocal;
   // Rows without a menu hold its slot, so every gear and size lines up with the downloaded rows.
   const reserveMenuSlot = (displayVariants ?? []).some(variantHasMenu);
 
@@ -3421,7 +3433,18 @@ function GgufVariantExpander({
                 iconClassName="size-3"
                 runSettings={configTarget}
                 cachePath={
-                  isLocalPath ? undefined : { repoId, variant: v.quant }
+                  isLocalPath || !variantOnDisk(v)
+                    ? undefined
+                    : { repoId, variant: v.quant }
+                }
+                info={
+                  checkpointIsLocal
+                    ? undefined
+                    : {
+                        repoId,
+                        variant: v.quant,
+                        hasLocalGguf: variantsAreGguf && v.downloaded === true,
+                      }
                 }
                 pin={
                   allowPin && v.downloaded
@@ -3458,7 +3481,7 @@ function GgufVariantExpander({
                     : undefined
                 }
                 del={
-                  onDeleteVariant
+                  onDeleteVariant && variantOnDisk(v)
                     ? {
                         title: deleteVariantTitle,
                         impact: {
@@ -7034,13 +7057,17 @@ export function HubModelPicker({
     otherAdditionalOnDeviceModels.length > 0;
 
   const renderHubModelRow = (id: string, row: ReactNode) => {
-    if (!onConfigure) return row;
-    if (isKnownGgufRepo(id)) {
-      // Empty slot: GGUF repos configure per quant, and badges must line up.
+    // Repo-level: no quant is named, so no local GGUF probe (it would pick an arbitrary file).
+    // audio.cpp package ids are folders inside one repo, not repos the Hub can describe.
+    const infoMenu = isAudioCppFolderId(id) ? null : (
+      <ModelRowMenu ariaLabel={`More options for ${id}`} info={{ repoId: id }} />
+    );
+    // GGUF repos configure per quant, so they carry the menu alone.
+    if (!onConfigure || isKnownGgufRepo(id)) {
       return (
         <div className={downloadedRowShellClassName(isValueRow(id))}>
           <div className="min-w-0 flex-1">{row}</div>
-          <span className={ROW_ACTIONS_CLASS} aria-hidden={true} />
+          <span className={ROW_ACTIONS_CLASS}>{infoMenu}</span>
         </div>
       );
     }
@@ -7061,6 +7088,7 @@ export function HubModelPicker({
             onConfigure={() => onConfigure(configId, configMeta)}
             savedFor={modelConfigTarget(configId, configMeta)}
           />
+          {infoMenu}
         </span>
       </div>
     );
@@ -7520,6 +7548,11 @@ export function HubModelPicker({
           <ModelRowMenu
             ariaLabel={`More options for ${entry.repoId} ${entry.quant}`}
             cachePath={{ repoId: entry.repoId, variant: entry.quant }}
+            info={{
+              repoId: entry.repoId,
+              variant: entry.quant,
+              hasLocalGguf: true,
+            }}
             runSettings={configTarget}
             pin={{
               pinned: true,
