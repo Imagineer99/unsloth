@@ -1,0 +1,206 @@
+diff --git a/studio/backend/core/inference/llama_cpp.py b/studio/backend/core/inference/llama_cpp.py
+index 7e52c1df6..0605539a8 100644
+--- a/studio/backend/core/inference/llama_cpp.py
++++ b/studio/backend/core/inference/llama_cpp.py
+@@ -2808,6 +2808,23 @@ if _SLOT_SAVE_HTTP_TIMEOUT <= 0:
+ _SLOT_RESUME_STRICT_FLAGS = frozenset({"--override-kv", "--kv-unified-per-slot"})
+ 
+ 
++def _slot_rope_regime(lines: list[str]) -> Optional[bool]:
++    """llama.cpp chooses rotary factors using n_ctx_seq, before the server caps its slot size."""
++    # A draft model or a second context can also log its own sizes. Only trust
++    # unambiguous startup values from this launch. Quiet/older binaries may omit them.
++    thresholds = set()
++    lengths = set()
++    for line in lines:
++        if match := re.fullmatch(r"(?:\d+\.\d+\.\d+\.\d+ I )?print_info: n_ctx_orig_yarn\s*= (\d+)", line):
++            thresholds.add(int(match[1]))
++        elif match := re.fullmatch(r"(?:\d+\.\d+\.\d+\.\d+ I )?llama_context: n_ctx_seq\s*= (\d+)", line):
++            lengths.add(int(match[1]))
++    if len(thresholds) != 1 or len(lengths) != 1:
++        return None
++    threshold, length = thresholds.pop(), lengths.pop()
++    return length > threshold if threshold and length else None
++
++
+ class _SlotLaunchFingerprint(NamedTuple):
+     """Compared whole, except by ``slot_resume_fits``, which lets the context fields differ."""
+ 
+@@ -8539,7 +8556,6 @@ class LlamaCppBackend:
+         self._leading_dense_block_count: Optional[int] = None
+         self._n_kv_heads: Optional[int] = None
+         self._n_kv_heads_by_layer: Optional[list[int]] = None
+-        self._rope_original_context_length: Optional[int] = None
+         self._n_heads: Optional[int] = None
+         self._embedding_length: Optional[int] = None
+         # llama_pooling_type from the GGUF; present and non-zero marks an embedding model.
+@@ -8622,6 +8638,7 @@ class LlamaCppBackend:
+         self._api_key_file: Optional[Path] = None
+         self._slot_save_dir: Optional[str] = None
+         self._slot_save_binary: Optional[tuple[str, int]] = None
++        self._slot_long_rope: Optional[bool] = None
+         # (gguf_identity, launch_fingerprint) at load lets a slot save detect swapped model files.
+         self._slot_loaded_identity: Optional[tuple] = None
+         self._prompt_cache_disabled: bool = False
+@@ -19047,7 +19064,6 @@ class LlamaCppBackend:
+         self._leading_dense_block_count = None
+         self._n_kv_heads = None
+         self._n_kv_heads_by_layer = None
+-        self._rope_original_context_length = None
+         self._n_heads = None
+         self._embedding_length = None
+         self._pooling_type = None
+@@ -19171,7 +19187,6 @@ class LlamaCppBackend:
+                                     self._architecture = val_s
+                                     arch_keys = {
+                                         f"{arch}.context_length": "context_length",
+-                                        f"{arch}.rope.scaling.original_context_length": "rope_original_context_length",
+                                         f"{arch}.block_count": "n_layers",
+                                         f"{arch}.expert_count": "n_experts",
+                                         f"{arch}.leading_dense_block_count": "leading_dense_block_count",
+@@ -34269,6 +34284,7 @@ class LlamaCppBackend:
+             self._slot_save_dir = None
+             self._slot_save_binary = None
+             self._slot_loaded_identity = None
++            self._slot_long_rope = None
+             self._prompt_cache_disabled = False
+             self._swa_full = False
+             self._kv_cache_unified = False
+@@ -34326,7 +34342,6 @@ class LlamaCppBackend:
+             self._leading_dense_block_count = None
+             self._n_kv_heads = None
+             self._n_kv_heads_by_layer = None
+-            self._rope_original_context_length = None
+             self._n_heads = None
+             self._embedding_length = None
+             self._pooling_type = None
+@@ -35543,8 +35558,11 @@ class LlamaCppBackend:
+         if not isinstance(saved, (tuple, list)) or len(saved) != len(current):
+             return False
+         saved = _SlotLaunchFingerprint(*saved)
++        saved_regime = manifest.get("long_rope")
+         if saved == current:
+-            return True
++            # Preserve strict reuse for older manifests, but never restore across
++            # a known switch hidden by identical requested and advertised sizes.
++            return "long_rope" not in manifest or saved_regime is self._slot_long_rope
+         neutral = {"requested_n_ctx": None, "effective_context_length": None}
+         if saved._replace(**neutral) != current._replace(**neutral):
+             return False
+@@ -35557,11 +35575,7 @@ class LlamaCppBackend:
+             _flag_name(str(arg)) in _SLOT_RESUME_STRICT_FLAGS for arg in current.extra_args
+         ):
+             return False
+-        # llama.cpp picks LongRoPE long/short factors by whether n_ctx_seq exceeds this threshold.
+-        threshold = self._rope_original_context_length or self._context_length
+-        if threshold and (int(saved.effective_context_length or 0) > threshold) != (
+-            capacity > threshold
+-        ):
++        if self._slot_long_rope is None or saved_regime is not self._slot_long_rope:
+             return False
+         try:
+             return all(0 < int(entry.get("n_saved") or 0) <= capacity for entry in slots)
+@@ -35816,6 +35830,7 @@ class LlamaCppBackend:
+             "gguf": str(self._gguf_path),
+             "gguf_stat": gguf_stat,
+             "launch": launch,
++            "long_rope": self._slot_long_rope,
+             "slots": entries,
+         }
+ 
+@@ -36576,7 +36591,8 @@ class LlamaCppBackend:
+         return int(n_ctx) if n_ctx else None
+ 
+     def _reconcile_effective_ctx_with_server(self, requested_n_ctx: int = 0) -> None:
+-        """Opens a streaming POST, retrying through prefill; yields (response, first_token_deadline) on 200 and owns the httpx client; RuntimeError on any other status"""
++        """Record the engine's rotary regime and reconcile the client-visible window with /props."""
++        self._slot_long_rope = _slot_rope_regime(self._stdout_lines)
+         actual_n_ctx = self._query_server_n_ctx()
+         if not actual_n_ctx or actual_n_ctx <= 0:
+             return
+diff --git a/studio/backend/tests/test_llama_cpp_props_readback.py b/studio/backend/tests/test_llama_cpp_props_readback.py
+index f6f3ffc8f..73f298f37 100644
+--- a/studio/backend/tests/test_llama_cpp_props_readback.py
++++ b/studio/backend/tests/test_llama_cpp_props_readback.py
+@@ -86,6 +86,7 @@ def _make_backend(
+ ):
+     inst = LlamaCppBackend.__new__(LlamaCppBackend)
+     inst._port = port
++    inst._stdout_lines = []
+     # __new__ skips __init__; _auth_headers reads this for --api-key servers.
+     inst._api_key = api_key
+     inst._effective_context_length = effective_ctx
+diff --git a/studio/backend/tests/test_llama_cpp_slot_resume.py b/studio/backend/tests/test_llama_cpp_slot_resume.py
+index 4938c43d8..2932e5b81 100644
+--- a/studio/backend/tests/test_llama_cpp_slot_resume.py
++++ b/studio/backend/tests/test_llama_cpp_slot_resume.py
+@@ -599,6 +599,7 @@ def _ctx_backend(
+     unified = False,
+ ):
+     backend = _resume_backend(tmp_path, n_slots = n_slots)
++    backend._slot_long_rope = False
+     backend._requested_n_ctx = n_ctx
+     backend._effective_context_length = n_ctx if unified else n_ctx // n_slots
+     backend._kv_cache_unified = unified
+@@ -612,6 +613,7 @@ def _manifest_from(backend, *, n_saved):
+         "gguf": backend._gguf_path,
+         "gguf_stat": backend._gguf_file_identity(backend._gguf_path),
+         "launch": backend._slot_launch_fingerprint(),
++        "long_rope": backend._slot_long_rope,
+         "slots": [
+             {"id": slot, "filename": f"resume-x-slot{slot}.bin", "n_saved": n_saved}
+             for slot in range(backend.effective_parallel_slots)
+@@ -648,22 +650,39 @@ def test_a_launch_that_only_raised_the_context_fits_when_the_slots_hold_the_toke
+     ), "unified is a fingerprint field of its own; only the context may differ"
+ 
+ 
+-def test_a_context_change_across_the_rope_switch_point_refuses(tmp_path):
+-    def longrope(n_ctx):
+-        backend = _ctx_backend(tmp_path, n_ctx = n_ctx)
+-        backend._context_length = 131072
+-        backend._rope_original_context_length = 4096
++def test_reload_uses_engine_sequence_length_even_when_props_caps_the_window(tmp_path):
++    def launch(requested, allocated):
++        backend = _ctx_backend(tmp_path, n_ctx = requested)
++        backend._stdout_lines = [
++            "0.00.013.211 I print_info: n_ctx_orig_yarn       = 2048",
++            f"0.00.013.722 I llama_context: n_ctx_seq             = {allocated}",
++        ]
++        backend._query_server_n_ctx = lambda: 2048
++        backend._reconcile_effective_ctx_with_server(requested)
+         return backend
+ 
+-    saved = _manifest_from(longrope(4096), n_saved = 2000)
+-    assert longrope(8192).slot_resume_fits(saved) is False
+-    above = _manifest_from(longrope(8192), n_saved = 2000)
+-    assert longrope(16384).slot_resume_fits(above) is True
+-    plain = _ctx_backend(tmp_path, n_ctx = 8192)
+-    plain._context_length = 8192
+-    widened = _ctx_backend(tmp_path, n_ctx = 16384)
+-    widened._context_length = 8192
+-    assert widened.slot_resume_fits(_manifest_from(plain, n_saved = 100)) is False
++    small, large = launch(2048, 2048), launch(4096, 4096)
++    assert small._slot_context_capacity() == large._slot_context_capacity() == 2048
++    saved = _manifest_from(small, n_saved = 100)
++    assert not large.slot_resume_fits(saved)
++    assert not launch(2048, 4096).slot_resume_fits(saved)
++    assert launch(8192, 8192).slot_resume_fits(_manifest_from(large, n_saved = 100))
++
++
++def test_context_change_requires_unambiguous_engine_values_on_both_launches(tmp_path):
++    threshold = "print_info: n_ctx_orig_yarn = 2048"
++    sequence = "llama_context: n_ctx_seq = 4096"
++    for lines in ([], [threshold], [sequence], [threshold, sequence, "llama_context: n_ctx_seq = 1024"]):
++        assert llama_cpp._slot_rope_regime(lines) is None
++
++    source = _ctx_backend(tmp_path, n_ctx = 1024)
++    target = _ctx_backend(tmp_path, n_ctx = 2048)
++    legacy = _manifest_from(source, n_saved = 100)
++    del legacy["long_rope"]
++    assert source.slot_resume_fits(legacy)
++    assert not target.slot_resume_fits(legacy)
++    target._slot_long_rope = None
++    assert not target.slot_resume_fits(_manifest_from(source, n_saved = 100))
+ 
+ 
+ def test_a_context_change_with_metadata_or_slot_size_overrides_refuses(tmp_path):
