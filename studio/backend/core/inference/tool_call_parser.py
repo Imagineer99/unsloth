@@ -42,6 +42,7 @@ TOOL_XML_SIGNALS = (
     "<|tool_call_begin|>",
     "<|content_invoke_tool_json|>",
     "<minimax:tool_call>",
+    "<ifm|tool_calls>",
 )
 
 
@@ -377,6 +378,24 @@ _MINIMAX_BLOCK_OPEN = "<minimax:tool_call>"
 _MINIMAX_BLOCK_CLOSE = "</minimax:tool_call>"
 _MINIMAX_INVOKE_OPEN_RE = re.compile(r'<invoke\s+name="([\w\.\-]+)">')
 _MINIMAX_INVOKE_CLOSE = "</invoke>"
+
+# K2-Horizon (IFM): ``<ifm|tool_calls>`` wraps ``<ifm|tool_call>`` bodies, each a JSON
+# ``{"name", "arguments"}`` object or ``NAME`` + ``<ifm|arg_key>``/[``<ifm|arg_type>``]/``<ifm|arg_value>`` pairs.
+_IFM_BLOCK_OPEN = "<ifm|tool_calls>"
+_IFM_BLOCK_CLOSE = "</ifm|tool_calls>"
+_IFM_CALL_OPEN = "<ifm|tool_call>"
+_IFM_CALL_CLOSE = "</ifm|tool_call>"
+_IFM_NAME_RE = re.compile(r"\s*([\w.\-]+)\s*")
+_IFM_ARG_RE = re.compile(
+    r"\s*<ifm\|arg_key>\s*([^<>]+?)\s*</ifm\|arg_key>\s*"
+    r"(?:<ifm\|arg_type>\s*([^<>]*?)\s*</ifm\|arg_type>\s*)?"
+    r"<ifm\|arg_value>(.*?)</ifm\|arg_value>",
+    re.DOTALL,
+)
+# xml_typed values the template wrote as JSON literals; strings and union labels stay raw.
+_IFM_JSON_TYPES = frozenset(
+    ("integer", "int", "number", "float", "boolean", "bool", "null", "array", "object")
+)
 
 # Gemma 4: ``<|tool_call>call:NAME{...}<tool_call|>``, ``<|"|>`` wraps strings.
 _GEMMA_TC_RE = re.compile(r"<\|tool_call>\s*call\s*:\s*([\w\.\-]+)\s*\{")
@@ -799,6 +818,7 @@ _CONTAINING_WRAPPERS = (
     '<function name="',
     "[TOOL_CALLS]",
     "<minimax:tool_call>",
+    "<ifm|tool_calls>",
 ) + _INFERENCE_WRAPPER_OPENERS
 
 
@@ -1318,6 +1338,21 @@ def _strip_minimax_calls(text: str, *, final: bool) -> str:
     return "".join(out)
 
 
+def _strip_ifm_calls(text: str, *, final: bool) -> str:
+    """Strip ``<ifm|tool_calls>`` blocks at the close the parser uses; ``final`` drops a trailing unclosed block."""
+    if _IFM_BLOCK_OPEN not in text:
+        return text
+    out: list[str] = []
+    pos = 0
+    for start, end, closed in _ifm_block_spans(text):
+        if not (closed or final):
+            break
+        out.append(text[pos:start])
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def strip_segment(
     segment: str,
     *,
@@ -1327,6 +1362,7 @@ def strip_segment(
     """Strips markup from one non-think segment; seg_final enables end-of-turn arms. routes/inference.py differs, pinned by tests/test_route_strip_drift.py."""
     seg = _strip_mistral_closed_calls(segment)
     seg = _strip_minimax_calls(seg, final = seg_final)
+    seg = _strip_ifm_calls(seg, final = seg_final)
     # Name-gated: an inactive ``foo[ARGS]{..}`` is prose and is kept.
     seg = _tool_healing._strip_bracket_tag_calls(seg, enabled_tool_names = enabled_tool_names)
     if seg_final:
@@ -1422,6 +1458,7 @@ _STRIP_SENTINELS = (
     "<|python_tag|>",  # Llama-3 built-in tools
     "<|content_invoke_tool_json|>",
     "<minimax:tool_call>",
+    "<ifm|tool_calls>",
     "<｜",  # DeepSeek's full-width pipe opens every one of its markers
     "<think",  # reasoning segmentation
     "</think",
@@ -1445,6 +1482,7 @@ _OPEN_CALL_TRIGGERS = (
     "[TOOL_CALLS]",
     "[ARGS]",
     "<minimax:tool_call>",
+    "<ifm|tool_calls>",
     "<｜",
     "<think",
     "</think",
@@ -1912,6 +1950,8 @@ _EMBEDDED_MARKER_RE = re.compile(
     + re.escape(_KIMI_CALL_BEGIN)
     + "|"
     + re.escape(_MINIMAX_BLOCK_OPEN)
+    + "|"
+    + re.escape(_IFM_BLOCK_OPEN)
 )
 # The lookahead mirrors the ``_TOOL_ALL_PATS`` python_tag arm so a prose mention is not one.
 _OUTER_ENVELOPE_OPEN_RE = re.compile(
@@ -2301,10 +2341,12 @@ def parse_tool_calls_from_text(
         _km_bare = content.find(_KIMI_CALL_BEGIN)
         _km_pos = min(p for p in (_km_section, _km_bare, len(content)) if p >= 0)
         _mm_pos = content.find(_MINIMAX_BLOCK_OPEN)
+        _ifm_pos = content.find(_IFM_BLOCK_OPEN)
         pre_pass = [
             (_ds_pos, _parse_deepseek_tool_calls),
             (_km_pos, _parse_kimi_tool_calls),
             (_mm_pos if _mm_pos >= 0 else len(content), _parse_minimax_tool_calls),
+            (_ifm_pos if _ifm_pos >= 0 else len(content), _parse_ifm_tool_calls),
         ]
         pre_pass.sort(key = lambda pair: pair[0])
         for _pos, parser in pre_pass:
@@ -4473,6 +4515,91 @@ def _parse_minimax_tool_calls(
                     "id": f"call_{id_offset + len(out)}",
                     "type": "function",
                     "function": {"name": im.group(1), "arguments": json.dumps(args)},
+                }
+            )
+    return out
+
+
+def _ifm_block_spans(text: str) -> list[tuple[int, int, bool]]:
+    """``(start, end, closed)`` per ``<ifm|tool_calls>`` block; an unclosed block runs to the end of the text.
+    Every IFM tag is one dedicated token, so the first closer is the real one."""
+    spans: list[tuple[int, int, bool]] = []
+    pos = 0
+    while True:
+        start = text.find(_IFM_BLOCK_OPEN, pos)
+        if start < 0:
+            return spans
+        close = text.find(_IFM_BLOCK_CLOSE, start + len(_IFM_BLOCK_OPEN))
+        if close < 0:
+            spans.append((start, len(text), False))
+            return spans
+        pos = close + len(_IFM_BLOCK_CLOSE)
+        spans.append((start, pos, True))
+
+
+def _parse_ifm_tool_calls(
+    content: str,
+    *,
+    id_offset: int,
+    allow_incomplete: bool = True,
+) -> list[dict]:
+    """Untyped XML values stay strings (the tool loop coerces them by schema); a block inside reasoning is a
+    rehearsal and is skipped. Auto-Heal accepts a call cut before its close only when every argument closed."""
+    out: list[dict] = []
+    if _IFM_BLOCK_OPEN not in content:
+        return out
+
+    def _ifm_call(body: str) -> Optional[tuple[str, dict]]:
+        stripped = body.strip()
+        if stripped.startswith("{"):
+            obj = _loads_call_object(stripped, relaxed = allow_incomplete)
+            name = obj.get("name") if isinstance(obj, dict) else None
+            args = obj.get("arguments", obj.get("parameters", {})) if name else None
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    return None
+            if not isinstance(name, str) or not _IFM_NAME_RE.fullmatch(name):
+                return None
+            return (name.strip(), args) if isinstance(args, dict) else None
+        m = _IFM_NAME_RE.match(body)
+        if m is None:
+            return None
+        args = {}
+        pos = m.end()
+        while (am := _IFM_ARG_RE.match(body, pos)) is not None:
+            key, arg_type, value = am.groups()
+            if arg_type and arg_type.lower() in _IFM_JSON_TYPES:
+                try:
+                    value = json.loads(value)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            args[key] = value
+            pos = am.end()
+        return (m.group(1), args) if not body[pos:].strip() else None
+
+    think_spans = _merge_spans(_tool_healing._think_spans_outside_tool_markup(content))
+    think_starts = [s for s, _ in think_spans]
+    for start, end, closed in _ifm_block_spans(content):
+        think_idx = bisect.bisect_right(think_starts, start) - 1
+        if think_idx >= 0 and start < think_spans[think_idx][1]:
+            continue
+        block = content[
+            start + len(_IFM_BLOCK_OPEN) : end - len(_IFM_BLOCK_CLOSE) if closed else end
+        ]
+        for piece in block.split(_IFM_CALL_OPEN)[1:]:
+            body, sep, _rest = piece.partition(_IFM_CALL_CLOSE)
+            if not sep and not allow_incomplete:
+                continue
+            call = _ifm_call(body)
+            if call is None:
+                continue
+            out.append(
+                {
+                    "id": f"call_{id_offset + len(out)}",
+                    "type": "function",
+                    "function": {"name": call[0], "arguments": json.dumps(call[1])},
                 }
             )
     return out

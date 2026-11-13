@@ -186,6 +186,11 @@ _FRAGMENTS = (
     '<minimax:tool_call>\n<invoke name="get_weather">\n<parameter name="city">Paris</parameter>\n'
     "</invoke>\n</minimax:tool_call>",
     '<minimax:tool_call>\n<invoke name="get_weather">\n<parameter name="city">Par',
+    "<ifm|tool_calls>\n<ifm|tool_call>get_weather\n<ifm|arg_key>city</ifm|arg_key>\n"
+    "<ifm|arg_value>Paris</ifm|arg_value>\n</ifm|tool_call>\n</ifm|tool_calls>",
+    '<ifm|tool_calls>\n<ifm|tool_call>{"name": "search", "arguments": {"q": 1}}</ifm|tool_call>\n'
+    "</ifm|tool_calls>",
+    "<ifm|tool_calls>\n<ifm|tool_call>get_weather\n<ifm|arg_key>city</ifm|arg_key>\n<ifm|arg_value>Par",
     # Cross-format markup, so an arm swap inside strip_segment is visible.
     "<function=x><tool_call> txt <arg_key>c</arg_key></function><parameter=p>",
     '<tool_call>{"name": "search", "arguments": {"q": "<function=get_weather>"}}</tool_call>',

@@ -30,6 +30,13 @@ _GEMMA_TEMPLATE_OPENERS = (
     _GEMMA_THOUGHT_OPEN + _GEMMA_THOUGHT_CLOSE,
 )
 
+# K2-Horizon (IFM): reasoning_effort high / medium / low opens one of these in the generation prompt.
+_IFM_THINK_PAIRS = (
+    ("<ifm|think>", "</ifm|think>"),
+    ("<ifm|think_fast>", "</ifm|think_fast>"),
+    ("<ifm|think_faster>", "</ifm|think_faster>"),
+)
+
 # Both header prefixes occur: the first header arrives without the prompt's "<|start|>assistant".
 _ATEM_REASONING_RECIPIENT = "self"
 _ATEM_REPLY_RECIPIENT = "user"
@@ -78,6 +85,8 @@ _ATEM_TAGS = (
 # \uXXXX escapes keep this file ASCII.
 _CONTROL_MARKUP = re.compile(
     r"<(?="
+    # K2-Horizon (IFM) puts its namespace inside the pipes and inside bare tags.
+    r"\|ifm\|im_(?:start|end)\|>|/?ifm\|(?:tools|tool_calls?|arg_key|arg_type|arg_value|think(?:_fast|_faster)?)>|"
     # Phi-4 Mini closes with "<|/tool|>" / "<|/tool_call|>".
     r"\|/?(?:(?:start|end)_(?:header_id|of_role)|tool(?:_call|_response)?"
     # Kimi K2 / Moonshot wrap history in a section and begin/end call pairs; none is the short tool_call spelling, so a paste could fabricate a call.
@@ -121,6 +130,7 @@ _CONTROL_MARKUP = re.compile(
 # Turn-boundary subset for replayed assistant content, which is client-controlled; its think, channel and tool markup stays since the template re-renders it.
 _TURN_BOUNDARY_MARKUP = re.compile(
     r"<(?="
+    r"\|ifm\|im_(?:start|end)\|>|/?ifm\|tools>|"
     r"\|/?(?:(?:start|end)_(?:header_id|of_role)"
     # Kimi role sentinels like <|im_user|> are boundaries, as im_system and im_middle already are
     r"|im_(?:start|end|sep|system|middle|user|assistant)"
@@ -1638,31 +1648,43 @@ def _selected_chat_template_strings(tokenizer, tools = None) -> tuple[str, ...]:
 
 
 def _detect_reasoning_channel_markers_from_templates(
-    templates: tuple[str, ...],
+    templates: tuple[str, ...], prompt: Optional[str] = None
 ) -> Optional[tuple[str, ...]]:
-    """Return native reasoning markers only when a template emits them."""
+    """Return native reasoning markers only when a template emits them. ``(opener, closer, *other closers)``:
+    an IFM template holds every effort's opener, so the rendered ``prompt`` tail picks the pair (else high)."""
     if any(opener in template for template in templates for opener in _GEMMA_TEMPLATE_OPENERS):
         return _GEMMA_THOUGHT_OPEN, _GEMMA_THOUGHT_CLOSE
     if any(_ATEM_TEMPLATE_OPENER in template for template in templates):
         return _ATEM_REASONING_RECIPIENT, _ATEM_REPLY_RECIPIENT
+    ifm = [pair for pair in _IFM_THINK_PAIRS if any(pair[0] in t for t in templates)]
+    if ifm:
+        opener, closer = next((p for p in ifm if prompt_opens_reasoning_channel(prompt, p)), ifm[0])
+        # Each closer is one dedicated token, so any of them ends the channel.
+        return (opener, closer, *(c for _, c in ifm if c != closer))
     return None
 
 
-def detect_reasoning_channel_markers(tokenizer, tools = None) -> Optional[tuple[str, ...]]:
+def detect_reasoning_channel_markers(
+    tokenizer,
+    tools = None,
+    prompt: Optional[str] = None,
+) -> Optional[tuple[str, ...]]:
     """Read from the chat template, not names or vocabulary: Gemma tokens alone do not mean a channel."""
     for obj in _tokenizer_objects(tokenizer):
         templates = _selected_chat_template_strings(obj, tools)
         if templates:
-            return _detect_reasoning_channel_markers_from_templates(templates)
+            return _detect_reasoning_channel_markers_from_templates(templates, prompt)
     return None
 
 
 def detect_reasoning_channel_markers_from_template(
-    template, tools = None
+    template,
+    tools = None,
+    prompt: Optional[str] = None,
 ) -> Optional[tuple[str, ...]]:
     """Return native reasoning-channel markers from a raw template value."""
     return _detect_reasoning_channel_markers_from_templates(
-        _selected_template_strings_from_value(template, tools)
+        _selected_template_strings_from_value(template, tools), prompt
     )
 
 
@@ -1670,9 +1692,10 @@ def detect_reasoning_channel_markers_from_model_info(
     tokenizer,
     model_info: Optional[dict] = None,
     tools = None,
+    prompt: Optional[str] = None,
 ) -> Optional[tuple[str, ...]]:
     """Return reasoning markers from the active or cached native template."""
-    markers = detect_reasoning_channel_markers(tokenizer, tools = tools)
+    markers = detect_reasoning_channel_markers(tokenizer, tools = tools, prompt = prompt)
     if markers is not None or not isinstance(model_info, dict):
         return markers
 
@@ -1681,7 +1704,7 @@ def detect_reasoning_channel_markers_from_model_info(
         (model_info.get("chat_template_info") or {}).get("template"),
     )
     for template in native_templates:
-        markers = detect_reasoning_channel_markers_from_template(template, tools)
+        markers = detect_reasoning_channel_markers_from_template(template, tools, prompt)
         if markers is not None:
             return markers
     return None
@@ -1858,12 +1881,11 @@ class ReasoningChannelNormalizer:
     def __init__(
         self,
         opening_marker: str,
-        closing_marker: str,
-        *,
+        *closing_markers: str,
         in_reasoning: bool = False,
     ):
         self._opening_marker = opening_marker
-        self._closing_marker = closing_marker
+        self._closing_markers = closing_markers
         self._buffer = ""
         self._in_reasoning = in_reasoning
         self._reasoning_done = False
@@ -1892,10 +1914,15 @@ class ReasoningChannelNormalizer:
                 if not self._buffer:
                     break
 
-            marker = self._closing_marker if self._in_reasoning else self._opening_marker
-            index = self._buffer.find(marker)
+            markers = self._closing_markers if self._in_reasoning else (self._opening_marker,)
+            index, marker = -1, ""
+            for candidate in markers:
+                found = self._buffer.find(candidate)
+                if found >= 0 and (index < 0 or found < index):
+                    index, marker = found, candidate
             if index < 0:
-                stable, self._buffer = _split_partial_marker(self._buffer, marker)
+                stable = min((_split_partial_marker(self._buffer, m)[0] for m in markers), key = len)
+                self._buffer = self._buffer[len(stable) :]
                 output.append(stable)
                 break
 
@@ -2134,7 +2161,7 @@ def normalize_reasoning_snapshots(
 ):
     """Normalize prefix-monotonic cumulative streams; read ended after, so a stop-ended turn still
     closes."""
-    markers = markers or detect_reasoning_channel_markers(tokenizer, tools = tools)
+    markers = markers or detect_reasoning_channel_markers(tokenizer, tools = tools, prompt = prompt)
     if markers is None:
         yield from stream
         return
@@ -2224,6 +2251,34 @@ def _take_tool_result(pending: list, call_id) -> Optional[dict]:
         if not result.get("tool_call_id"):
             return pending.pop(i)
     return None
+
+
+_IFM_THINK_FIELDS = ("think", "think_fast", "think_faster", "reasoning_content", "reasoning")
+_LEADING_THINK_RE = re.compile(r"\A\s*<think>(.*?)</think>\s*", re.DOTALL)
+
+
+def _fill_ifm_thinking_fields(messages: list, tokenizer, tools) -> list:
+    """IFM templates raise on an assistant turn with no string thinking field, while Studio omits an empty one and
+    keeps tool-loop reasoning as leading ``<think>`` content: move that thought into ``reasoning_content``."""
+    if not any("<ifm|think" in t for t in _selected_chat_template_strings(tokenizer, tools)):
+        return messages
+    out: list = []
+    changed = False
+    for msg in messages:
+        if (
+            isinstance(msg, dict)
+            and msg.get("role") == "assistant"
+            and not any(isinstance(msg.get(field), str) for field in _IFM_THINK_FIELDS)
+        ):
+            msg = {k: v for k, v in msg.items() if k not in _IFM_THINK_FIELDS}
+            content = msg.get("content")
+            match = _LEADING_THINK_RE.match(content) if isinstance(content, str) else None
+            msg["reasoning_content"] = match.group(1).strip() if match else ""
+            if match:
+                msg["content"] = content[match.end() :]
+            changed = True
+        out.append(msg)
+    return out if changed else messages
 
 
 def _split_parallel_tool_calls(messages: list) -> list:
@@ -2954,6 +3009,9 @@ def apply_chat_template_for_generation(
         split = _split_parallel_tool_calls(normalized)
         if split is not normalized:
             candidates.append(split)
+        ifm = _fill_ifm_thinking_fields(split, tokenizer, tools)
+        if ifm is not split:
+            candidates.append(ifm)
         for candidate in candidates:
             try:
                 return _render_with_fallback(candidate)
@@ -3069,7 +3127,7 @@ def render_native_template(
         return ChatTemplateRenderResult(
             with_tools,
             _detect_reasoning_channel_markers_from_templates(
-                _selected_template_strings_from_value(native_tpl, tools)
+                _selected_template_strings_from_value(native_tpl, tools), with_tools
             ),
             # gate healing and execution on NATIVE: "default" can advertise tools dropped by "tool_use" (#7066).
             neutralize_tool_descriptions(
@@ -3096,7 +3154,7 @@ def render_with_native_template_fallback(
     return_metadata: bool = False,
 ):
     """Returns the prompt, native-rendered when an override drops tools; return_metadata adds markers."""
-    live_markers = detect_reasoning_channel_markers(tokenizer, tools = tools)
+    live_markers = detect_reasoning_channel_markers(tokenizer, tools = tools, prompt = formatted_prompt)
 
     def _result(
         prompt: str,
@@ -3121,7 +3179,7 @@ def render_with_native_template_fallback(
         markers = live_markers
         if markers is None:
             markers = detect_reasoning_channel_markers_from_model_info(
-                tokenizer, model_info, tools = None
+                tokenizer, model_info, tools = None, prompt = formatted_prompt
             )
         return _result(formatted_prompt, markers)
     if apply_fn is None:
