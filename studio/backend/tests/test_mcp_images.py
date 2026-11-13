@@ -850,7 +850,7 @@ def test_the_vision_streamer_resolves_markers_for_a_replay_only_turn():
     from core.inference import inference as inference_module
 
     body = inspect.getsource(inference_module.InferenceBackend._generate_vision_response)
-    call = body.index("detect_reasoning_channel_markers(processor")
+    call = body.index("reasoning_channel_markers = detect_reasoning_channel_markers(")
     window = body[call : call + 400]
     assert "if attached" in window, window[:200]
     assert "if image\n" not in window
