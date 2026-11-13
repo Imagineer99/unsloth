@@ -1914,17 +1914,23 @@ class ReasoningChannelNormalizer:
                 if not self._buffer:
                     break
 
-            markers = self._closing_markers if self._in_reasoning else (self._opening_marker,)
-            index, marker = -1, ""
-            for candidate in markers:
-                found = self._buffer.find(candidate)
-                if found >= 0 and (index < 0 or found < index):
-                    index, marker = found, candidate
-            if index < 0:
-                stable = min((_split_partial_marker(self._buffer, m)[0] for m in markers), key = len)
-                self._buffer = self._buffer[len(stable) :]
-                output.append(stable)
-                break
+            if self._in_reasoning and len(self._closing_markers) > 1:
+                found = [(self._buffer.find(m), m) for m in self._closing_markers]
+                index, marker = min(((i, m) for i, m in found if i >= 0), default = (-1, ""))
+                if index < 0:
+                    stable, self._buffer = min(
+                        (_split_partial_marker(self._buffer, m) for m in self._closing_markers),
+                        key = lambda split: len(split[0]),
+                    )
+                    output.append(stable)
+                    break
+            else:
+                marker = self._closing_markers[0] if self._in_reasoning else self._opening_marker
+                index = self._buffer.find(marker)
+                if index < 0:
+                    stable, self._buffer = _split_partial_marker(self._buffer, marker)
+                    output.append(stable)
+                    break
 
             output.append(self._buffer[:index])
             self._buffer = self._buffer[index + len(marker) :]
