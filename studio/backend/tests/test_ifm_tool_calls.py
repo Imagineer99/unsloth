@@ -162,6 +162,22 @@ def test_think_tags_inside_an_argument_are_data():
     assert strip_tool_markup("A " + text, final = True) == "A"
 
 
+@pytest.mark.parametrize(
+    "literal", ["<ifm|tool_call>", "</ifm|tool_call>", "</ifm|tool_calls>", "<ifm|tool_calls>"]
+)
+def test_ifm_markup_inside_an_argument_is_data(literal):
+    query = f"What does {literal} mean?"
+    as_json = (
+        "<ifm|tool_calls>\n<ifm|tool_call>"
+        + json.dumps({"name": "web_search", "arguments": {"query": query}})
+        + "</ifm|tool_call>\n</ifm|tool_calls>"
+    )
+    for text in (XML_CALL.replace("unsloth", query), as_json):
+        assert _calls(text) == [("web_search", {"query": query})]
+        assert _calls(text, allow_incomplete = False) == [("web_search", {"query": query})]
+        assert strip_tool_markup("A " + text + " B", final = True) == "A  B"
+
+
 def test_strip_buffers_open_block_until_final():
     open_block = "Answer.\n" + XML_CALL[:40]
     assert strip_tool_markup(open_block) == open_block

@@ -4520,21 +4520,83 @@ def _parse_minimax_tool_calls(
     return out
 
 
-def _ifm_block_spans(text: str) -> list[tuple[int, int, bool]]:
-    """``(start, end, closed)`` per ``<ifm|tool_calls>`` block; an unclosed block runs to the end of the text.
-    Every IFM tag is one dedicated token, so the first closer is the real one."""
-    spans: list[tuple[int, int, bool]] = []
+def _ifm_blocks(text: str, relaxed: bool = True):
+    """Yield ``(start, end, closed, calls)`` per ``<ifm|tool_calls>`` block, ``calls`` as ``(call, closed)``.
+    An unreadable call ends the structural scan; the block then closes at the next closer."""
+    n = len(text)
+
+    def _ifm_call_at(pos: int) -> tuple[Optional[tuple[str, dict]], int, bool]:
+        """``(call, end, closed)`` for the body after one ``<ifm|tool_call>``. Scanned structurally (JSON strings,
+        whole argument values), so IFM markup quoted inside an argument is data. ``call`` is None if unreadable."""
+        while pos < n and text[pos].isspace():
+            pos += 1
+        if text.startswith("{", pos):
+            brace = _balanced_brace_end(text, pos)
+            obj = (
+                _loads_call_object(text[pos : brace + 1], relaxed = relaxed)
+                if brace is not None
+                else None
+            )
+            name = obj.get("name") if isinstance(obj, dict) else None
+            args = obj.get("arguments", obj.get("parameters", {})) if name else None
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    args = None
+            call = (
+                (name.strip(), args)
+                if isinstance(name, str) and _IFM_NAME_RE.fullmatch(name) and isinstance(args, dict)
+                else None
+            )
+            pos = brace + 1 if brace is not None else n
+        else:
+            m = _IFM_NAME_RE.match(text, pos)
+            if m is None:
+                return None, pos, False
+            args = {}
+            pos = m.end()
+            while (am := _IFM_ARG_RE.match(text, pos)) is not None:
+                key, arg_type, value = am.groups()
+                if arg_type and arg_type.lower() in _IFM_JSON_TYPES:
+                    try:
+                        value = json.loads(value)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                args[key] = value
+                pos = am.end()
+            call = (m.group(1), args)
+        while pos < n and text[pos].isspace():
+            pos += 1
+        if text.startswith(_IFM_CALL_CLOSE, pos):
+            return call, pos + len(_IFM_CALL_CLOSE), True
+        # Unclosed: only a body cut exactly at its close is a call.
+        return (call if pos == n else None), pos, False
+
     pos = 0
-    while True:
-        start = text.find(_IFM_BLOCK_OPEN, pos)
-        if start < 0:
-            return spans
-        close = text.find(_IFM_BLOCK_CLOSE, start + len(_IFM_BLOCK_OPEN))
+    while (start := text.find(_IFM_BLOCK_OPEN, pos)) >= 0:
+        calls = []
+        pos = start + len(_IFM_BLOCK_OPEN)
+        while True:
+            while pos < n and text[pos].isspace():
+                pos += 1
+            if not text.startswith(_IFM_CALL_OPEN, pos):
+                break
+            call, pos, closed = _ifm_call_at(pos + len(_IFM_CALL_OPEN))
+            calls.append((call, closed))
+            if call is None or not closed:
+                break
+        close = text.find(_IFM_BLOCK_CLOSE, pos)
         if close < 0:
-            spans.append((start, len(text), False))
-            return spans
+            yield start, n, False, calls
+            return
         pos = close + len(_IFM_BLOCK_CLOSE)
-        spans.append((start, pos, True))
+        yield start, pos, True, calls
+
+
+def _ifm_block_spans(text: str) -> list[tuple[int, int, bool]]:
+    """``(start, end, closed)`` per ``<ifm|tool_calls>`` block; an unclosed block runs to the end of the text."""
+    return [(start, end, closed) for start, end, closed, _calls in _ifm_blocks(text)]
 
 
 def _parse_ifm_tool_calls(
@@ -4548,52 +4610,14 @@ def _parse_ifm_tool_calls(
     out: list[dict] = []
     if _IFM_BLOCK_OPEN not in content:
         return out
-
-    def _ifm_call(body: str) -> Optional[tuple[str, dict]]:
-        stripped = body.strip()
-        if stripped.startswith("{"):
-            obj = _loads_call_object(stripped, relaxed = allow_incomplete)
-            name = obj.get("name") if isinstance(obj, dict) else None
-            args = obj.get("arguments", obj.get("parameters", {})) if name else None
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except (json.JSONDecodeError, ValueError):
-                    return None
-            if not isinstance(name, str) or not _IFM_NAME_RE.fullmatch(name):
-                return None
-            return (name.strip(), args) if isinstance(args, dict) else None
-        m = _IFM_NAME_RE.match(body)
-        if m is None:
-            return None
-        args = {}
-        pos = m.end()
-        while (am := _IFM_ARG_RE.match(body, pos)) is not None:
-            key, arg_type, value = am.groups()
-            if arg_type and arg_type.lower() in _IFM_JSON_TYPES:
-                try:
-                    value = json.loads(value)
-                except (json.JSONDecodeError, ValueError):
-                    pass
-            args[key] = value
-            pos = am.end()
-        return (m.group(1), args) if not body[pos:].strip() else None
-
     think_spans = _merge_spans(_tool_healing._think_spans_outside_tool_markup(content))
     think_starts = [s for s, _ in think_spans]
-    for start, end, closed in _ifm_block_spans(content):
+    for start, _end, _closed, calls in _ifm_blocks(content, relaxed = allow_incomplete):
         think_idx = bisect.bisect_right(think_starts, start) - 1
         if think_idx >= 0 and start < think_spans[think_idx][1]:
             continue
-        block = content[
-            start + len(_IFM_BLOCK_OPEN) : end - len(_IFM_BLOCK_CLOSE) if closed else end
-        ]
-        for piece in block.split(_IFM_CALL_OPEN)[1:]:
-            body, sep, _rest = piece.partition(_IFM_CALL_CLOSE)
-            if not sep and not allow_incomplete:
-                continue
-            call = _ifm_call(body)
-            if call is None:
+        for call, closed in calls:
+            if call is None or not (closed or allow_incomplete):
                 continue
             out.append(
                 {
