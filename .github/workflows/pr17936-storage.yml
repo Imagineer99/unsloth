@@ -1,0 +1,45 @@
+name: PR 17936 storage lifecycle
+on:
+  push:
+    branches: [fix/pr17936-storage-validation]
+permissions:
+  contents: read
+jobs:
+  lifecycle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: 9015223527717660aa4b70d47556a86cae07130d
+          path: before
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: 79515eb793db3593250036172154a682b9ca4285
+          path: after
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r validation-requirements.txt
+      - name: BEFORE offline control
+        run: python validation-projects.py control before temp/control
+      - name: Seed old database, upgrade, restart and reset
+        shell: bash
+        run: |
+          set -eu
+          python validation-projects.py seed before temp/upgrade
+          python validation-projects.py select after temp/upgrade
+          python validation-projects.py restart after temp/upgrade
+      - name: AFTER offline acceptance and remount
+        run: python validation-projects.py offline after temp/upgrade
