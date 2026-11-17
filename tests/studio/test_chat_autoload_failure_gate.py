@@ -2156,3 +2156,53 @@ def test_a_pinned_mlx_candidate_is_loaded_at_its_pin_and_keeps_it():
     )
     assert [e for e in legacy["events"] if e["kind"] == "loadModel"][0]["max_seq_length"] == 8192
     assert legacy["store"]["customContextLength"] == 8192
+
+
+@pytest.mark.parametrize("remembered_load_fails", [False, True])
+def test_hf_cache_rows_keep_the_remembered_repo_first_when_cached_lookup_fails(
+    remembered_load_fails,
+):
+    """A snapshot path must still match the saved Hub repo id when the managed list fails."""
+    path = (
+        "/home/john-doe/.cache/huggingface/hub/"
+        "models--unsloth--r{}/snapshots/hash"
+    )
+    remembered_path = path.format(2)
+    fallback_path = path.format(1)
+    load = (
+        "p.model_path.includes('r2') ? new Error(OOM) : LOADED(p)"
+        if remembered_load_fails
+        else "LOADED(p)"
+    )
+    out = _run(
+        "scenario({ ggufRepos: 'throw',"
+        " localModels: [1,2].map((i) => {"
+        " const p = `/home/john-doe/.cache/huggingface/hub/"
+        "models--unsloth--r${i}/snapshots/hash`;"
+        " return { ...LOCAL_GGUF, id:p, load_id:p, path:p, source:'hf_cache',"
+        " model_id:`unsloth/r${i}`, size_bytes:i,"
+        " capabilities:{can_chat:true,requires_variant:true} }; }),"
+        " variants: Object.fromEntries([1,2].map((i) =>"
+        " [`/home/john-doe/.cache/huggingface/hub/"
+        "models--unsloth--r${i}/snapshots/hash`,GEMMA_VARIANTS])),"
+        " lastLoaded:{id:'unsloth/r2',kind:'gguf',ggufVariant:'UD-Q4_K_XL'},"
+        f" load:(p) => {load} }})"
+    )
+
+    assert _loaded_paths(out) == (
+        [remembered_path, fallback_path]
+        if remembered_load_fails
+        else [remembered_path]
+    )
+    records = [e for e in out["events"] if e["kind"] == "recordLastLocal"]
+    if remembered_load_fails:
+        assert records == []
+        assert _toasts(out, "toast.success") == []
+        [warning] = _toasts(out, "toast.warning")
+        assert warning["msg"].startswith(f"Loaded {fallback_path}")
+        assert warning["description"].startswith(
+            f"Your last used model {remembered_path} (UD-Q4_K_XL) did not load:"
+        )
+    else:
+        assert [e["id"] for e in records] == [remembered_path]
+        assert _toasts(out, "toast.warning") == []
