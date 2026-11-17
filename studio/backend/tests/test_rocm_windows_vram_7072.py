@@ -127,6 +127,7 @@ def win_rocm(monkeypatch):
     monkeypatch.setattr(hw.platform, "system", lambda: "Windows")
     monkeypatch.setattr(hw.sys, "platform", "win32")
     monkeypatch.setattr(hw, "_smi_query", lambda *a, **k: None)
+    monkeypatch.setattr(hw, "_rocm_win_util_cache", {}, raising = False)
     # Force the capacity-ranking path: a Windows dev box would otherwise query its own HIP/registry.
     monkeypatch.setattr(hw, "_windows_amd_adapter_records_by_luid", lambda: {})
     monkeypatch.setattr(hw, "_rocm_windows_hip_adapter_ids", lambda ordinals, names: None)
@@ -1835,7 +1836,7 @@ def test_a_discrete_card_on_the_same_runtime_keeps_the_dedicated_counter(win_roc
 # This card at 17%, other adapters at 61%, so a wrong selection still reads 78.
 FOREIGN_ENGINES = [
     ("pid_100_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", 12.0),
-    ("pid_101_luid_0x00000000_0x00015369_phys_0_eng_1_engtype_3D", 5.0),
+    ("pid_101_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", 5.0),
     ("pid_200_luid_0x00000000_0x000183fe_phys_0_eng_0_engtype_3D", 44.0),
     ("pid_300_luid_0x00000000_0x0001842f_phys_0_eng_0_engtype_3D", 17.0),
 ]
@@ -1895,14 +1896,14 @@ def test_a_linked_adapters_hidden_nodes_are_not_this_devices_engines(win_rocm, m
     assert device["gpu_utilization_pct"] == 78.0
 
 
-def test_the_adapter_is_matched_here_and_the_engine_type_in_the_path(win_rocm, monkeypatch):
-    """A LUID in the path would hand adapter selection to PDH, which no test here can run; the
-    engine type stays in the path to keep one type per process."""
+def test_the_luid_narrows_the_path_and_is_matched_here_too(win_rocm, monkeypatch):
+    """PDH narrows to the adapter so the call fits its timeout (#18005); the match here still decides,
+    which the longer-LUID and high-half tests cover."""
     _solo_host(monkeypatch, (0x15369, 0))
 
     _, query = _engine_query(monkeypatch, SOLO_ADAPTERS, FOREIGN_ENGINES)
-    assert "\\GPU Engine(*engtype_3D*)\\Utilization Percentage" in query
-    assert "luid_" not in query
+    assert "\\GPU Engine(*luid_0x00000000_0x00015369*)\\Utilization Percentage" in query
+    assert "engtype_" not in query
     assert "InstanceName" in query
 
 
@@ -1930,17 +1931,49 @@ def test_engtype_spelled_in_lower_case_is_still_a_3d_engine(win_rocm, monkeypatc
         SOLO_ADAPTERS,
         [
             ("pid_100_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3d", 12.0),
-            ("pid_101_LUID_0X00000000_0X00015369_phys_0_eng_1_ENGTYPE_3D", 5.0),
+            ("pid_101_LUID_0X00000000_0X00015369_PHYS_0_ENG_0_ENGTYPE_3D", 5.0),
         ],
     )
     assert device["gpu_utilization_pct"] == 17.0
 
 
-def test_only_3d_engines_count(win_rocm, monkeypatch):
-    """A compute engine is not the 3D reading, and no 3D instance is unknown, not zero."""
+def test_the_busiest_engine_type_is_the_reading(win_rocm, monkeypatch):
+    """#18005: HIP runs on Compute while 3D idles. Each type sums its processes; types do not add."""
     _solo_host(monkeypatch, (0x15369, 0))
 
     (device,), _ = _engine_query(
+        monkeypatch,
+        SOLO_ADAPTERS,
+        [
+            ("pid_100_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", 1.0),
+            ("pid_101_luid_0x00000000_0x00015369_phys_0_eng_2_engtype_Compute", 60.0),
+            ("pid_102_luid_0x00000000_0x00015369_phys_0_eng_2_engtype_Compute", 30.0),
+            ("pid_103_luid_0x00000000_0x00015369_phys_0_eng_1_engtype_Copy", 3.0),
+        ],
+    )
+    assert device["gpu_utilization_pct"] == 90.0
+
+
+def test_separate_engines_of_one_type_do_not_add_up(win_rocm, monkeypatch):
+    """Two Compute engines at 60 % each are a 60 % adapter, as Task Manager and the NPU reading say."""
+    _solo_host(monkeypatch, (0x15369, 0))
+
+    (device,), _ = _engine_query(
+        monkeypatch,
+        SOLO_ADAPTERS,
+        [
+            ("pid_100_luid_0x00000000_0x00015369_phys_0_eng_2_engtype_Compute", 60.0),
+            ("pid_100_luid_0x00000000_0x00015369_phys_0_eng_3_engtype_Compute", 60.0),
+        ],
+    )
+    assert device["gpu_utilization_pct"] == 60.0
+
+
+def test_without_a_luid_only_3d_engines_count(win_rocm, monkeypatch):
+    """The host-wide fallback stays the 3D query: every engine of every adapter overruns the timeout."""
+    _solo_host(monkeypatch)
+
+    (device,), query = _engine_query(
         monkeypatch,
         SOLO_ADAPTERS,
         [
@@ -1948,6 +1981,7 @@ def test_only_3d_engines_count(win_rocm, monkeypatch):
             ("pid_101_luid_0x00000000_0x00015369_phys_0_eng_1_engtype_Copy", 3.0),
         ],
     )
+    assert "\\GPU Engine(*engtype_3D*)\\Utilization Percentage" in query
     assert device["gpu_utilization_pct"] is None
 
 
@@ -1973,11 +2007,11 @@ def test_unusable_samples_are_dropped_and_the_sum_is_bounded(win_rocm, monkeypat
         SOLO_ADAPTERS,
         [
             ("pid_1_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", "NaN"),
-            ("pid_2_luid_0x00000000_0x00015369_phys_0_eng_1_engtype_3D", "Infinity"),
-            ("pid_3_luid_0x00000000_0x00015369_phys_0_eng_2_engtype_3D", -5.0),
-            ("pid_4_luid_0x00000000_0x00015369_phys_0_eng_3_engtype_3D", "not-a-number"),
-            ("pid_5_luid_0x00000000_0x00015369_phys_0_eng_4_engtype_3D", 70.0),
-            ("pid_6_luid_0x00000000_0x00015369_phys_0_eng_5_engtype_3D", 70.0),
+            ("pid_2_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", "Infinity"),
+            ("pid_3_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", -5.0),
+            ("pid_4_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", "not-a-number"),
+            ("pid_5_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", 70.0),
+            ("pid_6_luid_0x00000000_0x00015369_phys_0_eng_0_engtype_3D", 70.0),
         ],
     )
     assert device["gpu_utilization_pct"] == 100.0
