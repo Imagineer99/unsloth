@@ -23,6 +23,9 @@ DETACHED_IMAGE_TURN_TEXT = "Images returned by earlier tool calls in this conver
 
 MAX_MODEL_IMAGES = 4
 MAX_TOTAL_MODEL_IMAGES = 8
+# Past the cap, drop the oldest pictures this many at a time, so the prompt stays append-only
+# (KV cache warm) between drops instead of shifting on every new screenshot (#18231).
+IMAGE_TRIM_STEP = 4
 # Safetensors and MLX allow one image per message; GGUF is exempt.
 LOCAL_MAX_IMAGES_PER_TURN = 1
 # Mirrors DECODE_FAILURE_ALLOWANCE in studio/frontend/src/features/chat/api/mcp-images.ts.
@@ -32,6 +35,22 @@ MAX_MCP_IMAGE_MIME_CHARS = 256
 MAX_IMAGE_EDGE = 1024
 # Bounded off the header: a small PNG can hold tens of gigapixels.
 MAX_IMAGE_PIXELS = 40_000_000
+
+
+def stepped_keep(
+    count: int,
+    limit: int,
+    step: int = IMAGE_TRIM_STEP,
+) -> int:
+    """How many of the newest count pictures survive. A function of count alone, so the tool loop
+    (trimming as it goes) and a later replay (trimming the whole history) keep the same ones."""
+    if limit <= 0:
+        return 0
+    if count <= limit:
+        return count
+    # A limit under the step slides one at a time; 1 still divides the frontend's step.
+    step = step if limit >= step else 1
+    return count - -(-(count - limit) // step) * step
 
 
 def is_image_tool(name: str) -> bool:
@@ -189,6 +208,7 @@ def eligible_replay_images(
     *,
     local: bool = False,
     budget: int = MAX_TOTAL_MODEL_IMAGES,
+    parsed: "dict | None" = None,
 ) -> dict:
     """Chooses survivors before any decode, so Pillow work follows the cap, not the history."""
     eligible: dict = {}
@@ -203,6 +223,8 @@ def eligible_replay_images(
         return isinstance(message, dict) and message.get("role") == "tool"
 
     def _mcp_images_at(position: int) -> "list | None":
+        if parsed is not None and position in parsed:
+            return parsed[position]
         content = messages[position].get("content")
         if not isinstance(content, str):
             return None
@@ -224,7 +246,9 @@ def eligible_replay_images(
         # Newest first within the batch, the order the local decoder tries them.
         batch = [position for position in range(index, start - 1, -1)]
         index = start - 1
-        room = min(budget, per_result)
+        # Data-URL replay trims oldest first afterwards, so admit a result's whole window: a head cut
+        # here would leave the wrong pictures once that trim drops the oldest.
+        room = per_result if not local and budget > 0 else min(budget, per_result)
         allowance = room + spare
         taken = 0
         for position in batch:
@@ -239,9 +263,34 @@ def eligible_replay_images(
             allowance -= take
             taken += take
         charged = min(taken, room)
-        budget -= charged
+        budget = max(0, budget - charged)
         spare -= taken - charged
     return eligible
+
+
+def replay_image_total(messages: Sequence[dict], parsed: "dict | None" = None) -> int:
+    """Pictures a replay could promote with no cap, counted as the tool loop admits them (per
+    result quota, bounded MIME, at most the cap per parallel batch); parsed collects each result's
+    images for eligible_replay_images."""
+    call_names = resolve_tool_names(messages)
+    total = 0
+    batch = 0
+    for position, message in enumerate(messages):
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            total += min(batch, MAX_TOTAL_MODEL_IMAGES)
+            batch = 0
+            continue
+        content = message.get("content")
+        images = None
+        if isinstance(content, str):
+            name = message.get("name") or call_names.get(position)
+            if not (isinstance(name, str) and name and not is_image_tool(name)):
+                images = split_images(content)[1] or None
+        if parsed is not None:
+            parsed[position] = images
+        if images:
+            batch += min(MAX_MODEL_IMAGES, sum(1 for image in images if _mime_is_bounded(image)))
+    return total + min(batch, MAX_TOTAL_MODEL_IMAGES)
 
 
 def content_parts(images: Sequence[dict]) -> list[dict]:
@@ -524,6 +573,7 @@ def trim_image_url_turns(
     conversation: list,
     limit: int = MAX_TOTAL_MODEL_IMAGES,
     only: "list | None" = None,
+    step: int = 1,
 ) -> None:
     """Same cap for data-URL pixels; only promoted parts count, never the caller's own attachments."""
     if only is not None:
@@ -531,7 +581,7 @@ def trim_image_url_turns(
         present = {id(part) for part in _all_image_url_parts(conversation)}
         only[:] = [part for part in only if id(part) in present]
     counted = len(only) if only is not None else count_image_parts(conversation, "image_url")
-    excess = counted - limit
+    excess = counted - stepped_keep(counted, limit, step)
     if excess <= 0:
         return
     _drop_oldest_image_parts(conversation, excess, "image_url", only = only)
@@ -593,7 +643,7 @@ def append_image_turn(
         if reserve_caller_images:
             # Providers cap images in document order; reserve attachment slots so the newest survive.
             limit = max(0, limit - (len(_all_image_url_parts(conversation)) - len(owned or ())))
-        trim_image_url_turns(conversation, limit, only = owned)
+        trim_image_url_turns(conversation, limit, only = owned, step = IMAGE_TRIM_STEP)
 
 
 def insert_placeholder_turn(
@@ -885,9 +935,16 @@ def _promote(
         if local
         else (len(_all_image_url_parts(messages)) if vision and reserve_for_caller else 0)
     )
+    parsed: dict = {}
+    # The final trim steps from the whole history's count, so a follow-up keeps what the tool loop
+    # last sent. Admission keeps the full budget: the loop trims oldest first, keeping result tails.
+    _total = replay_image_total(messages, parsed) if vision and not local else 0
     eligible = (
         eligible_replay_images(
-            messages, local = local, budget = max(0, MAX_TOTAL_MODEL_IMAGES - _reserved)
+            messages,
+            local = local,
+            budget = max(0, MAX_TOTAL_MODEL_IMAGES - _reserved),
+            parsed = None if local else parsed,
         )
         if vision
         else {}
@@ -998,7 +1055,7 @@ def _promote(
         _caller_parts = len(_all_image_url_parts(out)) - len(promoted) if reserve_for_caller else 0
         trim_image_url_turns(
             out,
-            limit = max(0, MAX_TOTAL_MODEL_IMAGES - _caller_parts),
+            limit = stepped_keep(_total, max(0, MAX_TOTAL_MODEL_IMAGES - _caller_parts)),
             only = promoted,
         )
     return out, payloads, promoted
