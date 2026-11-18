@@ -255,6 +255,8 @@ def _build_silent_roots() -> "tuple[tuple[str, ...], tuple[str, ...]]":
                 # Model folders and LM Studio/Ollama dirs hold weights, not documents; reading them is the point.
                 _scan_folder_roots,
                 well_known_model_dirs,
+                # Read and run only: a write there still asks, so a call cannot plant code it then runs silently.
+                _trusted_tool_folder_roots,
             )
         )
     )
@@ -330,6 +332,25 @@ def _scan_folder_roots() -> "tuple[str, ...]":
     return tuple(str(row.get("path") or "") for row in list_scan_folders())
 
 
+def _trusted_tool_folder_roots() -> "tuple[str, ...]":
+    """Skipped without studio.db for the same reason as the scan folders."""
+    if not _studio_db_exists():
+        return ()
+    from . import os_sandbox
+
+    global _trusted_roots_built
+    _trusted_roots_built = os_sandbox.trusted_tool_folder_roots()
+    return _trusted_roots_built
+
+
+# The trusted roots behind the cached allowlist: a swap for a link must not wait out the TTL.
+_trusted_roots_built: "tuple[str, ...]" = ()
+
+
+def _trusted_roots_moved(roots) -> bool:
+    return any(os.path.realpath(root) != root for root in roots)
+
+
 # Env vars that relocate a root are part of the cache key so a repoint takes effect at once.
 _SILENT_ROOT_ENV_KEYS = (
     "UNSLOTH_STUDIO_HOME",
@@ -351,20 +372,31 @@ def _silent_roots() -> "tuple[tuple[str, ...], tuple[str, ...]]":
     global _silent_roots_cache
     try:
         account = current_account_id() or ""
+        from utils.account_context import via_api_key_context
+
+        # Trusted tool folders apply to the owner's chats, not to an API key bound to the owner.
+        api_key = via_api_key_context()
     except Exception:  # noqa: BLE001
-        account = ""
+        account, api_key = "", True
     # The db mtime too: scan folders and the cache root live in it.
-    identity = (account, tuple(os.environ.get(k) for k in _SILENT_ROOT_ENV_KEYS))
+    identity = (account, api_key, tuple(os.environ.get(k) for k in _SILENT_ROOT_ENV_KEYS))
     account = identity + (_studio_db_revision(identity),)
     now = time.monotonic()
     cached = _silent_roots_cache
-    if cached is not None and cached[1] == account and now - cached[0] < _SILENT_ROOT_TTL_S:
+    if (
+        cached is not None
+        and cached[1] == account
+        and now - cached[0] < _SILENT_ROOT_TTL_S
+        and not _trusted_roots_moved(cached[4])
+    ):
         return cached[2], cached[3]
+    global _trusted_roots_built
+    _trusted_roots_built = ()
     try:
         read_roots, write_roots = _build_silent_roots()
     except Exception:  # noqa: BLE001 - no allowlist is the fail-closed direction (more prompts)
         read_roots, write_roots = (), ()
-    _silent_roots_cache = (now, account, read_roots, write_roots)
+    _silent_roots_cache = (now, account, read_roots, write_roots, _trusted_roots_built)
     return read_roots, write_roots
 
 
