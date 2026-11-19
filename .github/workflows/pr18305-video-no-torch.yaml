@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 env:
   BASE_SHA: 35184f92c091ac83af42ce96b2a2d8fce7add339
   CHANGED: studio/backend/utils/hardware/hardware.py studio/backend/tests/test_video_capability.py studio/frontend/src/features/video/video-page.tsx
@@ -94,7 +94,7 @@ jobs:
         run: |
           "$PY" -m pip install -q pytest 2>/dev/null || uv pip install --python "$PY" pytest
           "$PY" -m pytest -o addopts= -q -p no:cacheprovider tests/test_video_capability.py 2>&1 | tee "$RUNNER_TEMP/unit_$ARM.txt"
-          echo "unit rc ${PIPESTATUS[0]} (base is expected to fail the 3 new no-torch tests)"
+          echo "unit rc ${PIPESTATUS[0]} (each arm runs its own tree's tests)"
       - name: verdict on the no-torch install
         run: |
           "$PY" -I "$RUNNER_TEMP/p/probe.py" 18911 "$RUNNER_TEMP/notorch_$ARM.json"
