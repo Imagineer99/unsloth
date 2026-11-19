@@ -6,6 +6,9 @@ name: pr18305-video-no-torch
 on:
   pull_request:
   workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 env:
   BASE_SHA: 35184f92c091ac83af42ce96b2a2d8fce7add339
   CHANGED: studio/backend/utils/hardware/hardware.py studio/backend/tests/test_video_capability.py studio/frontend/src/features/video/video-page.tsx
@@ -24,9 +27,6 @@ jobs:
     env:
       UNSLOTH_SKIP_AUTOSTART: '1'
       ARM: ${{ matrix.arm }}
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}-${{ matrix.arm }}
-      cancel-in-progress: true
     steps:
       - name: studio home
         run: echo "UNSLOTH_STUDIO_HOME=$RUNNER_TEMP/studio_home" >> "$GITHUB_ENV"
@@ -64,8 +64,8 @@ jobs:
               t = tok["access_token"]
               if tok.get("must_change_password"):
                   t = call("POST", "/api/auth/change-password", {"current_password": PW, "new_password": NEW}, t)[1]["access_token"]
-              hw = call("GET", "/api/system/hardware", t)[1]
-              h = call("GET", "/api/health", t)[1]
+              hw = call("GET", "/api/system/hardware", None, t)[1]
+              h = call("GET", "/api/health", None, t)[1]
               try:
                   import torch; torch_v = torch.__version__
               except Exception: torch_v = None
@@ -138,7 +138,7 @@ jobs:
               assert r["video_unsupported_reason"] == "no_accelerator" and r["video_cpu_opt_in_applicable"] is True, r
           print("FLIP OK", osn, r)
           PY
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         if: always()
         with:
           name: pr18305-${{ matrix.os }}-${{ matrix.arm }}
