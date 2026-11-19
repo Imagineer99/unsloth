@@ -22,10 +22,14 @@ jobs:
       run:
         shell: bash
     env:
-      UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/studio_home
       UNSLOTH_SKIP_AUTOSTART: '1'
       ARM: ${{ matrix.arm }}
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.os }}-${{ matrix.arm }}
+      cancel-in-progress: true
     steps:
+      - name: studio home
+        run: echo "UNSLOTH_STUDIO_HOME=$RUNNER_TEMP/studio_home" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0
