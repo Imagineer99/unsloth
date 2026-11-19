@@ -1,0 +1,145 @@
+# Staging-only workflow (never upstream). Drop into .github/workflows/ on the staging branch that
+# `staging_ci.py stage 18305` made (head = wt_r18305 b63435ddc8). BASE_SHA = the PR's merge base.
+# Proves on real installs, per OS: a --no-torch install's video verdict on base vs head, and that the
+# full install (the route the head points to) flips video on after a restart.
+name: pr18305-video-no-torch
+on:
+  pull_request:
+  workflow_dispatch:
+env:
+  BASE_SHA: 35184f92c091ac83af42ce96b2a2d8fce7add339
+  CHANGED: studio/backend/utils/hardware/hardware.py studio/backend/tests/test_video_capability.py studio/frontend/src/features/video/video-page.tsx
+jobs:
+  no-torch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-latest, ubuntu-latest]
+        arm: [base, head]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash
+    env:
+      UNSLOTH_STUDIO_HOME: ${{ runner.temp }}/studio_home
+      UNSLOTH_SKIP_AUTOSTART: '1'
+      ARM: ${{ matrix.arm }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: probe script
+        run: |
+          mkdir -p "$RUNNER_TEMP/p"
+          cat > "$RUNNER_TEMP/p/probe.py" <<'PY'
+          import json, os, subprocess, sys, time, urllib.request, urllib.error
+          from pathlib import Path
+          home, port, out = Path(os.environ["UNSLOTH_STUDIO_HOME"]), int(sys.argv[1]), Path(sys.argv[2])
+          PW, NEW = "hunter22-Pass-word", "hunter22-Pass-word-2"
+          first = not (home / "auth" / "auth.db").exists()
+          args = [sys.executable, "run.py", "--host", "127.0.0.1", "--port", str(port), "--api-only", "--disable-tools"]
+          srv = subprocess.Popen(args + (["--password", PW] if first else []), cwd="studio/backend",
+                                 stdout=open(out.with_suffix(".log"), "w"), stderr=subprocess.STDOUT)
+          def call(m, p, b=None, t=None):
+              r = urllib.request.Request(f"http://127.0.0.1:{port}{p}", method=m,
+                                         data=None if b is None else json.dumps(b).encode())
+              r.add_header("Content-Type", "application/json")
+              if t: r.add_header("Authorization", f"Bearer {t}")
+              try:
+                  with urllib.request.urlopen(r, timeout=60) as x: return x.status, json.loads(x.read() or b"null")
+              except urllib.error.HTTPError as e: return e.code, None
+          try:
+              for _ in range(300):
+                  try:
+                      if call("GET", "/api/health")[0] == 200: break
+                  except Exception: pass
+                  time.sleep(1)
+              s, tok = call("POST", "/api/auth/login", {"username": "unsloth", "password": PW})
+              if s != 200: s, tok = call("POST", "/api/auth/login", {"username": "unsloth", "password": NEW})
+              t = tok["access_token"]
+              if tok.get("must_change_password"):
+                  t = call("POST", "/api/auth/change-password", {"current_password": PW, "new_password": NEW}, t)[1]["access_token"]
+              hw = call("GET", "/api/system/hardware", t)[1]
+              h = call("GET", "/api/health", t)[1]
+              try:
+                  import torch; torch_v = torch.__version__
+              except Exception: torch_v = None
+              res = {k: hw.get(k) for k in hw if k.startswith("video")}
+              res.update(chat_only_reason=h.get("chat_only_reason"), cpu_training=h.get("cpu_training"), torch=torch_v)
+          finally:
+              srv.terminate(); srv.wait(60)
+          out.write_text(json.dumps(res, indent=1)); print("PR18305", out.stem, json.dumps(res))
+          PY
+      - name: install --no-torch (same installer both arms)
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            pwsh -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 --local --no-torch 2>&1 | tee install_notorch.log
+          else
+            ./install.sh --local --no-torch 2>&1 | tee install_notorch.log
+          fi
+      - name: base arm runs the merge-base backend
+        if: matrix.arm == 'base'
+        run: git checkout "$BASE_SHA" -- $CHANGED && git status --short
+      - name: venv python
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then PY="$UNSLOTH_STUDIO_HOME/unsloth_studio/Scripts/python.exe"; else PY="$UNSLOTH_STUDIO_HOME/unsloth_studio/bin/python"; fi
+          echo "PY=$PY" >> "$GITHUB_ENV"
+      - name: unit tests (this arm's tree)
+        working-directory: studio/backend
+        run: |
+          "$PY" -m pip install -q pytest 2>/dev/null || uv pip install --python "$PY" pytest
+          "$PY" -m pytest -o addopts= -q -p no:cacheprovider tests/test_video_capability.py 2>&1 | tee "$RUNNER_TEMP/unit_$ARM.txt"
+          echo "unit rc ${PIPESTATUS[0]} (base is expected to fail the 3 new no-torch tests)"
+      - name: verdict on the no-torch install
+        run: |
+          "$PY" -I "$RUNNER_TEMP/p/probe.py" 18911 "$RUNNER_TEMP/notorch_$ARM.json"
+      - name: assert no-torch verdict
+        run: |
+          "$PY" -I - "$RUNNER_TEMP/notorch_$ARM.json" "$ARM" "$RUNNER_OS" <<'PY'
+          import json, sys
+          r, arm, osn = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
+          msg = r["video_unsupported_message"] or ""
+          assert r["torch"] is None and r["chat_only_reason"] == "no_torch", r
+          assert r["video_supported"] is False and r["video_unsupported_reason"] == "pytorch_not_installed", r
+          if arm == "base":
+              assert "Install PyTorch" in msg, r            # the defect: an instruction with no action
+          elif osn == "macOS":
+              assert "--no-torch" in msg, r                  # Apple Silicon: the full install brings MPS video
+          else:
+              # GPU-less runner: the full install brings no video device, so neither fix is offered
+              assert r["cpu_training"] is True and "No supported accelerator" in msg and "PyTorch" not in msg, r
+          print("OK", arm, osn, msg)
+          PY
+      - name: full install over the same home (the route head points to)
+        run: |
+          if [ "$RUNNER_OS" = Windows ]; then
+            pwsh -NoProfile -ExecutionPolicy Bypass -File ./install.ps1 --local 2>&1 | tee install_full.log
+          else
+            ./install.sh --local 2>&1 | tee install_full.log
+          fi
+      - name: verdict after the full install and a restart
+        run: |
+          "$PY" -I "$RUNNER_TEMP/p/probe.py" 18912 "$RUNNER_TEMP/full_$ARM.json"
+      - name: assert video flipped
+        run: |
+          "$PY" -I - "$RUNNER_TEMP/full_$ARM.json" "$RUNNER_OS" <<'PY'
+          import json, sys
+          r, osn = json.load(open(sys.argv[1])), sys.argv[2]
+          assert r["torch"], r
+          assert r["chat_only_reason"] != "no_torch", r
+          if osn == "macOS":
+              assert r["video_supported"] is True, r         # MPS on the arm64 runner
+          else:
+              assert r["video_unsupported_reason"] == "no_accelerator" and r["video_cpu_opt_in_applicable"] is True, r
+          print("FLIP OK", osn, r)
+          PY
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        if: always()
+        with:
+          name: pr18305-${{ matrix.os }}-${{ matrix.arm }}
+          path: |
+            install_*.log
+            ${{ runner.temp }}/*.json
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/unit_*.txt
