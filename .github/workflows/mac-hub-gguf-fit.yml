@@ -1,0 +1,81 @@
+name: Mac Hub GGUF fit probe
+
+on:
+  push:
+    branches: [fix/mac-hub-gguf-fit-probe]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fit:
+    runs-on: macos-15
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: 2f2490c19659b50da6799ea277480df2d3f0b28c
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '24'
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+      - name: Measure the runner's Metal working set and available RAM
+        run: |
+          test "$(uname -m)" = arm64
+          cat > "$RUNNER_TEMP/metal.swift" <<'SWIFT'
+          import Metal
+          import Darwin
+          guard let gpu = MTLCreateSystemDefaultDevice() else {
+              print("0")
+              exit(0)
+          }
+          fputs("Metal device: \(gpu.name), unified memory: \(gpu.hasUnifiedMemory)\n", stderr)
+          print(gpu.hasUnifiedMemory ? gpu.recommendedMaxWorkingSetSize : 0)
+          SWIFT
+          swift "$RUNNER_TEMP/metal.swift" > "$RUNNER_TEMP/working-set"
+          python -m pip install psutil==7.1.3
+          python -c 'import json, psutil; m = psutil.virtual_memory(); print(json.dumps(dict(total=m.total, available=m.available)))' > "$RUNNER_TEMP/ram.json"
+      - name: Check the released Hub GGUF classifier
+        run: |
+          node --input-type=module <<'JS'
+          import assert from "node:assert/strict";
+          import { readFileSync } from "node:fs";
+          import { classifyGgufVariantFit, requiredGgufMemoryGb } from "./studio/frontend/src/lib/gguf-fit.ts";
+
+          const variant = { size_bytes: 2_200_000_000 };
+          const gib = 1024 ** 3;
+          const estimatedGiB = requiredGgufMemoryGb(variant.size_bytes);
+          const fallback = classifyGgufVariantFit(variant, { systemRamGb: 6 });
+          const shared = classifyGgufVariantFit(variant, {
+            gpuGb: 16, systemRamGb: 0, unifiedLoadBudgetGb: 5,
+          });
+          const pressured = classifyGgufVariantFit(variant, {
+            gpuGb: 16, systemRamGb: 0, unifiedLoadBudgetGb: 2,
+          });
+          console.log({ estimatedGiB, fallback, shared, pressured });
+          assert.equal(fallback, "oom");
+          assert.equal(shared, "fits");
+          assert.equal(pressured, "marginal");
+
+          const ram = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/ram.json", "utf8"));
+          const workingSet = Number(readFileSync(process.env.RUNNER_TEMP + "/working-set", "utf8"));
+          const report = { ramGiB: ram.total / gib, availableGiB: ram.available / gib, workingSetGiB: workingSet / gib };
+          console.log(report);
+          if (workingSet > 0) {
+            const budgetGiB = Math.floor(4 * 0.85 * Math.min(workingSet, ram.available) / gib) / 4;
+            const fit = classifyGgufVariantFit(variant, {
+              gpuGb: report.ramGiB, systemRamGb: 0, unifiedLoadBudgetGb: budgetGiB,
+            });
+            const expected = estimatedGiB > report.ramGiB ? "oom" :
+              estimatedGiB > Math.min(budgetGiB, 0.97 * report.ramGiB) ? "marginal" : "fits";
+            console.log({ budgetGiB, fit, expected });
+            assert.equal(fit, expected);
+          } else {
+            console.log("No unified Metal device exposed to this VM");
+          }
+          JS
