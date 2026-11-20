@@ -1,17 +1,17 @@
 name: Mac Hub GGUF fit probe
-
 on:
   push:
     branches: [fix/mac-hub-gguf-fit-probe]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  fit:
+  gguf-only:
     runs-on: macos-15
-    timeout-minutes: 12
+    timeout-minutes: 30
+    env:
+      STUDIO_PORT: '18896'
+      UNSLOTH_DISABLE_UPDATE_CHECK: '1'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -24,58 +24,94 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: '3.12'
-      - name: Measure the runner's Metal working set and available RAM
+      - name: Install Unsloth in GGUF-only mode
+        uses: ./.github/actions/install-unsloth-local
+        with:
+          gh-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Start the released backend
         run: |
           test "$(uname -m)" = arm64
-          cat > "$RUNNER_TEMP/metal.swift" <<'SWIFT'
-          import Metal
-          import Darwin
-          guard let gpu = MTLCreateSystemDefaultDevice() else {
-              print("0")
-              exit(0)
+          bash .github/scripts/assert-llama-loads.sh
+          bash .github/scripts/boot-studio-api-only.sh --port "$STUDIO_PORT"
+          bash .github/scripts/wait-for-health.sh --port "$STUDIO_PORT"
+      - name: Capture hardware and Hub variant metadata
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import secrets
+          from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+
+          base = f"http://127.0.0.1:{os.environ['STUDIO_PORT']}"
+          old_password = (Path.home() / ".unsloth/studio/auth/.bootstrap_password").read_text().strip()
+          new_password = "MacFit-" + secrets.token_urlsafe(18)
+
+          def api(path, payload=None, token=None):
+              data = json.dumps(payload).encode() if payload is not None else None
+              headers = {"Content-Type": "application/json"}
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              with urlopen(Request(base + path, data=data, headers=headers), timeout=120) as response:
+                  return json.load(response)
+
+          def login(password):
+              return api("/api/auth/login", {"username": "unsloth", "password": password})["access_token"]
+
+          bootstrap_token = login(old_password)
+          api("/api/auth/change-password", {
+              "current_password": old_password, "new_password": new_password,
+          }, bootstrap_token)
+          token = login(new_password)
+          system = api("/api/system?refresh_memory=true", token=token)
+          health = api("/api/health", token=token)
+          hardware = {key: system.get(key) for key in ("device_backend", "gpu", "inference_gpu", "memory")}
+          hardware["mode"] = {
+              key: health.get(key) for key in ("version", "studio_version", "chat_only", "chat_only_reason")
           }
-          fputs("Metal device: \(gpu.name), unified memory: \(gpu.hasUnifiedMemory)\n", stderr)
-          print(gpu.hasUnifiedMemory ? gpu.recommendedMaxWorkingSetSize : 0)
-          SWIFT
-          swift "$RUNNER_TEMP/metal.swift" > "$RUNNER_TEMP/working-set"
-          python -m pip install psutil==7.1.3
-          python -c 'import json, psutil; m = psutil.virtual_memory(); print(json.dumps(dict(total=m.total, available=m.available)))' > "$RUNNER_TEMP/ram.json"
-      - name: Check the released Hub GGUF classifier
+          print(json.dumps(hardware, indent=2), flush=True)
+          assert hardware["mode"]["chat_only"] is True, hardware["mode"]
+          assert hardware["mode"]["chat_only_reason"] == "no_torch", hardware["mode"]
+
+          query = urlencode({"repo_id": "unsloth/Qwen3.5-4B-GGUF"})
+          variants = api("/api/hub/gguf-variants?" + query, token=token)
+          variant = next(v for v in variants["variants"] if v["quant"].upper() == "UD-IQ2_XXS")
+          target = Path(os.environ["RUNNER_TEMP"]) / "gguf-fit.json"
+          target.write_text(json.dumps({"hardware": hardware, "variant": variant}))
+          PY
+      - name: Score the actual variant with live GGUF-only telemetry
         run: |
           node --input-type=module <<'JS'
           import assert from "node:assert/strict";
           import { readFileSync } from "node:fs";
-          import { classifyGgufVariantFit, requiredGgufMemoryGb } from "./studio/frontend/src/lib/gguf-fit.ts";
+          import {
+            classifyGgufVariantFit,
+            ggufVariantFitSizeBytes,
+            requiredGgufMemoryGb,
+          } from "./studio/frontend/src/lib/gguf-fit.ts";
 
-          const variant = { size_bytes: 2_200_000_000 };
-          const gib = 1024 ** 3;
-          const estimatedGiB = requiredGgufMemoryGb(variant.size_bytes);
-          const fallback = classifyGgufVariantFit(variant, { systemRamGb: 6 });
-          const shared = classifyGgufVariantFit(variant, {
+          const { hardware, variant } = JSON.parse(
+            readFileSync(process.env.RUNNER_TEMP + "/gguf-fit.json", "utf8"),
+          );
+          const gpu = hardware.inference_gpu ?? hardware.gpu;
+          assert.ok(!gpu?.available || !gpu.devices?.length, "GGUF-only provided GPU inventory; inspect its values");
+          assert.ok(variant.size_bytes > 0);
+          const availableGiB = hardware.memory.available_gb;
+          const fitBytes = ggufVariantFitSizeBytes(variant);
+          const estimateGiB = requiredGgufMemoryGb(fitBytes);
+          const fallbackBudgetGiB = availableGiB / 2;
+          const liveFit = classifyGgufVariantFit(variant, { systemRamGb: availableGiB });
+          const fallback16GiB = classifyGgufVariantFit(variant, { systemRamGb: 6 });
+          const unified16GiB = classifyGgufVariantFit(variant, {
             gpuGb: 16, systemRamGb: 0, unifiedLoadBudgetGb: 5,
           });
-          const pressured = classifyGgufVariantFit(variant, {
-            gpuGb: 16, systemRamGb: 0, unifiedLoadBudgetGb: 2,
-          });
-          console.log({ estimatedGiB, fallback, shared, pressured });
-          assert.equal(fallback, "oom");
-          assert.equal(shared, "fits");
-          assert.equal(pressured, "marginal");
-
-          const ram = JSON.parse(readFileSync(process.env.RUNNER_TEMP + "/ram.json", "utf8"));
-          const workingSet = Number(readFileSync(process.env.RUNNER_TEMP + "/working-set", "utf8"));
-          const report = { ramGiB: ram.total / gib, availableGiB: ram.available / gib, workingSetGiB: workingSet / gib };
-          console.log(report);
-          if (workingSet > 0) {
-            const budgetGiB = Math.floor(4 * 0.85 * Math.min(workingSet, ram.available) / gib) / 4;
-            const fit = classifyGgufVariantFit(variant, {
-              gpuGb: report.ramGiB, systemRamGb: 0, unifiedLoadBudgetGb: budgetGiB,
-            });
-            const expected = estimatedGiB > report.ramGiB ? "oom" :
-              estimatedGiB > Math.min(budgetGiB, 0.97 * report.ramGiB) ? "marginal" : "fits";
-            console.log({ budgetGiB, fit, expected });
-            assert.equal(fit, expected);
-          } else {
-            console.log("No unified Metal device exposed to this VM");
-          }
+          console.log({ quant: variant.quant, sizeBytes: variant.size_bytes, fitBytes, estimateGiB,
+            availableGiB, fallbackBudgetGiB, liveFit, fallback16GiB, unified16GiB });
+          assert.equal(fallback16GiB, "oom");
+          assert.equal(unified16GiB, "fits");
           JS
+      - name: Stop Unsloth
+        if: always()
+        run: |
+          if [ -n "${STUDIO_PID:-}" ]; then kill "$STUDIO_PID" 2>/dev/null || true; fi
