@@ -863,13 +863,19 @@ def _publish_unsloth_model_card(hf_api, repo_id, model, hf_token):
         logger.warning(f"Could not publish the model card: {exception}")
 
 
-def _checkpoint_load_refusal(checkpoint_path, pinned_base) -> Optional[str]:
-    """Why a local checkpoint must not load now: a pinned adapter base it no longer names, or
-    weight entries that point outside the folder."""
-    from core.export.decision import adapter_base_changed
+def _checkpoint_load_refusal(
+    checkpoint_path,
+    pinned_base,
+    adapter_free = False,
+) -> Optional[str]:
+    """Why a local checkpoint must not load now: a pinned adapter base it no longer names (or any,
+    when it was checked with no adapter config), or weight entries that point outside the folder."""
+    from core.export.decision import adapter_base_changed, adapter_load_bases
     from utils.security.file_security import escaping_weight_references
 
-    if pinned_base and adapter_base_changed(checkpoint_path, pinned_base):
+    if (pinned_base and adapter_base_changed(checkpoint_path, pinned_base)) or (
+        adapter_free and adapter_load_bases(checkpoint_path)
+    ):
         return "The adapter's base model changed after it was checked. Load it again."
     if escaping_weight_references(checkpoint_path):
         return "This checkpoint's weight index names files outside its folder."
@@ -1014,6 +1020,7 @@ class ExportBackend:
         base_model: Optional[str] = None,
         offload_layers = "auto",
         _offload_retry: bool = False,
+        adapter_free: bool = False,
     ) -> Tuple[bool, str]:
         """Load a checkpoint for export.
 
@@ -1044,6 +1051,12 @@ class ExportBackend:
             from core.export.decision import decision_kind
 
             decision = decision_kind(checkpoint_path)
+            if decision is not None and adapter_free:
+                # A decision run is an adapter: its config was written after the check.
+                return (
+                    False,
+                    "The adapter's base model changed after it was checked. Load it again.",
+                )
             if decision is not None:
                 return self._load_decision_checkpoint(
                     str(Path(checkpoint_path).expanduser()),
@@ -1053,7 +1066,7 @@ class ExportBackend:
                 )
 
             # The decision loader above checks its own base against the pin.
-            refusal = _checkpoint_load_refusal(checkpoint_path, pinned_base)
+            refusal = _checkpoint_load_refusal(checkpoint_path, pinned_base, adapter_free)
             if refusal:
                 return False, refusal
 
@@ -1114,7 +1127,7 @@ class ExportBackend:
                     self.is_vision = False
 
             # Again right before the load: the folder may have been edited during the probes.
-            refusal = _checkpoint_load_refusal(checkpoint_path, pinned_base)
+            refusal = _checkpoint_load_refusal(checkpoint_path, pinned_base, adapter_free)
             if refusal:
                 return False, refusal
 
@@ -1395,6 +1408,7 @@ class ExportBackend:
             trust_remote_code = trust_remote_code,
             hf_token = hf_token,
             base_model = base_model,
+            adapter_free = adapter_free,
             **retry_kw,
         )
 
@@ -1728,6 +1742,13 @@ class ExportBackend:
                     and not self._export_dir_overlaps_checkpoint(save_directory)
                 ):
                     reused_writes = _ReusedFolderWrites(save_directory)
+                if (
+                    push_to_hub
+                    and (is_compressed or is_torchao)
+                    and not _dir_is_fresh(f"{save_directory}-{compressed_suffix}")
+                ):
+                    # The quantized "<dir>-<suffix>" sibling is pushed whole; an earlier export's files there must not go up.
+                    reused_writes = _ReusedFolderWrites(f"{save_directory}-{compressed_suffix}")
 
                 # save.py turns None into get_token(), so the merge needs the token spelled out.
                 merged_token_kw = (
@@ -1826,9 +1847,18 @@ class ExportBackend:
                                 )
                                 self._package_drafter_merged(upload_dir, repo_id)
                                 self._sync_reap_report(upload_dir)
+                            # An untracked reused quantized sibling is not uploaded: the merging push below
+                            # rebuilds it in a fresh folder.
+                            quantized_untracked = (
+                                (is_compressed or is_torchao)
+                                and reused_writes is not None
+                                and written is None
+                            )
                             # Whatever was built, only weights are worth a repo; without them the
                             # merging push below runs instead, as it did before this was uploaded.
-                            if _holds_checkpoint_weights(upload_dir, written):
+                            if not quantized_untracked and _holds_checkpoint_weights(
+                                upload_dir, written
+                            ):
                                 hf_api = HfApi(token = hf_token)
                                 repo_url = hf_api.create_repo(
                                     repo_id, private = private, exist_ok = True
@@ -2172,9 +2202,13 @@ class ExportBackend:
                             "GGUF conversion produced only AppleDouble metadata companions "
                             f"and no usable .gguf file for {abs_save_dir}"
                         )
-                    drafter_gguf_files = self._package_drafter_gguf(
-                        reported.get("save_directory") or _model_tmp, abs_save_dir, exported_ggufs
-                    )
+                    # Runs the converter again (on an EAGLE-3 drafter folder): same trust decision.
+                    with _converter_remote_code(remote_code_approved):
+                        drafter_gguf_files = self._package_drafter_gguf(
+                            reported.get("save_directory") or _model_tmp,
+                            abs_save_dir,
+                            exported_ggufs,
+                        )
                     exported_ggufs.extend(f for f in drafter_gguf_files if f.endswith(".gguf"))
                     exported_is_vlm = bool(
                         reported.get("is_vlm", getattr(self, "is_vision", False))
