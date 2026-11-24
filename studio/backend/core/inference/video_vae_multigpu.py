@@ -17,6 +17,7 @@ import contextlib
 import functools
 import hashlib
 import inspect
+import math
 import os
 import textwrap
 import threading
@@ -28,10 +29,15 @@ ENV = "UNSLOTH_VIDEO_VAE_MULTIGPU"
 _ATTR = "_unsloth_vae_multigpu"
 # ast.unparse of AutoencoderKLWan.tiled_decode's body without its docstring (diffusers 0.42.1 and 0.43.0).
 _KNOWN_BODIES = frozenset({"3b78672ea534d444"})
-# Partner-card working memory above the copy's weights for one 256 x 256 px tile over every frame (fp32 Wan 2.2 VAE
-# measured 1.4 - 1.5 GiB on a T4, plus slack); scaled by tile area for wider tiles.
-_WORKING_MIB = 1792
-_WORKING_TILE_PX = 256 * 256
+# Partner-card memory the split takes (allocator reserved, which is what the card loses): the copy's weights plus a
+# fixed part plus a part per tile pixel, times a margin. Fitted on Kaggle 2x T4 (Wan 2.2 TI2V 5B, fp16 decode,
+# 1280x704x49, 1629 MiB of VAE weights), reserved peak above the split's start: 256x256 tiles 2656 MiB, 704x496
+# 6370 MiB (allocated 2422 / 5307 MiB); 704x704 allocated 6371 MiB (its reserved peak sat on cache the render had
+# already reserved), which the line predicts at 8288 MiB reserved.
+_WORKING_FIXED_MIB = 169
+_WORKING_MIB_PER_TILE_PX = 3714 / 283648  # (6370 - 2656) MiB over (704 * 496 - 256 * 256) px
+_NEED_MARGIN = 1.25
+_FITTED_FRAMES = 49  # the clip length the line was fitted at
 
 
 def enabled() -> bool:
@@ -220,11 +226,31 @@ def _partner_free_mib(torch: Any, partner: int) -> int:
     return int(free) >> 20
 
 
-def need_mib(vae: Any) -> int:
+def _extra_frames_mib(vae: Any, z: Any, tile_px: int) -> float:
+    """Decoded frames the partner keeps beyond the fitted 49: every partner tile holds its whole clip (the per-frame
+    list plus its concatenation) until the blend."""
+    try:
+        _, _, latent_frames, height, width = z.shape
+        ratio = int(getattr(vae.config, "scale_factor_temporal", None) or 4)
+        frames = 1 + (int(latent_frames) - 1) * ratio
+        spatial = int(vae.spatial_compression_ratio)
+        rows = len(range(0, int(height), max(1, int(vae.tile_sample_stride_height) // spatial)))
+        cols = len(range(0, int(width), max(1, int(vae.tile_sample_stride_width) // spatial)))
+        itemsize = next(vae.parameters()).element_size()
+    except Exception:  # noqa: BLE001 - shape unknown: the fitted size alone
+        return 0.0
+    partner_tiles = (rows * cols) // 2
+    return max(0, frames - _FITTED_FRAMES) * 3 * tile_px * itemsize * 2 * partner_tiles / 2**20
+
+
+def need_mib(vae: Any, z: Any = None) -> int:
     tile_px = int(getattr(vae, "tile_sample_min_height", 256)) * int(
         getattr(vae, "tile_sample_min_width", 256)
     )
-    return _module_mib(vae) + max(1024, _WORKING_MIB * tile_px // _WORKING_TILE_PX)
+    working = _WORKING_FIXED_MIB + _WORKING_MIB_PER_TILE_PX * tile_px
+    if z is not None:
+        working += _extra_frames_mib(vae, z, tile_px)
+    return int(math.ceil(_NEED_MARGIN * (_module_mib(vae) + working)))
 
 
 def _cuda_autocast_state() -> tuple:
@@ -283,41 +309,38 @@ def _rebound(value: Any, mapping: dict, seen: dict) -> Any:
         )
         out = value if same else _ft.partial(func, *args, **kw)
     elif isinstance(value, types.FunctionType):
+        if not any(id(item) in mapping for item in _captured(value, set())):
+            return value
+        # Built before its captures are rebound, so a closure that reaches itself (a wrapper that checks
+        # ``vae.decode is <itself>``, mutually recursive helpers) gets the new function, not the source's. Cells
+        # shared by sibling closures stay shared between their rebuilt copies.
         cells = value.__closure__ or ()
-        contents = []
+        closure = []
+        filled = []
         for cell in cells:
-            try:
-                contents.append(cell.cell_contents)
-            except ValueError:  # an empty cell
-                contents.append(cell)
-        new = [
-            c if isinstance(c, types.CellType) and c in cells else _rebound(c, mapping, seen)
-            for c in contents
-        ]
+            new_cell = seen.get(("cell", id(cell)))
+            if new_cell is None:
+                new_cell = types.CellType()
+                seen[("cell", id(cell))] = new_cell
+                try:
+                    filled.append((new_cell, cell.cell_contents))
+                except ValueError:  # an empty cell stays empty
+                    pass
+            closure.append(new_cell)
+        out = types.FunctionType(
+            value.__code__, value.__globals__, value.__name__, None, tuple(closure) or None
+        )
+        seen[key] = out
+        for new_cell, contents in filled:
+            new_cell.cell_contents = _rebound(contents, mapping, seen)
         defaults = tuple(_rebound(d, mapping, seen) for d in (value.__defaults__ or ()))
+        out.__defaults__ = defaults or None
         kwdefaults = {
             k: _rebound(v, mapping, seen) for k, v in (value.__kwdefaults__ or {}).items()
         }
-        if (
-            all(a is b for a, b in zip(new, contents))
-            and all(a is b for a, b in zip(defaults, value.__defaults__ or ()))
-            and all(kwdefaults[k] is v for k, v in (value.__kwdefaults__ or {}).items())
-        ):
-            out = value
-        else:
-            closure = (
-                tuple(
-                    c if isinstance(c, types.CellType) and c in cells else types.CellType(c)
-                    for c in new
-                )
-                or None
-            )
-            out = types.FunctionType(
-                value.__code__, value.__globals__, value.__name__, defaults or None, closure
-            )
-            out.__kwdefaults__ = kwdefaults or None
-            out.__dict__.update(value.__dict__)
-            out.__qualname__ = value.__qualname__
+        out.__kwdefaults__ = kwdefaults or None
+        out.__dict__.update(value.__dict__)
+        out.__qualname__ = value.__qualname__
     else:
         out = value
     seen[key] = out
@@ -408,6 +431,44 @@ def _stray_tensors(module: Any, device: Any) -> list:
     return out
 
 
+def _partner_reserve_mib(torch: Any, partner: int, free_mib: int) -> int:
+    """What the partner card keeps free beside the copy: the reserve Automatic placement subtracts when it picks a
+    replica card (1 GiB, or what the user's VRAM Budget keeps free when larger), re-read at decode time because an
+    explicit selection never went through that check and headroom can shrink between the load and the decode."""
+    from .diffusion_multigpu import _replica_reserve_mib
+
+    try:
+        total = int(torch.cuda.mem_get_info(partner)[1]) >> 20
+    except Exception:  # noqa: BLE001 - the budget share is then taken of the free memory
+        total = None
+    return int(_replica_reserve_mib(free_mib, total))
+
+
+_STICKY_CUDA_ERRORS = (
+    "illegal memory access",
+    "illegal address",
+    "unspecified launch failure",
+    "device-side assert",
+    "misaligned address",
+    "illegal instruction",
+    "hardware stack error",
+    "launch timed out",
+)
+
+
+def sticky_cuda_error(exc: Optional[BaseException]) -> bool:
+    """True for a CUDA error that poisons the context (an illegal address, a device-side assert): every later call on
+    it fails too, so a one-card retry cannot succeed. Out-of-memory and ordinary failures are not sticky."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        text = str(exc).lower()
+        if any(m in text for m in _STICKY_CUDA_ERRORS):
+            return True
+        exc = exc.__cause__ or exc.__context__
+    return False
+
+
 def _try_split(vae: Any, z: Any, state: dict, logger: Any) -> tuple[Optional[Any], str]:
     import torch
 
@@ -425,15 +486,62 @@ def _try_split(vae: Any, z: Any, state: dict, logger: Any) -> tuple[Optional[Any
         free = _partner_free_mib(torch, partner)
     except Exception as exc:  # noqa: BLE001
         return None, f"cuda:{partner} unreadable ({exc})"
-    need = need_mib(vae)
-    if free < need:
-        return None, f"cuda:{partner} has {free} MiB free, the copy needs ~{need}"
+    need = need_mib(vae, z)
+    reserve = _partner_reserve_mib(torch, partner, free)
+    if free - reserve < need:
+        return None, (
+            f"cuda:{partner} has {free} MiB free ({reserve} MiB kept free), the copy needs ~{need}"
+        )
     try:
         return split_tiled_decode(vae, z, partner), "split"
     except Exception as exc:  # noqa: BLE001 - the stock decode reruns every tile on the load card
+        if sticky_cuda_error(exc):
+            raise  # the context is lost: a one-card retry would fail on its first kernel
         if logger is not None:
             logger.warning("video.vae_multigpu: split decode failed, one card: %s", exc)
         return None, f"split failed ({type(exc).__name__}: {exc})"
+
+
+def _cleanup(
+    torch: Any, on_cuda: bool, caller: Any, side: Any, partner: Any, decoded: dict, box: dict
+) -> Optional[BaseException]:
+    """Every step of the split's cleanup, each run even when an earlier one raised; returns the first error.
+
+    The load card's tiles (all of them when the partner failed mid-way) may still be running on the caller's stream:
+    the collect and empty_cache free and release blocks on every card, so both cards' work is waited for first
+    (Kaggle 2x T4: without the caller wait an aborted split's next decode hit an illegal memory access). After a
+    failed wait the collect still runs (the copy and its tiles are dropped) but nothing is released to the driver:
+    blocks of work that may still be running stay with the allocator."""
+    failures: list = []
+
+    def step(fn: Any) -> bool:
+        try:
+            fn()
+            return True
+        except BaseException as exc:  # noqa: BLE001 - recorded, the remaining steps still run
+            failures.append(exc)
+            return False
+
+    waited = True
+    if on_cuda:
+        waited = step(side.synchronize)
+        waited = step(caller.synchronize) and waited
+    step(decoded.clear)
+    step(box.clear)
+    if on_cuda:
+        import gc
+
+        # the copy sits in reference cycles (bound hooks / patch closures): collect it now, or the next decode
+        # finds its ~2.7 GiB still held on the partner card (Kaggle 2x T4: 2478 MiB free on the second render)
+        step(gc.collect)
+        if waited:
+
+            def release() -> None:
+                with contextlib.suppress(Exception), torch.cuda.device(partner):
+                    torch.cuda.empty_cache()
+
+            step(release)
+    return failures[0] if failures else None
 
 
 def split_tiled_decode(
@@ -550,13 +658,18 @@ def split_tiled_decode(
                         with _without_hooks(vae):
                             copy = build_replica(vae, partner)
                     _rebind_forwards(vae, copy)
+                    # checked before the caller is released: a copy it cannot use must not start the source's
+                    # half of the tiles (the fallback decodes every tile again on the load card)
+                    stray = _stray_tensors(copy, partner)
+                    if stray:
+                        raise RuntimeError(
+                            f"the copy holds tensors on another card: {', '.join(stray[:4])}"
+                        )
+                except BaseException as exc:  # noqa: BLE001 - recorded before the caller is released
+                    errors.append(exc)
+                    return
                 finally:
                     copied.set()
-                stray = _stray_tensors(copy, partner)
-                if stray:
-                    raise RuntimeError(
-                        f"the copy holds tensors on another card: {', '.join(stray[:4])}"
-                    )
                 box["copy"] = copy
                 run(copy, z.to(partner), todo)
         except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
@@ -571,6 +684,7 @@ def split_tiled_decode(
     # (_feat_map) would clone them on the load card, and the copy briefly lifts the source's hooks.
     copied = threading.Event()
     worker.start()
+    raised: Optional[BaseException] = None
     try:
         try:
             copied.wait()
@@ -594,19 +708,15 @@ def split_tiled_decode(
                 rows = [[decoded[(i, j)].to(home) for j in col_starts] for i in row_starts]
         else:
             rows = [[decoded[(i, j)].to(home) for j in col_starts] for i in row_starts]
+    except BaseException as exc:
+        raised = exc
+        raise
     finally:
-        if on_cuda:
-            side.synchronize()
-        decoded.clear()
-        box.clear()
-        if on_cuda:
-            import gc
-
-            # the copy sits in reference cycles (bound hooks / patch closures): collect it now, or the next decode
-            # finds its ~2.7 GiB still held on the partner card (Kaggle 2x T4: 2478 MiB free on the second render)
-            gc.collect()
-            with contextlib.suppress(Exception), torch.cuda.device(partner):
-                torch.cuda.empty_cache()
+        failure = _cleanup(torch, on_cuda, caller, side, partner, decoded, box)
+        if failure is not None and (raised is None or sticky_cuda_error(failure)):
+            # a cleanup error surfaces when the decode itself succeeded, or replaces an ordinary failure when it
+            # lost the context (the caller must not retry on one card)
+            raise failure
     result_rows = []
     for i, row in enumerate(rows):
         result_row = []

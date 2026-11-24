@@ -6,6 +6,7 @@ CPU; test_video_vae_multigpu_cuda-style coverage runs on Kaggle 2x T4), gated of
 
 from __future__ import annotations
 
+import math
 import types
 
 import pytest
@@ -153,10 +154,10 @@ def test_partner_free_memory_counts_reusable_cache_and_the_need_scales_with_the_
     vae = _vae()
     vae.tile_sample_min_height = vae.tile_sample_min_width = 256
     base = vm.need_mib(vae)
-    vae.tile_sample_min_height = vae.tile_sample_min_width = (
-        512  # wide tiles: four times the working set
-    )
-    assert vm.need_mib(vae) - base == 3 * vm._WORKING_MIB
+    vae.tile_sample_min_height = vae.tile_sample_min_width = 512  # wide tiles: more working memory
+    grown = vm.need_mib(vae) - base
+    want = vm._NEED_MARGIN * vm._WORKING_MIB_PER_TILE_PX * (512 * 512 - 256 * 256)
+    assert abs(grown - want) <= 1
 
 
 def test_a_copy_holding_tensors_on_another_card_is_detected():
@@ -401,3 +402,260 @@ def test_a_partner_setup_failure_releases_the_caller(monkeypatch):
     t.join(timeout = 60)
     assert not t.is_alive(), "the caller hung waiting for the partner's copy"
     assert "partner setup failed" in str(box.get("error"))
+
+
+def _self_referencing_decode(vae):
+    # video_vae_untiled's untiled_when_fits re-installs itself (``vae.decode = untiled_when_fits``) from its own body,
+    # so its closure reaches itself as well as the source VAE.
+    inner = vae.decode
+
+    def untiled_when_fits(*args, **kwargs):
+        try:
+            return inner(*args, **kwargs)
+        finally:
+            if vae.__dict__.get("decode") is not untiled_when_fits:
+                vae.decode = untiled_when_fits
+
+    vae.decode = untiled_when_fits
+    return untiled_when_fits
+
+
+def test_a_self_referencing_decode_wrapper_is_rebound_to_the_copy():
+    from core.inference.diffusion_multigpu import build_replica
+
+    vae = _vae()
+    _self_referencing_decode(vae)
+    copy = build_replica(vae, torch.device("cpu"))
+    assert any("captured" in s for s in vm._stray_tensors(copy, torch.device("cpu")))
+    assert vm._rebind_forwards(vae, copy) >= 1
+    assert vm._stray_tensors(copy, torch.device("cpu")) == []
+    fn = copy.__dict__["decode"]
+    cells = {id(c.cell_contents) for c in fn.__closure__}
+    assert id(fn) in cells and id(copy) in cells and id(vae) not in cells
+    # the source's wrapper is untouched
+    src = vae.__dict__["decode"]
+    assert id(vae) in {id(c.cell_contents) for c in src.__closure__}
+
+
+def test_mutually_recursive_forwards_are_rebound_together():
+    vae = _vae()
+    block = next(m for m in vae.decoder.modules() if type(m).__name__.endswith("ResidualBlock"))
+
+    def make(b):
+        def first(x, *a, **k):
+            return second(x, *a, **k)
+
+        def second(x, *a, **k):
+            if x is None:
+                return first(x)
+            return type(b).forward(b, x, *a, **k)
+
+        return first
+
+    block.forward = make(block)
+    from core.inference.diffusion_multigpu import build_replica
+
+    copy = build_replica(vae, torch.device("cpu"))
+    vm._rebind_forwards(vae, copy)
+    assert vm._stray_tensors(copy, torch.device("cpu")) == []
+
+
+def test_an_unusable_copy_never_starts_the_source_tiles(monkeypatch):
+    # A copy the stray check refuses must fail the split before the load card decodes any tile: the caller then
+    # reruns every tile on one card, so a half decoded in the meantime is wasted work on a card that is short.
+    vae = _vae()
+    z = _latents(vae)
+    import time
+
+    def stray(module, device):
+        time.sleep(0.5)  # a caller released before this check would be decoding its tiles by now
+        return ["x.y (captured AutoencoderKLWan)"]
+
+    monkeypatch.setattr(vm, "_stray_tensors", stray)
+    calls = []
+    real = type(vae.post_quant_conv).forward
+
+    def counted(self, *a, **k):
+        if self is vae.post_quant_conv:
+            calls.append(1)
+        return real(self, *a, **k)
+
+    monkeypatch.setattr(type(vae.post_quant_conv), "forward", counted)
+    with torch.no_grad(), pytest.raises(RuntimeError, match = "holds tensors on another card"):
+        vm.split_tiled_decode(vae, z, torch.device("cpu"))
+    assert calls == []
+
+
+def _fake_cuda_split(monkeypatch, free_mib, total_mib, need):
+    # _try_split up to its admission gate without a GPU: latents and weights "on" cuda:0, the partner cuda:1.
+    vae = types.SimpleNamespace(
+        post_quant_conv = types.SimpleNamespace(parameters = lambda: []), named_modules = lambda: []
+    )
+    z = types.SimpleNamespace(device = torch.device("cuda", 0))
+    monkeypatch.setattr(vm, "_partner_free_mib", lambda torch_, partner: free_mib)
+    monkeypatch.setattr(vm, "need_mib", lambda v, z = None: need)
+    monkeypatch.setattr(
+        torch.cuda, "mem_get_info", lambda d = None: (free_mib << 20, total_mib << 20)
+    )
+    return vae, z, {"partner": 1}
+
+
+def test_the_decode_time_gate_keeps_the_partner_cards_reserve(monkeypatch):
+    # The reserve Automatic placement subtracts (an 80% VRAM Budget keeps 4915 MiB of a 24 GiB card free) applies at
+    # decode time too: 6144 MiB free leaves 1229 MiB usable, short of a 4600 MiB copy.
+    import core.inference.diffusion_memory as dm
+
+    monkeypatch.setattr(dm, "_user_budget_reserve_mib", lambda base: int(base * 0.2))
+    vae, z, state = _fake_cuda_split(monkeypatch, 6144, 24576, 4600)
+    monkeypatch.setattr(vm, "split_tiled_decode", lambda *a, **k: pytest.fail("split admitted"))
+    dec, why = vm._try_split(vae, z, state, None)
+    assert dec is None and "4915 MiB kept free" in why
+    # without a budget the 1 GiB floor still applies
+    monkeypatch.setattr(dm, "_user_budget_reserve_mib", lambda base: 0)
+    vae, z, state = _fake_cuda_split(monkeypatch, 5000, 24576, 4600)
+    dec, why = vm._try_split(vae, z, state, None)
+    assert dec is None and "1024 MiB kept free" in why
+    monkeypatch.setattr(vm, "split_tiled_decode", lambda *a, **k: "decoded")
+    vae, z, state = _fake_cuda_split(monkeypatch, 5700, 24576, 4600)
+    assert vm._try_split(vae, z, state, None) == ("decoded", "split")
+
+
+def test_a_sticky_cuda_error_is_not_retried_on_one_card(monkeypatch):
+    vae, z, state = _fake_cuda_split(monkeypatch, 20000, 24576, 4600)
+
+    def sticky(*a, **k):
+        raise RuntimeError("CUDA error: an illegal memory access was encountered")
+
+    monkeypatch.setattr(vm, "split_tiled_decode", sticky)
+    with pytest.raises(RuntimeError, match = "illegal memory access"):
+        vm._try_split(vae, z, state, None)
+
+    def oom(*a, **k):
+        raise torch.OutOfMemoryError("CUDA out of memory. Tried to allocate 806.00 MiB")
+
+    monkeypatch.setattr(vm, "split_tiled_decode", oom)
+    dec, why = vm._try_split(
+        vae, z, state, None
+    )  # an ordinary failure still falls back to the stock decode
+    assert dec is None and "OutOfMemoryError" in why
+
+
+def test_cleanup_runs_every_step_when_the_load_stream_wait_raises(monkeypatch):
+    import gc
+
+    calls = []
+    lost = RuntimeError("CUDA error: an illegal memory access was encountered")
+
+    class Stream:
+        def __init__(
+            self,
+            name,
+            error = None,
+        ):
+            self.name, self.error = name, error
+
+        def synchronize(self):
+            calls.append(self.name)
+            if self.error is not None:
+                raise self.error
+
+    monkeypatch.setattr(gc, "collect", lambda *a: calls.append("collect"))
+    monkeypatch.setattr(torch.cuda, "empty_cache", lambda: calls.append("empty_cache"))
+    import contextlib
+
+    monkeypatch.setattr(torch.cuda, "device", lambda d: contextlib.nullcontext())
+    decoded, box = {(0, 0): object()}, {"copy": object()}
+    out = vm._cleanup(torch, True, Stream("caller", lost), Stream("side"), None, decoded, box)
+    assert out is lost and vm.sticky_cuda_error(out)
+    assert decoded == {} and box == {}
+    # the partner wait and the collect still ran; nothing still possibly running is released to the driver
+    assert calls == ["side", "caller", "collect"]
+    calls.clear()
+    assert vm._cleanup(torch, True, Stream("caller"), Stream("side"), None, {}, {}) is None
+    assert calls == ["side", "caller", "collect", "empty_cache"]
+
+
+def test_a_lost_context_in_the_cleanup_replaces_an_ordinary_split_failure(monkeypatch):
+    # The partner ran out of memory (ordinary: a one-card retry is fine) but the load stream's wait then reports an
+    # illegal address: the split raises the sticky error, so _try_split re-raises instead of retrying on one card.
+    lost = RuntimeError("CUDA error: an illegal memory access was encountered")
+    monkeypatch.setattr(vm, "_cleanup", lambda *a, **k: lost)
+    vae = _vae()
+    z = _latents(vae)
+
+    def build(src, device):
+        raise torch.OutOfMemoryError("CUDA out of memory on the partner")
+
+    from core.inference import diffusion_multigpu as dm
+
+    monkeypatch.setattr(dm, "build_replica", build)
+    with torch.no_grad(), pytest.raises(RuntimeError, match = "illegal memory access") as info:
+        vm.split_tiled_decode(vae, z, torch.device("cpu"))
+    assert isinstance(info.value.__context__, torch.OutOfMemoryError)
+    # an ordinary cleanup error after a successful decode surfaces as well
+    monkeypatch.setattr(
+        dm, "build_replica", lambda src, device: dm.__dict__["_copy_module"](src, device)
+    )
+    monkeypatch.setattr(vm, "_cleanup", lambda *a, **k: ValueError("cleanup"))
+    with torch.no_grad(), pytest.raises(ValueError, match = "cleanup"):
+        vm.split_tiled_decode(vae, z, torch.device("cpu"))
+
+
+# Kaggle 2x T4, Wan 2.2 TI2V 5B (1629 MiB of VAE weights), 1280x704x49: the partner's measured peak above the split's
+# start per tile size, (reserved, allocated) MiB; 704x704's reserved peak was not separable (render 1 had cache).
+_WAN_WEIGHTS_MIB = 1629
+_MEASURED_PEAKS = {(256, 256): (2656, 2422), (704, 496): (6370, 5307), (704, 704): (None, 6371)}
+
+
+def _wan_sized(monkeypatch, h, w):
+    vae = types.SimpleNamespace(tile_sample_min_height = h, tile_sample_min_width = w)
+    monkeypatch.setattr(vm, "_module_mib", lambda module: _WAN_WEIGHTS_MIB)
+    return vae
+
+
+@pytest.mark.parametrize("tile", sorted(_MEASURED_PEAKS))
+def test_the_split_estimate_covers_every_measured_partner_peak(monkeypatch, tile):
+    reserved, allocated = _MEASURED_PEAKS[tile]
+    need = vm.need_mib(_wan_sized(monkeypatch, *tile))
+    assert need >= 1.15 * allocated
+    if reserved is not None:
+        assert need >= 1.15 * reserved
+
+
+def test_a_12_gib_partner_admits_the_704x496_split_and_a_smaller_one_does_not(monkeypatch):
+    # The 12 GiB-capped T4 partner read 11664 - 11696 MiB free at the decode (1024 MiB kept free).
+    import core.inference.diffusion_memory as dm
+
+    monkeypatch.setattr(dm, "_user_budget_reserve_mib", lambda base: 0)
+    need = vm.need_mib(_wan_sized(monkeypatch, 704, 496))
+    vae, z, state = _fake_cuda_split(monkeypatch, 11664, 12288, need)
+    monkeypatch.setattr(vm, "split_tiled_decode", lambda *a, **k: "decoded")
+    assert vm._try_split(vae, z, state, None) == ("decoded", "split")
+    # an 8 GiB card (about 7600 MiB free) keeps its reserve and is refused
+    vae, z, state = _fake_cuda_split(monkeypatch, 7600, 8192, need)
+    dec, why = vm._try_split(vae, z, state, None)
+    assert dec is None and "kept free" in why
+    # the busy partner of the uncapped run (a CFG copy on it: 5185 MiB free) is refused too
+    vae, z, state = _fake_cuda_split(monkeypatch, 5185, 15360, need)
+    assert vm._try_split(vae, z, state, None)[0] is None
+
+
+def test_the_split_estimate_adds_the_partner_tiles_frames_beyond_the_fitted_clip(monkeypatch):
+    import torch
+
+    vae = _wan_sized(monkeypatch, 704, 496)
+    vae.config = types.SimpleNamespace(scale_factor_temporal = 4)
+    vae.spatial_compression_ratio = 16
+    vae.tile_sample_stride_height, vae.tile_sample_stride_width = 576, 368
+    vae.parameters = lambda: iter([torch.empty(1, dtype = torch.float16)])
+    fitted = vm.need_mib(vae)
+    # 1280x704 latents at 16x: 44 x 80; 49 frames = 13 latent frames is the fitted clip
+    assert vm.need_mib(vae, torch.empty(1, 48, 13, 44, 80)) == fitted
+    longer = vm.need_mib(vae, torch.empty(1, 48, 31, 44, 80))  # 121 frames
+    partner_tiles = (len(range(0, 44, 36)) * len(range(0, 80, 23))) // 2
+    extra = (121 - 49) * 3 * 704 * 496 * 2 * 2 * partner_tiles / 2**20
+    assert longer == int(
+        math.ceil(1.25 * (_WAN_WEIGHTS_MIB + 169 + 3714 / 283648 * 704 * 496 + extra))
+    )
+    # a shape it cannot read keeps the fitted size
+    assert vm.need_mib(vae, object()) == fitted
