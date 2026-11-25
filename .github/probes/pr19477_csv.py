@@ -48,7 +48,7 @@ def load_task(name, rows):
     return TaskManager(include_defaults=False, include_path=includes).load_task_or_group(names)
 
 print("ENV", side, sha, platform.platform(), sys.version.split()[0],
-      {p: version(p) for p in ("lm-eval", "datasets", "pandas", "pyarrow", "torch")}, flush=True)
+      {p: version(p) for p in ("lm-eval", "datasets", "pandas", "pyarrow")}, flush=True)
 tasks = load_task("codes", [("001", "007", 1), ("010", "042", 2)])
 task = tasks["codes"]
 refs = [task.doc_to_target(doc) for doc in task.test_docs()]

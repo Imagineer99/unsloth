@@ -10,7 +10,7 @@ permissions:
 jobs:
   csv:
     if: github.repository == 'Imagineer99/unsloth' && github.head_ref == 'fix/pr19477-macos-csv-ab-b312519'
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 20
     env:
       BASE_SHA: 6a4837c94fd88e1105f8f856c0094ff46af955d1
@@ -38,9 +38,9 @@ jobs:
       - name: Install CPU evaluation dependencies
         run: |
           python -m venv "$RUNNER_TEMP/csv-env"
-          "$RUNNER_TEMP/csv-env/bin/python" -m pip install --disable-pip-version-check \
-            lm-eval==0.4.13 datasets==4.3.0 pandas==2.3.3 torch==2.15.0 pyarrow==26.0.1 \
-            typer==0.27.1 'pydantic>=2,<3' click 'transformers==4.56.2' pyyaml
+          "$RUNNER_TEMP/csv-env/bin/python" -m pip install --prefer-binary --disable-pip-version-check \
+            lm-eval==0.4.13 datasets==4.3.0 pandas==2.3.3 pyarrow==26.0.1 \
+            typer==0.27.1 'pydantic>=2,<3' click pyyaml
       - name: Base scores and metadata
         run: '"$RUNNER_TEMP/csv-env/bin/python" .github/probes/pr19477_csv.py base "$BASE_SHA" before "$RUNNER_TEMP/base-csv"'
       - name: PR scores and metadata
