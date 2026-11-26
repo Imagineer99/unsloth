@@ -45,3 +45,12 @@ jobs:
           node-version: '22'
       - name: Install pinned sides and run the browser comparison
         run: bash scripts/pr19738/run.sh
+      - name: Retain the two status crops for one day
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: pr19738-status-crops
+          path: |
+            ${{ runner.temp }}/ab/before.png
+            ${{ runner.temp }}/ab/after.png
+          if-no-files-found: error
+          retention-days: 1

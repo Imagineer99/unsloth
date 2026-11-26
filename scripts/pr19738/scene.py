@@ -42,7 +42,7 @@ try:
             if server.poll() is not None:
                 raise RuntimeError(f"server exited {server.returncode}")
             try:
-                if api.get("/healthz",timeout=2).is_success: break
+                if api.get("/api/health",timeout=2).is_success: break
             except httpx.TransportError:
                 pass
             time.sleep(1)
@@ -51,7 +51,7 @@ try:
         login.raise_for_status()
         auth=login.json()
         headers={"Authorization":"Bearer "+auth["access_token"]}
-        model_path=str(work/"Qwen3.5-0.8B-bf16")
+        model_path=os.environ["MODEL_ID"]
         loaded=api.post("/api/inference/load",headers=headers,json={
             "model_path":model_path,"is_lora":False,"max_seq_length":12288,
             "speculative_type":"ngram","n_parallel":2,"n_ubatch":512})
