@@ -1,0 +1,78 @@
+name: PR 19597 macOS compaction A-B
+on:
+  push:
+    branches: [fix/pr19597-macos-compaction-ab]
+permissions:
+  contents: read
+jobs:
+  compare:
+    name: Observe six-step loop, attachment, and saved-summary retry
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Check out base
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: unslothai/unsloth
+          ref: 30c8e8898e77df304fd2ac3b2ed05569f6560f29
+          path: base
+          persist-credentials: false
+      - name: Check out head
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: NilayYadav/unsloth
+          ref: ad53a41dc3c3c6014928f6fccf7144fa97168af0
+          path: head
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.12'
+          cache: ''
+      - name: Verify revisions and prepare one shared Python environment
+        run: |
+          set -eu
+          test "$(git -C base rev-parse HEAD)" = 30c8e8898e77df304fd2ac3b2ed05569f6560f29
+          test "$(git -C head rev-parse HEAD)" = ad53a41dc3c3c6014928f6fccf7144fa97168af0
+          cmp base/studio/backend/requirements/studio.txt head/studio/backend/requirements/studio.txt
+          uname -sm
+          python --version
+          python -m pip install uv
+          uv venv .venv --python "$(command -v python)"
+          uv pip install --python .venv/bin/python -r head/studio/backend/requirements/studio.txt \
+            'pytest<9.2' pytest-asyncio 'torch>=2.4,<2.11' 'transformers>=4.51,<=5.18' \
+            python-multipart aiofiles sqlalchemy psutil pyyaml mammoth unpdf requests \
+            "$(grep -m1 '^peft==' head/studio/backend/requirements/extras-no-deps.txt)"
+      - name: Compare observed behavior with the pinned predictions
+        env:
+          UNSLOTH_ALLOW_CPU: '1'
+          UNSLOTH_IS_PRESENT: '1'
+          HF_HUB_OFFLINE: '1'
+          OMP_NUM_THREADS: '1'
+          OPENBLAS_NUM_THREADS: '1'
+        run: |
+          set -eu
+          cp head/studio/backend/tests/test_external_tool_loop_compaction.py base/studio/backend/tests/
+          result=0
+          for side in base head; do
+            echo "::group::$side $(git -C "$side" rev-parse HEAD)"
+            root="$PWD/$side"
+            cp test_pr19597_ab.py "$root/studio/backend/tests/"
+            mkdir -p "$RUNNER_TEMP/home-$side"
+            if ! (cd "$root/studio/backend" && SIDE="$side" HOME="$RUNNER_TEMP/home-$side" \
+              PYTHONPATH="$PWD:$root" "$GITHUB_WORKSPACE/.venv/bin/python" -m pytest \
+              -o addopts='' -q -rA --tb=short --junitxml="$RUNNER_TEMP/$side.xml" \
+              --basetemp="$RUNNER_TEMP/pytest-$side" tests/test_pr19597_ab.py); then result=1; fi
+            echo "::endgroup::"
+          done
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          from xml.etree import ElementTree
+          for side in ("base", "head"):
+              cases = ElementTree.parse(Path(os.environ["RUNNER_TEMP"]) / f"{side}.xml").findall(".//testcase")
+              assert len(cases) == 3 and all(c.find("skipped") is None for c in cases), side
+          PY
+          exit "$result"
