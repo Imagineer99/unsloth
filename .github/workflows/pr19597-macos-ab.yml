@@ -7,7 +7,7 @@ permissions:
 jobs:
   compare:
     name: Observe six-step loop, attachment, and saved-summary retry
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -41,10 +41,7 @@ jobs:
           python --version
           python -m pip install uv
           uv venv .venv --python "$(command -v python)"
-          uv pip install --python .venv/bin/python -r head/studio/backend/requirements/studio.txt \
-            'pytest<9.2' pytest-asyncio 'torch>=2.4,<2.11' 'transformers>=4.51,<=5.18' \
-            python-multipart aiofiles sqlalchemy psutil pyyaml mammoth unpdf requests \
-            "$(grep -m1 '^peft==' head/studio/backend/requirements/extras-no-deps.txt)"
+          uv pip install --only-binary=:all: --python .venv/bin/python -r requirements-probes.txt
       - name: Compare observed behavior with the pinned predictions
         env:
           UNSLOTH_ALLOW_CPU: '1'
