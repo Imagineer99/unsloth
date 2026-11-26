@@ -8,7 +8,7 @@ permissions:
 jobs:
   compare:
     if: github.repository == 'Imagineer99/unsloth'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 75
     env:
       BEFORE: 8e51691b644340472aa2e1fbb73ce3d7f847936c
