@@ -1,0 +1,54 @@
+name: PR 19754 Firefox stem playback A/B
+on:
+  push:
+    branches: [fix/pr19754-audio-ab-20261126]
+permissions:
+  contents: read
+
+jobs:
+  audio:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      BASE: dfbd1e7047efd5d3713861adb2d78339235d0f20
+      HEAD: 80dce2df6787e434f13c92221750ab3a617d3aaf
+      PULSE_LATENCY_MSEC: '120'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24.14.0'
+      - name: Fetch and verify both revisions
+        run: |
+          git init -q source
+          git -C source fetch -q --depth=1 --no-tags https://github.com/unslothai/unsloth.git "$BASE" "$HEAD"
+          git -C source checkout -q --detach "$HEAD"
+          test "$(git -C source rev-parse HEAD)" = "$HEAD"
+          git -C source diff --exit-code "$BASE" "$HEAD" -- studio/frontend ':!studio/frontend/tests' ':!studio/frontend/src/features/audio/hooks/use-stem-transport.ts'
+          git -C source diff --stat "$BASE" "$HEAD"
+          echo "BEFORE=$BASE AFTER=$HEAD"
+      - name: Install browser and build both mixers
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install 'playwright==1.56.0'
+          "$RUNNER_TEMP/venv/bin/playwright" install --with-deps firefox
+          sudo apt-get install -y pulseaudio pulseaudio-utils
+          npm ci --prefix source/studio/frontend --ignore-scripts --no-audit --no-fund
+          npm install --prefix "$RUNNER_TEMP/bundler" --no-audit --no-fund esbuild@0.25.12
+          NODE_PATH="$RUNNER_TEMP/bundler/node_modules" node .github/pr19754-audio/build.cjs
+      - name: Measure stalled startup and solo continuity
+        run: |
+          audio_dir=$(mktemp -d)
+          export PULSE_RUNTIME_PATH="$audio_dir/run" PULSE_STATE_PATH="$audio_dir/state"
+          export PULSE_SERVER="unix:$audio_dir/socket"
+          mkdir -m 700 "$PULSE_RUNTIME_PATH" "$PULSE_STATE_PATH"
+          pulseaudio -n --daemonize=no --use-pid-file=no --exit-idle-time=-1 --disable-shm \
+            -L "module-null-sink sink_name=pr19754 rate=48000" \
+            -L "module-native-protocol-unix socket=$audio_dir/socket auth-anonymous=1" &
+          audio_pid=$!
+          trap 'kill "$audio_pid" 2>/dev/null || true' EXIT
+          for attempt in {1..50}; do [[ -S "$audio_dir/socket" ]] && break; sleep .1; done
+          pactl list short sinks
+          "$RUNNER_TEMP/venv/bin/python" -u .github/pr19754-audio/check.py
