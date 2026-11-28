@@ -642,13 +642,6 @@ export function supportsRemoteModelCatalog(
   );
 }
 
-/** Presets that hide the API-key field. Not Ollama: Ollama cloud requires a key. */
-export function customPresetSkipsApiKeyField(
-  providerType: string | null | undefined,
-): boolean {
-  return providerType === "llama_cpp";
-}
-
 export function allowsManualModelIdsWithCatalog(
   providerType: string | null | undefined,
 ): boolean {

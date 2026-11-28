@@ -111,7 +111,6 @@ import {
   customProviderBaseUrlPlaceholder,
   customProviderDisplayName,
   customProviderModelIdsPlaceholder,
-  customPresetSkipsApiKeyField,
   customProviderApiKeyUrl,
   customProviderDefaultBaseUrl,
   connectionCheckNeedsModel,
@@ -587,8 +586,7 @@ export function ChatProvidersSettings({
   const isCodexSubscription = usesOAuth;
   const modelIdsEditable =
     selectedProviderContract?.model_ids_editable !== false;
-  const showApiKeyField =
-    !usesOAuth && !customPresetSkipsApiKeyField(providerType);
+  const showApiKeyField = !usesOAuth;
   const isCuratedModelList = useMemo(() => {
     return registryByType.get(providerType)?.model_list_mode === "curated";
   }, [registryByType, providerType]);
