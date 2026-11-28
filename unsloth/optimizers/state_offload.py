@@ -756,9 +756,19 @@ class _StateOffloader:
         sequence = self.sequence
         return sequence.segments.get(param) if sequence is not None else None
 
+    def _only_own_step_hooks(self):
+        """The optimizer has no step hooks but this offloader's: hooks registered on it (a data-parallel gradient
+        sync, the idle-expert hook) must run once per weight, as on every replica, not once per range. Global
+        hooks already run on every per-weight call of the sequence, so ranges do not change what they see."""
+        return all(
+            getattr(h, "__self__", None) is self
+            for name in ("_optimizer_step_pre_hooks", "_optimizer_step_post_hooks")
+            for h in getattr(self.optimizer, name, {}).values()
+        )
+
     def _segment(self, batches, sizes, segmentable):
         """[(members, tensors)] for the sequence, a large weight split in element ranges, and {param: ranges}."""
-        limit = _segment_bytes() if callable(segmentable) else 0
+        limit = _segment_bytes() if callable(segmentable) and self._only_own_step_hooks() else 0
         parts, segments = [], {}
         for batch in batches:
             tensors = [t for p in batch for t in sizes[p]]

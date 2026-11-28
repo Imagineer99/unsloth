@@ -452,7 +452,7 @@ def test_sequence_ending_inside_a_ranged_weight_still_matches(monkeypatch):
 
 
 @needs_cuda
-def test_ranged_weight_whose_gradient_a_pre_hook_drops_is_skipped(monkeypatch):
+def test_other_step_hooks_keep_whole_weights(monkeypatch):
     monkeypatch.delenv("UNSLOTH_BF16_STOCHASTIC_ROUNDING", raising = False)
     monkeypatch.delenv("UNSLOTH_OFFLOAD_OPTIMIZER_STATE_RESIDENT", raising = False)
     monkeypatch.setenv("UNSLOTH_BF16_SR_FUSED", "1")
@@ -491,8 +491,26 @@ def test_ranged_weight_whose_gradient_a_pre_hook_drops_is_skipped(monkeypatch):
 
     p0, o0, n0 = run("0")
     p1, o1, n1 = run("1")
-    assert n0 == 0 and n1 == 2  # steps 2 and 4 range the large weight; step 3 drops it
+    # Another step hook (here one that drops a gradient, as the idle-expert hook does; a data-parallel gradient
+    # sync is another) must run once per weight, so the large weight is not split in ranges at all.
+    assert n0 == 0 and n1 == 0
     for a, b in zip(p0, p1):
         assert torch.equal(a, b)
     for a, b in zip(_all_state(o0), _all_state(o1)):
         assert torch.equal(a, b) if isinstance(a, torch.Tensor) else a == b
+
+
+def test_ranges_only_without_other_optimizer_step_hooks():
+    module = _load(_PATH, "_unsloth_state_offload_hooks")
+    p = torch.nn.Parameter(torch.randn(4))
+    optimizer = torch.optim.AdamW([p])
+    offloader = module._StateOffloader(optimizer)
+    optimizer.register_step_pre_hook(offloader._pre_step)
+    optimizer.register_step_post_hook(offloader._post_step)
+    assert offloader._only_own_step_hooks()
+    # A data-parallel gradient sync or the idle-expert hook: once per weight, so no ranges.
+    for register in (optimizer.register_step_pre_hook, optimizer.register_step_post_hook):
+        handle = register(lambda opt, args, kwargs: None)
+        assert not offloader._only_own_step_hooks()
+        handle.remove()
+    assert offloader._only_own_step_hooks()
