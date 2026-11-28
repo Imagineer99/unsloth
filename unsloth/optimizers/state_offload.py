@@ -6,14 +6,12 @@
 On CUDA the chunk copies overlap the step through a fixed staging ring no larger than one serial
 chunk (UNSLOTH_OFFLOAD_OPTIMIZER_STATE_OVERLAP=0 keeps them serial).
 
-UNSLOTH_OFFLOAD_OPTIMIZER_STATE_RESIDENT = auto keeps the largest weights' state on the GPU, as much as fits in
-the memory the first steps left unused (a margin of max(1 GiB, 5%) kept free), or = <GiB> that budget; only the
-rest is copied each step. Sized once from the first steps: batches that later grow past them can run out of
-memory, so a fixed budget is safer when batch shapes vary. Same updates, bitwise.
+UNSLOTH_OFFLOAD_OPTIMIZER_STATE_RESIDENT = auto keeps the largest weights' state on the GPU within the
+memory the first steps left unused (minus max(1 GiB, 5%)), or = <GiB> as the budget. Sized once: batches that
+later grow can run out of memory, so use a fixed budget when shapes vary.
 
-bfloat16 stochastic rounding steps one weight per call; a weight whose state is over 64 MB is staged and stepped
-in element ranges (UNSLOTH_OFFLOAD_OPTIMIZER_STATE_SEGMENT_MB, 0 = whole weights), drawing the same random bits,
-so the largest weights' copies overlap the step like every other weight's. Same updates, bitwise."""
+UNSLOTH_OFFLOAD_OPTIMIZER_STATE_SEGMENT_MB (default 64, 0 = off): bfloat16 stochastic rounding steps a weight
+with larger state in element ranges, bitwise identical, so its copies overlap the step."""
 
 import contextlib
 import copy
@@ -52,8 +50,7 @@ def _overlap_enabled():
 
 
 def _resident_setting():
-    """UNSLOTH_OFFLOAD_OPTIMIZER_STATE_RESIDENT: None (off), "auto" (the GPU memory the first steps left
-    unused) or a byte budget (a number of GiB)."""
+    """None (off), "auto", or a byte budget."""
     value = os.environ.get(_ENV + "_RESIDENT", "0").strip().lower()
     if value in ("", "0", "false", "no", "off"):
         return None
@@ -67,8 +64,6 @@ def _resident_setting():
 
 
 def _segment_bytes():
-    """UNSLOTH_OFFLOAD_OPTIMIZER_STATE_SEGMENT_MB (default 64): in per-weight sequences, stage a weight whose state is
-    larger in element ranges of about this size (0 = whole weights), so its copies overlap like any other weight's."""
     try:
         mb = float(os.environ.get(_ENV + "_SEGMENT_MB", "64"))
     except ValueError:
@@ -78,7 +73,7 @@ def _segment_bytes():
 
 _HINTED = False  # the unused-GPU-memory hint prints once per process
 
-# Element ranges are whole multiples of this (the one-pass kernel's block).
+# Element ranges are multiples of the one-pass kernel's block.
 _SEGMENT_ALIGN = 1024
 
 
@@ -226,7 +221,7 @@ class _Ring:
                 raw = self.buffer[offset : offset + host.numel() * host.element_size()]
                 view = raw.view(host.dtype).view(host.shape)
                 view.copy_(host, non_blocking = True)
-                # host may be an element range of the state's buffer (whole): the state gets whole back.
+                # host may be a range of the state's buffer: the state gets whole back.
                 views.append((p, key, host, view, offset, n, whole[0] if whole else host))
                 offset += n
         ready = torch.cuda.Event()
@@ -316,7 +311,6 @@ class _StateOffloader:
         self.streams = None
         self.sequence = None
         self.ring_oom_fallbacks = 0
-        # Weights whose state stays on the GPU (UNSLOTH_OFFLOAD_OPTIMIZER_STATE_RESIDENT).
         self.resident = set()
         self.params = [p for group in optimizer.param_groups for p in group["params"]]
         self.resident_bytes = 0
@@ -325,7 +319,6 @@ class _StateOffloader:
         self.last_params = None
 
     def _resident_candidates(self):
-        """(device, [(bytes, param)]) for weights whose whole state is plain offloaded tensors on one CUDA device."""
         by_param = {}
         for (param, key), device in self.offloaded.items():
             by_param.setdefault(param, []).append((key, device))
@@ -352,13 +345,10 @@ class _StateOffloader:
         return device, out
 
     def _decide_resident(self):
-        """Once, after the first step: keep the largest weights' state on the GPU while it fits in the memory
-        the steps so far never used (or the given budget). Their copies leave the step; the staging ring then
-        only has to hold the largest streamed weight."""
+        """Once: keep the largest weights' state on the GPU within the unused memory (or the given budget)."""
         if self.resident_decided or not self.stepped or self.sequence is not None:
             return
-        # Per-weight steps (bfloat16 stochastic rounding) finish one weight at a time: wait until every weight
-        # with a gradient has its state, so the whole step's state is known.
+        # Per-weight steps: wait until every weight with a gradient has state.
         state = self.optimizer.state
         if any(p.grad is not None and not state.get(p) for p in self.params):
             return
@@ -396,7 +386,6 @@ class _StateOffloader:
         )
 
     def _unused_gpu_bytes(self, device):
-        """What the steps so far left unused on device, minus a margin of max(1 GiB, 5%); None if unknown."""
         try:
             free, total = torch.cuda.mem_get_info(device)
         except Exception:
@@ -404,22 +393,19 @@ class _StateOffloader:
         reserved = torch.cuda.memory_reserved(device)
         peak = torch.cuda.max_memory_reserved(device)
         try:
-            # torch.cuda.set_per_process_memory_fraction caps this process below the card.
             total = min(total, int(torch.cuda.get_per_process_memory_fraction(device) * total))
         except Exception:
             pass
-        # Never touch what other processes hold or what this one's peak needed.
         return min(free + reserved, total) - peak - max(1 << 30, int(0.05 * total))
 
     def _pin_resident(self, params):
-        """Move these weights' state to their device for good and free its host buffers."""
         params = [p for p in params if p in self.optimizer.state]
         self.resident.update(params)
         self.restore(params)
         mine = set(params)
         for entry in [k for k in self.offloaded if k[0] in mine]:
             self.offloaded.pop(entry, None)
-            # A pinned buffer a non_blocking copy still reads is recycled only after that copy.
+            # Recycle a pinned buffer only after the non_blocking copy reading it.
             self.buffers.pop(entry, None)
         self.resident_bytes = sum(
             _local_nbytes(t)
@@ -431,8 +417,7 @@ class _StateOffloader:
         self.offloaded_bytes = sum(b.numel() * b.element_size() for b in self.buffers.values())
         empty = getattr(torch._C, "_host_emptyCache", None)
         if callable(empty) and params:
-            # Hand the freed pinned buffers back to the OS (the host allocator caches them), once the copies
-            # reading them are done.
+            # Return freed pinned buffers to the OS once copies are done.
             for device in {p.device for p in params if p.device.type == "cuda"}:
                 _synchronize(device)
             empty()
@@ -752,14 +737,11 @@ class _StateOffloader:
         return sum(-(-_local_nbytes(t) // _RING_ALIGN) * _RING_ALIGN for t in held)
 
     def segments_of(self, param):
-        """Inside pipelined(): the element ranges param's state is staged in (one step call each), else None."""
         sequence = self.sequence
         return sequence.segments.get(param) if sequence is not None else None
 
     def _only_own_step_hooks(self):
-        """The optimizer has no step hooks but this offloader's: hooks registered on it (a data-parallel gradient
-        sync, the idle-expert hook) must run once per weight, as on every replica, not once per range. Global
-        hooks already run on every per-weight call of the sequence, so ranges do not change what they see."""
+        """Ranges only when no other step hooks: data-parallel sync / idle-expert hooks must run once per weight."""
         return all(
             getattr(h, "__self__", None) is self
             for name in ("_optimizer_step_pre_hooks", "_optimizer_step_post_hooks")
@@ -767,7 +749,6 @@ class _StateOffloader:
         )
 
     def _segment(self, batches, sizes, segmentable):
-        """[(members, tensors)] for the sequence, a large weight split in element ranges, and {param: ranges}."""
         limit = _segment_bytes() if callable(segmentable) and self._only_own_step_hooks() else 0
         parts, segments = [], {}
         for batch in batches:
@@ -825,9 +806,7 @@ class _StateOffloader:
         device, sizes = found
         parts, segments = self._segment(batches, sizes, segmentable)
         largest = max(sum(t[3] for t in tensors) for _, tensors in parts)
-        # Never more than the largest whole batch (what each serial call held, resident weights counted), and
-        # room for _RING_PARTS of the largest staged part once residency or ranges make the parts smaller, so
-        # copies in and out keep overlapping.
+        # Capped at the largest whole batch; room for _RING_PARTS of the largest staged part so copies overlap.
         whole = max(sum(self._staged_bytes(p, sizes) for p in batch) for batch in batches)
         capacity = min(max(whole, largest), _RING_PARTS * largest)
         if capacity <= 0:
@@ -857,7 +836,7 @@ class _StateOffloader:
             self.sequence = None
         current = sequence.current
         if current is not None and sequence.placed[current] is not None:
-            # A call that raised: put its staged state back first (an element range has no buffer of its own).
+            # Restore a raised call's staged state first (a range has no buffer of its own).
             sequence.ring.copy_out(sequence.placed[current], self.optimizer.state)
             sequence.placed[current] = None
             sequence.current = None
@@ -899,7 +878,6 @@ class _StateOffloader:
         if len(chunks) <= 1:
             if self.sequence is None or not self._sequence_take(params):
                 self.restore(params)
-                # A chunk-safe step touches only these: the post hook offloads just them.
                 self.last_params = params
             return
         # Step each chunk through the unhooked class step, so registered step hooks run once for
@@ -1051,7 +1029,6 @@ def offload_optimizer_state(
             )
         else:
             device_of = None
-        # Everything loaded goes through the host first; weights kept on the GPU go back there.
         resident, offloader.resident = offloader.resident, set()
         offloader.finish(offloader.offload(device_of = device_of))
         if resident:

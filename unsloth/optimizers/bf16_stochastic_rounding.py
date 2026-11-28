@@ -776,7 +776,6 @@ def _wrap_torch(optimizer, tracked, seed):
         (group,) = self.param_groups
         segment = self.__dict__.get("_unsloth_sr_segment")
         if segment is not None:
-            # State offload staged one element range of this weight (see _fused_adamw_segment).
             (p,) = group["params"]
             if (
                 p.grad is not None
@@ -856,7 +855,6 @@ def _wrap_torch(optimizer, tracked, seed):
                         if not segments:
                             hooked(self, None)
                             continue
-                        # A large weight staged in element ranges: one step call per range.
                         try:
                             for i, (a, b) in enumerate(segments):
                                 self.__dict__["_unsloth_sr_segment"] = (
@@ -958,8 +956,7 @@ def _fused_param(optimizer, p):
 
 
 def _segmentable(optimizer, group, p):
-    """Whether state offload may stage p's state in element ranges and step each range on its own: the one-pass
-    kernel applies (already compiled on this device) and the state is the two bfloat16 moments plus a step."""
+    """Whether state offload may step p in element ranges (one-pass kernel compiled, bf16 moments + step)."""
     if (
         not _fused_group(optimizer, group)
         or _is_dtensor(p)
@@ -990,9 +987,7 @@ def _segmentable(optimizer, group, p):
 
 
 def _fused_adamw_segment(optimizer, group, p, seed, segment):
-    """Elements [a, b) of weight p with the one-pass kernel: the same arithmetic and random draws as the whole-weight
-    launch (the kernel offsets its Philox index by a). state['exp_avg'] / ['exp_avg_sq'] hold just that range. The
-    step counter moves on the first range; the last bumps the weight's version counter."""
+    """Elements [a, b) of p with the one-pass kernel; same random draws as the whole weight (Philox offset a)."""
     a, b, first, last = segment
     lr, eps, weight_decay = (_float(group[k]) for k in ("lr", "eps", "weight_decay"))
     beta1, beta2 = (_float(x) for x in group["betas"])
@@ -1000,7 +995,7 @@ def _fused_adamw_segment(optimizer, group, p, seed, segment):
     if first:
         step = state["step"]
         step.add_(1)
-        # The value the whole-weight path reads (it stacks the counters as float32 first).
+        # Matches the whole-weight path, which stacks the counters as float32.
         t = step.item() if step.device.type == "cpu" else step.float().item()
         optimizer.__dict__["_unsloth_sr_segment_t"] = t
     else:
@@ -1010,7 +1005,7 @@ def _fused_adamw_segment(optimizer, group, p, seed, segment):
     n = b - a
     m, v = state["exp_avg"], state["exp_avg_sq"]
     if m.numel() != n:
-        # The offload sequence ended early and restored the whole moments: step their range.
+        # Sequence ended early and restored the whole moments.
         m, v = m.view(-1)[a:b], v.view(-1)[a:b]
     with torch.cuda.device(p.device):
         _adamw_kernel[_grid(n)](

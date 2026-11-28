@@ -158,7 +158,6 @@ def test_budget_keeps_the_largest_weights_and_streams_the_rest(monkeypatch, dtyp
     assert embedding in on_gpu and embedding in off.resident
     assert on_host, "the rest is still streamed"
     assert model[1].weight in on_host
-    # The streamed rest still overlaps its copies.
     assert off.overlapped_steps > 0
     assert off.offloaded_bytes > 0 and off.resident_bytes > 0
 
@@ -193,7 +192,6 @@ def test_resume_keeps_resident_weights_on_the_gpu(monkeypatch):
     for a, b in zip(_all_state(o0), _all_state(o1)):
         assert torch.equal(a, b) if isinstance(a, torch.Tensor) else a == b
     assert off1.resident and off1.offloaded_bytes == 0
-    # A second load keeps the decision: the loaded state goes straight back to the GPU.
     o1.load_state_dict(saved)
     on_gpu, on_host = _devices(o1, off1)
     assert on_gpu and not on_host
@@ -279,7 +277,7 @@ def test_stochastic_rounding_segments_match_whole_weights(monkeypatch, fused_rou
         module = _load(_PATH, "_unsloth_state_offload_segment")
         sr = _load(_SR_PATH, "_unsloth_sr_segment")
         generator = torch.Generator(device = "cuda").manual_seed(0)
-        # 2M elements (8 MiB of bf16 moments) and a size that is not a multiple of the range.
+        # 2M elements, not a multiple of the range.
         shapes = [(2048, 1024), (64,), (1000, 777), (500, 500)]
         params = [
             torch.nn.Parameter(
@@ -323,9 +321,7 @@ def test_stochastic_rounding_segments_match_whole_weights(monkeypatch, fused_rou
         assert state["exp_avg"].device.type == "cpu" and state["exp_avg"].shape != (0,)
     segmented = o1.__dict__.get("_unsloth_sr_segmented_steps", 0)
     if fused_route and not getattr(torch.version, "hip", None):
-        # Two weights over 1 MiB of state, on each of the 4 overlapped steps.
         assert segmented == 2 * 4
-        # The ring holds four 1 MiB ranges instead of the whole 8 MiB weight.
         assert max(peaks1[1:]) <= max(peaks0[1:]) - (3 << 20)
     else:
         assert segmented == 0
@@ -350,7 +346,6 @@ def test_resident_weights_return_their_pinned_host_memory(monkeypatch):
     optimizer.step()  # the decision: everything fits on the GPU
     torch.cuda.synchronize()
     assert offloader.offloaded_bytes == 0 and len(offloader.resident) == 4
-    # 512 MiB of pinned moments were freed; most of it leaves the process.
     assert process.memory_info().rss < held - (256 << 20)
 
 
@@ -363,7 +358,7 @@ def test_error_inside_a_segment_leaves_whole_state_on_host(monkeypatch):
     module = _load(_PATH, "_unsloth_state_offload_segment_error")
     sr = _load(_SR_PATH, "_unsloth_sr_segment_error")
     p = torch.nn.Parameter((torch.randn(2048, 1024, device = "cuda") * 0.05).to(torch.bfloat16))
-    # A second weight makes the group a per-weight sequence (a single weight steps on its own).
+    # A second weight makes a per-weight sequence.
     q = torch.nn.Parameter(torch.zeros(64, device = "cuda", dtype = torch.bfloat16))
     optimizer = torch.optim.AdamW([p, q], lr = 1e-3, fused = True)
     offloader = module.offload_optimizer_state(optimizer, chunk_bytes = 1 << 20)
@@ -424,8 +419,7 @@ def test_sequence_ending_inside_a_ranged_weight_still_matches(monkeypatch):
             calls.append(1)
             result = original(*args, **kwargs)
             if cut and len(calls) == 10 and offloader.sequence is not None:
-                # The sequence ends between two ranges of one weight (as an unexpected call ends it); the next
-                # ranges then step on the whole moments, restored the serial way.
+                # The sequence ends between two ranges; later ranges step on the restored whole moments.
                 offloader._sequence_end(offloader.sequence)
             return result
 
@@ -473,7 +467,6 @@ def test_other_step_hooks_keep_whole_weights(monkeypatch):
         drop = {"on": False}
 
         def idle(opt, args, kwargs):
-            # As the idle-expert hook does: a weight the step should leave alone loses its gradient.
             if drop["on"]:
                 params[0].grad = None
 
@@ -491,8 +484,7 @@ def test_other_step_hooks_keep_whole_weights(monkeypatch):
 
     p0, o0, n0 = run("0")
     p1, o1, n1 = run("1")
-    # Another step hook (here one that drops a gradient, as the idle-expert hook does; a data-parallel gradient
-    # sync is another) must run once per weight, so the large weight is not split in ranges at all.
+    # Other step hooks must run once per weight, so no ranges.
     assert n0 == 0 and n1 == 0
     for a, b in zip(p0, p1):
         assert torch.equal(a, b)
@@ -508,7 +500,6 @@ def test_ranges_only_without_other_optimizer_step_hooks():
     optimizer.register_step_pre_hook(offloader._pre_step)
     optimizer.register_step_post_hook(offloader._post_step)
     assert offloader._only_own_step_hooks()
-    # A data-parallel gradient sync or the idle-expert hook: once per weight, so no ranges.
     for register in (optimizer.register_step_pre_hook, optimizer.register_step_post_hook):
         handle = register(lambda opt, args, kwargs: None)
         assert not offloader._only_own_step_hooks()
